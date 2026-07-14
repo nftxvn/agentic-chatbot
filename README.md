@@ -1,6 +1,6 @@
 # 🤖 Agentic IT Support Copilot
 
-Sistem chatbot berbasis AI lokal untuk **Admin Diskominfotik** — memungkinkan pengelolaan basis pengetahuan (dokumen PDF) secara mandiri tanpa modifikasi kode.
+Sistem chatbot berbasis AI lokal — memungkinkan penelolaan basis pengetahuan (dokumen PDF) secara mandiri tanpa modifikasi kode.
 
 ---
 
@@ -23,37 +23,39 @@ agentic-ai/
 
 ## 🏗️ Tech Stack
 
-| Komponen | Teknologi |
-|----------|-----------|
-| Dashboard Admin | Laravel (PHP) |
-| AI Microservice | Python + FastAPI |
-| Chat Widget (Testing) | React.js + Vite |
-| LLM Engine | Ollama + Qwen2.5-Instruct |
-| Embedding Model | paraphrase-multilingual-MiniLM-L12-v2 |
-| Vector Database | ChromaDB |
-| AI Orchestration | LangChain |
-| OCR Engine | Tesseract OCR |
-| Queue System | Celery + Redis |
-| Database | MySQL |
-| Containerization | Docker Compose |
+| Komponen              | Teknologi                             |
+| --------------------- | ------------------------------------- |
+| Dashboard Admin       | Laravel (PHP)                         |
+| AI Microservice       | Python + FastAPI                      |
+| Chat Widget (Testing) | React.js + Vite                       |
+| LLM Engine            | Ollama + Qwen2.5-Instruct             |
+| Embedding Model       | paraphrase-multilingual-MiniLM-L12-v2 |
+| Vector Database       | ChromaDB                              |
+| AI Orchestration      | LangChain                             |
+| OCR Engine            | Tesseract OCR                         |
+| Queue System          | Celery + Redis                        |
+| Database              | MySQL                                 |
+| Containerization      | Docker Compose                        |
 
 ---
 
 ## 🌿 Struktur Branch
 
-| Branch | Isi | Developer |
-|--------|-----|-----------|
-| `main` | Dokumentasi + `.gitignore` | Semua |
-| `feat/python-ai` | AI Microservice (FastAPI) | Dev 1 |
-| `feat/laravel-admin` | Dashboard Admin (Laravel) | Dev 2 |
-| `feat/react-widget` | Chat Widget (React) | Dev 3 |
+| Branch               | Isi                        | Developer |
+| -------------------- | -------------------------- | --------- |
+| `main`               | Dokumentasi + `.gitignore` | Semua     |
+| `feat/python-ai`     | AI Microservice (FastAPI)  | Dev 1     |
+| `feat/laravel-admin` | Dashboard Admin (Laravel)  | Dev 2     |
+| `feat/react-widget`  | Chat Widget (React)        | Dev 3     |
 
 ---
 
 ## 🚀 Cara Menjalankan (Development)
 
 ### Prasyarat
+
 Pastikan sudah terinstall:
+
 - Python 3.10+
 - PHP 8.2+ & Composer
 - Node.js 18+ & npm
@@ -168,14 +170,14 @@ ollama serve
 
 ## 🔌 Port yang Digunakan
 
-| Service | Port |
-|---------|------|
-| FastAPI (Python) | `8000` |
-| Laravel Admin | `8080` |
-| React Widget | `5173` |
-| Redis | `6379` |
-| MySQL | `3306` |
-| Ollama | `11434` |
+| Service          | Port    |
+| ---------------- | ------- |
+| FastAPI (Python) | `8000`  |
+| Laravel Admin    | `8080`  |
+| React Widget     | `5173`  |
+| Redis            | `6379`  |
+| MySQL            | `3306`  |
+| Ollama           | `11434` |
 
 ---
 
@@ -199,13 +201,13 @@ ipconfig
 
 ## 📁 Dokumentasi
 
-| File | Deskripsi |
-|------|-----------|
-| [`prd_agentic_copilot.md`](docs/prd_agentic_copilot.md) | Product Requirements Document |
-| [`api_spec_agentic_copilot.md`](docs/api_spec_agentic_copilot.md) | Spesifikasi API antar komponen |
-| [`arsitektur_sistem_agentic_copilot.md`](docs/arsitektur_sistem_agentic_copilot.md) | Arsitektur sistem keseluruhan |
-| [`rencana_fitur_agentic_copilot.md`](docs/rencana_fitur_agentic_copilot.md) | Rencana pengembangan fitur |
-| [`pembagian_tugas_tim.md`](docs/pembagian_tugas_tim.md) | Pembagian tugas & tanggung jawab tim |
+| File                                                                                | Deskripsi                            |
+| ----------------------------------------------------------------------------------- | ------------------------------------ |
+| [`prd_agentic_copilot.md`](docs/prd_agentic_copilot.md)                             | Product Requirements Document        |
+| [`api_spec_agentic_copilot.md`](docs/api_spec_agentic_copilot.md)                   | Spesifikasi API antar komponen       |
+| [`arsitektur_sistem_agentic_copilot.md`](docs/arsitektur_sistem_agentic_copilot.md) | Arsitektur sistem keseluruhan        |
+| [`rencana_fitur_agentic_copilot.md`](docs/rencana_fitur_agentic_copilot.md)         | Rencana pengembangan fitur           |
+| [`pembagian_tugas_tim.md`](docs/pembagian_tugas_tim.md)                             | Pembagian tugas & tanggung jawab tim |
 
 ---
 
