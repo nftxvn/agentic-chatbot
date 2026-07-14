@@ -1,0 +1,100 @@
+# =========================
+# ROOT IGNORE
+# =========================
+
+# Environment files (semua project)
+.env
+*.env.local
+*.env.production
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# PYTHON (python-ai/)
+# =========================
+
+# Virtual environment
+python-ai/venv/
+python-ai/.venv/
+venv/
+.venv/
+
+# Python cache
+python-ai/**/__pycache__/
+python-ai/**/*.py[cod]
+python-ai/**/*.pyo
+python-ai/.pytest_cache/
+python-ai/.mypy_cache/
+python-ai/.ruff_cache/
+
+# Data & vector DB (generated, tidak di-commit)
+python-ai/data/
+python-ai/chroma_db/
+python-ai/chromadb/
+python-ai/uploads/
+python-ai/*.db
+python-ai/*.sqlite3
+
+# Celery
+python-ai/celerybeat-schedule
+python-ai/celerybeat.pid
+
+# Logs
+python-ai/logs/
+python-ai/*.log
+
+# =========================
+# LARAVEL (laravel-admin/)
+# =========================
+
+# Composer dependencies
+laravel-admin/vendor/
+
+# Node dependencies (Laravel Mix/Vite)
+laravel-admin/node_modules/
+
+# Laravel storage (generated)
+laravel-admin/storage/logs/
+laravel-admin/storage/app/public/
+laravel-admin/storage/framework/cache/
+laravel-admin/storage/framework/sessions/
+laravel-admin/storage/framework/testing/
+laravel-admin/storage/framework/views/
+
+# Laravel bootstrap cache
+laravel-admin/bootstrap/cache/
+
+# Build output
+laravel-admin/public/build/
+laravel-admin/public/hot
+laravel-admin/public/storage
+
+# =========================
+# REACT / NODE (react-widget/)
+# =========================
+
+# Node dependencies
+react-widget/node_modules/
+
+# Build output
+react-widget/dist/
+react-widget/build/
+react-widget/.vite/
+
+# Cache
+react-widget/.eslintcache
+
+# =========================
+# ROOT VENV (jika ada)
+# =========================
+/venv/
+/.venv/
