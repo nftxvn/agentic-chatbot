@@ -292,19 +292,20 @@ erDiagram
 
 ### Penjelasan Kolom Penting
 
-| Kolom | Fungsi |
-|---|---|
-| `status` | Digunakan Laravel untuk menampilkan badge warna (kuning=processing, hijau=completed, merah=failed) |
-| `pdf_type` | Diisi Python setelah deteksi, memberi tahu admin apakah PDF nya text murni atau hasil scan |
-| `total_chunks` | Diisi Python setelah embedding selesai, membantu admin memahami seberapa "besar" dokumen di mata AI |
-| `error_message` | Jika proses OCR/embedding gagal, Python menyimpan pesan error agar admin tahu penyebabnya |
-| `document_logs` | Tabel audit trail — mencatat riwayat setiap aksi pada dokumen |
+| Kolom           | Fungsi                                                                                              |
+| --------------- | --------------------------------------------------------------------------------------------------- |
+| `status`        | Digunakan Laravel untuk menampilkan badge warna (kuning=processing, hijau=completed, merah=failed)  |
+| `pdf_type`      | Diisi Python setelah deteksi, memberi tahu admin apakah PDF nya text murni atau hasil scan          |
+| `total_chunks`  | Diisi Python setelah embedding selesai, membantu admin memahami seberapa "besar" dokumen di mata AI |
+| `error_message` | Jika proses OCR/embedding gagal, Python menyimpan pesan error agar admin tahu penyebabnya           |
+| `document_logs` | Tabel audit trail — mencatat riwayat setiap aksi pada dokumen                                       |
 
 ---
 
 ## 5. Konfigurasi Environment (`.env`)
 
 ### Python AI Microservice (`python-ai/.env`)
+
 ```env
 # === LLM Configuration ===
 # Fase 1 (Testing Lokal): qwen2.5:3b
@@ -334,6 +335,7 @@ INTERNAL_API_TOKEN=your-secure-internal-token-here
 ```
 
 ### Laravel Admin (`laravel-admin/.env`)
+
 ```env
 # === App ===
 APP_NAME="Agentic Copilot Admin"
@@ -356,19 +358,19 @@ AI_SERVICE_TOKEN=your-secure-internal-token-here
 
 ## 6. Tech Stack Summary
 
-| Layer | Teknologi | Versi / Catatan |
-|---|---|---|
-| **Dashboard Admin** | Laravel (PHP) | v11.x |
-| **AI Microservice** | Python + FastAPI | Python 3.11+ |
-| **Chat Widget (Testing)** | React.js + Vite | v18+ — dev/demo only |
-| **Channel Produksi** | WhatsApp Business API | Webhook → POST /api/chat/message |
-| **LLM Runtime** | Ollama | Latest |
-| **LLM Model** | Qwen2.5-Instruct | 3B (test) → 7B (prod) |
-| **Embedding** | paraphrase-multilingual-MiniLM-L12-v2 | via SentenceTransformers |
-| **Vector DB** | ChromaDB | Persistent mode |
-| **OCR** | Tesseract OCR | v5.x + pytesseract |
-| **PDF Parsing** | PyMuPDF (fitz) | Deteksi teks vs scan |
-| **AI Orchestration** | LangChain | Latest |
-| **Task Queue** | Celery + Redis | Async background jobs |
-| **Database** | MySQL | v8.x |
-| **Containerization** | Docker Compose | Multi-service |
+| Layer                     | Teknologi                             | Versi / Catatan                  |
+| ------------------------- | ------------------------------------- | -------------------------------- |
+| **Dashboard Admin**       | Laravel (PHP)                         | v11.x                            |
+| **AI Microservice**       | Python + FastAPI                      | Python 3.11+                     |
+| **Chat Widget (Testing)** | React.js + Vite                       | v18+ — dev/demo only             |
+| **Channel Produksi**      | WhatsApp Business API                 | Webhook → POST /api/chat/message |
+| **LLM Runtime**           | Ollama                                | Latest                           |
+| **LLM Model**             | Qwen2.5-Instruct                      | 3B (test) → 7B (prod)            |
+| **Embedding**             | paraphrase-multilingual-MiniLM-L12-v2 | via SentenceTransformers         |
+| **Vector DB**             | ChromaDB                              | Persistent mode                  |
+| **OCR**                   | Tesseract OCR                         | v5.x + pytesseract               |
+| **PDF Parsing**           | PyMuPDF (fitz)                        | Deteksi teks vs scan             |
+| **AI Orchestration**      | LangChain                             | Latest                           |
+| **Task Queue**            | Celery + Redis                        | Async background jobs            |
+| **Database**              | MySQL                                 | v8.x                             |
+| **Containerization**      | Docker Compose                        | Multi-service                    |
