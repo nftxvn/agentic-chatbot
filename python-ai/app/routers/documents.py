@@ -1,6 +1,6 @@
 """
-Router untuk endpoint pemrosesan dokumen.
-Menerima request dari Laravel untuk memproses PDF ke dalam vector store.
+Router untuk endpoint pemrosesan dan manajemen dokumen.
+Menerima request dari Laravel untuk memproses PDF dan mengecek status dokumen.
 """
 
 import logging
@@ -8,7 +8,14 @@ import logging
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from app.config import settings
-from app.schemas import ProcessDocumentRequest, ProcessDocumentResponse
+from app.database import get_all_documents, get_document_by_id
+from app.schemas import (
+    DocumentListItem,
+    DocumentListResponse,
+    DocumentStatusResponse,
+    ProcessDocumentRequest,
+    ProcessDocumentResponse,
+)
 from app.tasks.process_document import process_document_task
 
 logger = logging.getLogger(__name__)
@@ -44,6 +51,105 @@ async def verify_token(authorization: str = Header(...)) -> str:
         )
 
     return token
+
+
+# ── GET /api/docs — Daftar semua dokumen ─────────────────────────
+
+
+@router.get(
+    "",
+    response_model=DocumentListResponse,
+    summary="Daftar semua dokumen",
+    description="Mengambil daftar semua dokumen beserta status pemrosesannya.",
+)
+async def list_documents(
+    _token: str = Depends(verify_token),
+) -> DocumentListResponse:
+    """
+    Endpoint untuk mengambil daftar semua dokumen dari database.
+
+    Digunakan oleh Laravel untuk menampilkan tabel daftar dokumen
+    di halaman admin dashboard.
+
+    Returns:
+        200 OK dengan daftar dokumen dan total count.
+    """
+    try:
+        rows = get_all_documents()
+
+        documents = [
+            DocumentListItem(**row) for row in rows
+        ]
+
+        logger.info("Mengirim daftar %d dokumen", len(documents))
+
+        return DocumentListResponse(
+            total=len(documents),
+            documents=documents,
+        )
+
+    except Exception as e:
+        logger.error("Gagal mengambil daftar dokumen: %s", str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Gagal mengambil daftar dokumen: {str(e)}",
+        ) from e
+
+
+# ── GET /api/docs/{document_id}/status — Status satu dokumen ─────
+
+
+@router.get(
+    "/{document_id}/status",
+    response_model=DocumentStatusResponse,
+    summary="Cek status dokumen",
+    description="Mengecek status pemrosesan satu dokumen berdasarkan ID.",
+)
+async def get_document_status(
+    document_id: int,
+    _token: str = Depends(verify_token),
+) -> DocumentStatusResponse:
+    """
+    Endpoint untuk mengecek status pemrosesan dokumen.
+
+    Digunakan oleh Laravel untuk polling status secara periodik
+    (AJAX setiap 10 detik) sampai status berubah dari 'processing'
+    ke 'completed' atau 'failed'.
+
+    Returns:
+        200 OK dengan detail status dokumen.
+        404 Not Found jika dokumen tidak ditemukan.
+    """
+    try:
+        document = get_document_by_id(document_id)
+
+        if document is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Dokumen dengan ID {document_id} tidak ditemukan.",
+            )
+
+        logger.info(
+            "Status dokumen %d: %s", document_id, document["status"]
+        )
+
+        return DocumentStatusResponse(**document)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "Gagal mengecek status dokumen %d: %s",
+            document_id,
+            str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Gagal mengecek status dokumen: {str(e)}",
+        ) from e
+
+
+# ── POST /api/docs/process — Kirim dokumen untuk diproses ────────
 
 
 @router.post(
