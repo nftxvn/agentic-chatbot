@@ -1,0 +1,117 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  /* ========================================================
+     LIGHT MODE (Retro Colors + Modern UI)
+     ======================================================== */
+  --bg-main: #f3e5df;         /* Arcade Cream */
+  --bg-card: rgba(255, 255, 255, 0.6); /* Glass effect */
+  --bg-sidebar: rgba(255, 255, 255, 0.8);
+  --bg-input: rgba(255, 255, 255, 0.9);
+  
+  --text-primary: #000000;    /* Ink Black */
+  --text-secondary: #333333;  /* Charcoal */
+  --text-muted: #737373;      /* Muted Gray */
+  
+  --brand-primary: #faa21f;   /* Marquee Orange */
+  --brand-hover: #e59115;
+  
+  --action-green: #128e44;    /* Buy Green */
+  --action-green-hover: #0e7336;
+  
+  --border-color: rgba(0, 0, 0, 0.08);
+  --shadow-sm: 0 4px 6px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.08);
+  
+  --red-color: #ef4444;
+  --red-bg: rgba(239, 68, 68, 0.1);
+  --yellow-color: #f59e0b;
+  --yellow-bg: rgba(245, 158, 11, 0.1);
+  
+  /* Shared Layout */
+  --sidebar-width: 260px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --transition: 0.2s ease-in-out;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* ========================================================
+       DARK MODE (Retro Colors + Modern UI)
+       ======================================================== */
+    --bg-main: #151515;       /* Carbon */
+    --bg-card: rgba(51, 51, 51, 0.6); /* Charcoal glass */
+    --bg-sidebar: rgba(51, 51, 51, 0.5); /* Charcoal glass, not solid black */
+    --bg-input: rgba(21, 21, 21, 0.8);
+    
+    --text-primary: #f3e5df;  /* Arcade Cream */
+    --text-secondary: #e5e7eb;/* Pixel Gray */
+    --text-muted: #9ca3af;
+    
+    --brand-primary: #faa21f; /* Marquee Orange */
+    --brand-hover: #ffb547;
+    
+    --action-green: #15a850;  /* Lighter Buy Green for contrast */
+    --action-green-hover: #128e44;
+    
+    --border-color: rgba(243, 229, 223, 0.1);
+    --shadow-sm: 0 4px 6px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.5);
+    
+    --red-color: #f87171;
+    --red-bg: rgba(248, 113, 113, 0.15);
+    --yellow-color: #fbbf24;
+    --yellow-bg: rgba(251, 191, 36, 0.15);
+  }
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  transition: background-color var(--transition), color var(--transition);
+}
+
+a { text-decoration: none; color: inherit; }
+button { font-family: inherit; cursor: pointer; border: none; background: none; }
+input, textarea, select { font-family: inherit; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg-main); }
+::-webkit-scrollbar-thumb { background: var(--bg-card); border-radius: 4px; border: 1px solid var(--border-color); }
+::-webkit-scrollbar-thumb:hover { background: var(--brand-primary); }
+
+/* Animations */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.fade-in { animation: fadeInUp 0.4s ease-out forwards; }
+.spin { animation: spin 1s linear infinite; }
+.skeleton { 
+  background: var(--bg-card); 
+  border-radius: var(--radius-md); 
+  animation: pulse 1.5s infinite; 
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
