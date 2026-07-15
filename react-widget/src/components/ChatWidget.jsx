@@ -4,9 +4,8 @@ import MessageBubble from './MessageBubble.jsx'
 import './ChatWidget.css'
 
 function ChatWidget() {
-  const { messages, sendMessage, isLoading, clearChat } = useStreamChat()
+  const { messages, sendMessage, isLoading } = useStreamChat()
   const [input, setInput] = useState('')
-  const [showClearConfirm, setShowClearConfirm] = useState(false)
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -50,43 +49,10 @@ function ChatWidget() {
             Online — Siap membantu
           </span>
         </div>
-        
-        {messages.length > 0 && (
-          <button 
-            className="chat-clear-btn" 
-            onClick={() => setShowClearConfirm(true)} 
-            title="Bersihkan chat"
-            type="button"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-            </svg>
-          </button>
-        )}
       </div>
 
       {/* Messages Area */}
       <div className="chat-messages">
-        {/* Clear Confirmation Overlay */}
-        {showClearConfirm && (
-          <div className="clear-confirm-overlay">
-            <div className="clear-confirm-box">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="clear-confirm-icon">
-                <path d="M3 6h18"></path>
-                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-              </svg>
-              <h3>Hapus Percakapan?</h3>
-              <p>Semua riwayat pesan ini akan dihapus secara permanen.</p>
-              <div className="clear-confirm-actions">
-                <button type="button" className="btn-cancel" onClick={() => setShowClearConfirm(false)}>Batal</button>
-                <button type="button" className="btn-delete" onClick={() => { clearChat(); setShowClearConfirm(false); }}>Ya, Hapus</button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {messages.length === 0 && (
           <div className="chat-empty">
             <div className="chat-empty-icon">
