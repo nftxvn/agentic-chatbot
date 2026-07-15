@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\ForgotPasswordController;
 use App\Http\Controllers\Api\ResetPasswordController;
+use App\Http\Controllers\Api\SettingController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -40,5 +41,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{id}/replace', [DocumentController::class, 'replace'])->name('api.documents.replace');
         Route::delete('/{id}',       [DocumentController::class, 'destroy'])->name('api.documents.destroy');
         Route::get('/{id}/pdf',      [DocumentController::class, 'servePdf'])->name('api.documents.pdf');
+    });
+
+    // Settings
+    Route::prefix('settings')->group(function () {
+        Route::get('whatsapp', [SettingController::class, 'getWhatsappSettings'])->name('api.settings.whatsapp.get');
+        Route::post('whatsapp', [SettingController::class, 'updateWhatsappSettings'])->name('api.settings.whatsapp.update');
     });
 });

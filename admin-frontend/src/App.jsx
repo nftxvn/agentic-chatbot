@@ -6,6 +6,7 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import DashboardPage from './pages/DashboardPage'
 import DocumentDetailPage from './pages/DocumentDetailPage'
+import WhatsappSettingsPage from './pages/WhatsappSettingsPage'
 
 /** Route yang hanya bisa diakses saat belum login */
 function GuestRoute({ children }) {
@@ -64,6 +65,7 @@ export default function App() {
           <Route element={<PrivateRoute><AdminLayout /></PrivateRoute>}>
             <Route path="/dashboard"          element={<DashboardPage />} />
             <Route path="/documents/:id"      element={<DocumentDetailPage />} />
+            <Route path="/settings/whatsapp"  element={<WhatsappSettingsPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
