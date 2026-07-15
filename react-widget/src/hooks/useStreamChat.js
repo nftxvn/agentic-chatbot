@@ -45,18 +45,6 @@ export function useStreamChat() {
     abortControllerRef.current = controller
 
     try {
-      // --- MOCK API SECTION (Digunakan sementara karena API Dev 1 belum siap) ---
-      const { mockChatStream } = await import('../mock/api.js');
-      for await (const data of mockChatStream(query.trim())) {
-        if (controller.signal.aborted) break;
-        if (data.type === 'chunk') {
-          setMessages((prev) => prev.map((msg) => msg.id === botMessageId ? { ...msg, content: msg.content + data.chunk } : msg))
-        } else if (data.type === 'sources') {
-          setMessages((prev) => prev.map((msg) => msg.id === botMessageId ? { ...msg, sources: data.sources } : msg))
-        }
-      }
-      
-      /* --- UNCOMMENT KODE DI BAWAH JIKA API DEV 1 SUDAH SIAP ---
       const response = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -143,7 +131,6 @@ export function useStreamChat() {
           }
         }
       }
-      --- END REAL API --- */
 
       // Mark streaming complete
       setMessages((prev) =>
@@ -173,17 +160,7 @@ export function useStreamChat() {
     }
   }, [isLoading])
 
-  const clearChat = useCallback(() => {
-    setMessages([])
-    sessionIdRef.current = generateSessionId()
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-      abortControllerRef.current = null
-      setIsLoading(false)
-    }
-  }, [])
-
-  return { messages, sendMessage, isLoading, clearChat }
+  return { messages, sendMessage, isLoading }
 }
 
 /** Generate a random session ID */
