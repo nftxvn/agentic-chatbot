@@ -101,3 +101,72 @@ def update_document_status(
             str(e),
         )
         raise
+
+
+def get_all_documents() -> list[dict[str, Any]]:
+    """
+    Mengambil daftar semua dokumen dari tabel 'documents'.
+
+    Returns:
+        List of dict, setiap dict merepresentasikan satu baris dokumen.
+    """
+    engine = get_engine()
+
+    query = text(
+        "SELECT id, original_name, file_path, status, pdf_type, "
+        "total_pages, total_chunks, created_at, updated_at "
+        "FROM documents ORDER BY created_at DESC"
+    )
+
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(query)
+            rows = result.mappings().all()
+            documents = [dict(row) for row in rows]
+            logger.info("Berhasil mengambil %d dokumen dari database", len(documents))
+            return documents
+
+    except Exception as e:
+        logger.error("Gagal mengambil daftar dokumen: %s", str(e))
+        raise
+
+
+def get_document_by_id(document_id: int) -> dict[str, Any] | None:
+    """
+    Mengambil data satu dokumen berdasarkan ID.
+
+    Args:
+        document_id: ID dokumen yang dicari.
+
+    Returns:
+        Dict berisi data dokumen, atau None jika tidak ditemukan.
+    """
+    engine = get_engine()
+
+    query = text(
+        "SELECT id, original_name, file_path, status, pdf_type, "
+        "total_pages, total_chunks, error_message, processed_at, "
+        "created_at, updated_at "
+        "FROM documents WHERE id = :document_id"
+    )
+
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(query, {"document_id": document_id})
+            row = result.mappings().fetchone()
+
+            if row is None:
+                logger.info("Dokumen %d tidak ditemukan", document_id)
+                return None
+
+            document = dict(row)
+            logger.info("Berhasil mengambil data dokumen %d", document_id)
+            return document
+
+    except Exception as e:
+        logger.error(
+            "Gagal mengambil data dokumen %d: %s",
+            document_id,
+            str(e),
+        )
+        raise
