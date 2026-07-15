@@ -98,3 +98,8 @@ react-widget/.eslintcache
 # =========================
 /venv/
 /.venv/
+
+# =========================
+# GLOBAL IGNORES
+# =========================
+node_modules/
