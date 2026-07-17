@@ -8,7 +8,7 @@ url = "http://localhost:8000/api/chat/stream"
 # Payload request
 payload = {
     "session_id": "test-sesi-lokal-1",
-    "query": "Apa syarat untuk mengajukan permohonan server baru?" # Bisa diganti dengan pertanyaan lain
+    "query": "Apa isi diktum kesatu?" # Bisa diganti dengan pertanyaan lain
 }
 
 print(f"Mengirim pertanyaan: '{payload['query']}'")
@@ -27,11 +27,17 @@ try:
         for line in response.iter_lines():
             if line:
                 data_str = line.decode('utf-8')
+                # SSE format: setiap baris diawali "data: ", harus dibuang dulu
+                if data_str.startswith("data: "):
+                    data_str = data_str[len("data: "):]
+                else:
+                    continue  # skip baris yang bukan data SSE
                 try:
                     data = json.loads(data_str)
                     if data["type"] == "chunk":
-                        # Print kata per kata
-                        sys.stdout.write(data["content"])
+                        # Encode safe agar tidak error di terminal Windows
+                        content = data["content"].encode("ascii", errors="replace").decode("ascii")
+                        sys.stdout.write(content)
                         sys.stdout.flush()
                     elif data["type"] == "done":
                         print("\n\n" + "-" * 50)

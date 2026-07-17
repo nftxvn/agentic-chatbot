@@ -1,15 +1,18 @@
 """
 Service untuk memproses file PDF.
-Mendukung PDF teks biasa, PDF hasil scan (OCR), dan campuran keduanya.
+Mendukung PDF teks biasa, PDF hasil scan (vision), dan campuran keduanya.
+Ekstraksi halaman scan menggunakan vision-language model via Ollama
+sehingga mampu memahami struktur tabel dan layout dokumen lebih baik.
 """
 
-import io
+import base64
 import logging
 from pathlib import Path
 
 import fitz  # PyMuPDF
-import pytesseract
-from PIL import Image
+import requests
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -89,38 +92,145 @@ def _extract_text_from_page(page: fitz.Page) -> str:
     return page.get_text().strip()
 
 
-def _ocr_page(page: fitz.Page, dpi: int = 300) -> str:
+def _vision_extract_page(page: fitz.Page, dpi: int = 200, retries: int = 2) -> str:
     """
-    Melakukan OCR pada satu halaman PDF menggunakan Tesseract.
+    Mengekstrak teks dari satu halaman PDF menggunakan vision-language model via Ollama.
 
-    Mengkonversi halaman ke gambar (pixmap), lalu menjalankan
-    Tesseract OCR untuk mengekstrak teks.
+    Mengkonversi halaman ke gambar (pixmap PNG), meng-encode ke base64, lalu
+    mengirimkan ke endpoint Ollama /api/generate bersama prompt ekstraksi teks.
+    Model vision mampu memahami struktur paragraf, tabel, dan layout dokumen
+    lebih baik dibandingkan Tesseract OCR konvensional.
 
     Args:
         page: Objek halaman PyMuPDF.
-        dpi: Resolusi gambar untuk OCR (default: 300 DPI).
+        dpi: Resolusi render gambar (default: 200 DPI, cukup untuk vision model).
+        retries: Jumlah maksimal percobaan ulang jika request gagal (default: 2).
 
     Returns:
-        Teks hasil OCR dari halaman.
+        Teks yang diekstrak oleh vision model, atau string kosong jika gagal total.
+        Tidak melempar exception agar proses halaman lain tetap berjalan.
     """
-    try:
-        # Konversi halaman ke pixmap dengan resolusi tinggi
-        zoom = dpi / 72  # 72 adalah DPI default PDF
-        matrix = fitz.Matrix(zoom, zoom)
-        pixmap = page.get_pixmap(matrix=matrix)
+    # Render halaman PDF ke PNG bytes lalu encode ke base64
+    zoom = dpi / 72  # 72 adalah DPI default PDF
+    matrix = fitz.Matrix(zoom, zoom)
+    pixmap = page.get_pixmap(matrix=matrix)
+    img_bytes = pixmap.tobytes("png")
+    img_base64 = base64.b64encode(img_bytes).decode("utf-8")
 
-        # Konversi pixmap ke PIL Image
-        img_data = pixmap.tobytes("png")
-        image = Image.open(io.BytesIO(img_data))
+    prompt = (
+        "Anda adalah sistem ekstraksi dokumen tingkat lanjut. Tugas Anda adalah mengekstrak seluruh teks dari gambar dokumen Standar Operasional Prosedur (SOP) ini secara akurat dan menyusunnya kembali secara ketat ke dalam format tabel Markdown.\n\n"
+        "Ikuti aturan \"cara berpikir\" ekstraksi berikut:\n"
+        "1. IDENTIFIKASI STRUKTUR: Perhatikan garis vertikal dan horizontal. Dokumen ini adalah tabel dengan kolom utama: \"No\", \"Uraian Prosedur\", \"Pelaksana\", \"Mutu Baku\", dan \"Ket\".\n"
+        "2. BACA PER BARIS, BUKAN PER GARIS LURUS: Jangan menggabungkan teks dari kolom yang berbeda (misalnya, teks 'Uraian' dengan nama jabatan di kolom 'Pelaksana').\n"
+        "3. EKSTRAKSI PENUH: Tangkap semua teks, termasuk catatan kecil di kolom \"Ket\" (Keterangan) jika ada.\n"
+        "4. FORMAT: Keluarkan hasil HANYA dalam bentuk tabel Markdown. Jangan menambahkan basa-basi."
+    )
 
-        # Jalankan OCR menggunakan Tesseract (bahasa Indonesia + Inggris)
-        text = pytesseract.image_to_string(image, lang="ind+eng")
+    payload = {
+        "model": settings.VISION_MODEL_NAME,
+        "prompt": prompt,
+        "images": [img_base64],
+        "stream": False,
+        "options": {
+            "num_ctx": 8192,      # naikkan context window, dari default 4096
+            "num_predict": 2048,  # batas token output biar teks nggak kepotong
+        },
+    }
+    url = f"{settings.OLLAMA_BASE_URL}/api/generate"
 
-        return text.strip()
+    for attempt in range(1, retries + 1):
+        try:
+            response = requests.post(url, json=payload, timeout=settings.VISION_TIMEOUT)
+            response.raise_for_status()
+            result = response.json()
+            return result.get("response", "").strip()
 
-    except Exception as e:
-        logger.error("Gagal melakukan OCR pada halaman: %s", str(e))
-        return ""
+        except requests.exceptions.RequestException as exc:
+            body = getattr(getattr(exc, "response", None), "text", "")
+            logger.warning(
+                "Percobaan %d/%d gagal memanggil vision model untuk ekstraksi halaman: %s | Body: %s",
+                attempt,
+                retries,
+                str(exc),
+                body,
+            )
+
+    logger.error(
+        "Semua percobaan (%d) gagal, halaman dilewati tanpa teks vision.", retries
+    )
+    return ""
+
+
+def _clean_text_with_llm(dirty_text: str, retries: int = 2) -> str:
+    """
+    Menggunakan LLM untuk mengoreksi typo dan merapikan teks kotor hasil OCR/Vision.
+    """
+    if not dirty_text.strip():
+        return dirty_text
+
+    prompt = (
+        "Anda adalah editor ahli dan auditor bahasa untuk dokumen Standar Operasional Prosedur (SOP) birokrasi pemerintahan Indonesia. Tugas Anda adalah memperbaiki hasil teks OCR (Optical Character Recognition) yang kotor tanpa merusak format tabel Markdown aslinya.\n\n"
+        "Aturan Koreksi Anda:\n"
+        "1. Pahami konteks kalimat birokrasi, keuangan, dan tata usaha pemerintahan (contoh: SPJ, BKU, PA/KPA, PPKD).\n"
+        "2. Koreksi halusinasi OCR yang tidak masuk akal (misal: \"Ursian\" menjadi \"Uraian\", \"Kelesekaan\" menjadi \"Kelengkapan\", \"disrap\" menjadi \"diarsip\").\n"
+        "3. JANGAN mengubah struktur tabel Markdown (simbol `|` dan `-`).\n"
+        "4. JANGAN merangkum atau memotong teks.\n\n"
+        "Berikut adalah teks OCR kotor dari sebuah tabel SOP:\n\n"
+        f"{dirty_text}\n\n"
+        "Sebelum Anda memberikan tabel yang sudah diperbaiki, Anda WAJIB menjabarkan proses berpikir Anda di dalam blok <analisis>.\n"
+        "Dalam blok tersebut, lakukan langkah berikut:\n"
+        "1. Deteksi kata-kata aneh/typo dari teks di atas.\n"
+        "2. Tentukan perbaikan yang masuk akal berdasarkan konteks tata bahasa birokrasi.\n\n"
+        "Setelah blok <analisis> selesai, berikan hasil akhir HANYA berupa tabel Markdown yang sudah bersih.\n\n"
+        "Format jawaban Anda harus seperti ini:\n"
+        "<analisis>\n"
+        "- Menemukan kata \"X\", seharusnya \"Y\" karena konteksnya adalah Z.\n"
+        "- Menemukan kata \"A\", seharusnya \"B\"...\n"
+        "</analisis>\n\n"
+        "[Tabel Markdown Bersih]"
+    )
+
+    payload = {
+        "model": settings.LLM_MODEL_NAME,
+        "prompt": prompt,
+        "stream": False,
+        "options": {
+            "num_ctx": 4096,
+            "num_predict": 2048,
+            "temperature": 0.0,  # Mematikan kreativitas agar tidak halusinasi
+            "top_p": 0.1,
+        },
+    }
+    url = f"{settings.OLLAMA_BASE_URL}/api/generate"
+
+    for attempt in range(1, retries + 1):
+        try:
+            response = requests.post(url, json=payload, timeout=120)
+            response.raise_for_status()
+            result = response.json()
+            raw_response = result.get("response", "").strip()
+            
+            # Hapus blok <analisis>...</analisis> dari output LLM
+            if "</analisis>" in raw_response:
+                clean_text = raw_response.split("</analisis>")[-1].strip()
+            else:
+                clean_text = raw_response
+                
+            # Jika LLM mengembalikan string kosong, fallback ke teks asli
+            return clean_text if clean_text else dirty_text
+
+        except requests.exceptions.RequestException as exc:
+            body = getattr(getattr(exc, "response", None), "text", "")
+            logger.warning(
+                "Percobaan %d/%d gagal memanggil LLM untuk koreksi teks: %s | Body: %s",
+                attempt,
+                retries,
+                str(exc),
+                body,
+            )
+
+    logger.error("Semua percobaan (%d) gagal, mengembalikan teks asli tanpa koreksi.", retries)
+    return dirty_text
 
 
 def extract_text(file_path: str) -> list[dict]:
@@ -128,7 +238,7 @@ def extract_text(file_path: str) -> list[dict]:
     Mengekstrak teks dari seluruh halaman PDF.
 
     Untuk halaman yang memiliki teks, menggunakan PyMuPDF langsung.
-    Untuk halaman hasil scan, menggunakan Tesseract OCR.
+    Untuk halaman hasil scan, menggunakan vision-language model via Ollama.
 
     Args:
         file_path: Path absolut ke file PDF.
@@ -159,16 +269,17 @@ def extract_text(file_path: str) -> list[dict]:
             page = doc[page_num]
             text = _extract_text_from_page(page)
 
-            # Jika teks terlalu sedikit, coba OCR
+            # Jika teks terlalu sedikit, gunakan vision model untuk ekstraksi
             if len(text) < _MIN_TEXT_LENGTH:
                 logger.info(
-                    "Halaman %d: teks minim (%d karakter), mencoba OCR...",
+                    "Halaman %d: teks minim (%d karakter), mencoba ekstraksi via vision model...",
                     page_num + 1,
                     len(text),
                 )
-                ocr_text = _ocr_page(page)
-                if ocr_text:
-                    text = ocr_text
+                vision_text = _vision_extract_page(page)
+                if vision_text:
+                    logger.info("Halaman %d: Mengoreksi typo teks hasil vision via LLM...", page_num + 1)
+                    text = _clean_text_with_llm(vision_text)
 
             if text:  # Hanya tambahkan halaman yang memiliki konten
                 pages_content.append({
@@ -190,3 +301,4 @@ def extract_text(file_path: str) -> list[dict]:
     except Exception as e:
         logger.error("Gagal mengekstrak teks dari PDF '%s': %s", file_path, str(e))
         raise
+# contoh — sesuaikan dengan struktur data aktual di pdf_processor
