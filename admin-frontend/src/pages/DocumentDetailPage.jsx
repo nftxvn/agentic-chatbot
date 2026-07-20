@@ -14,6 +14,9 @@ export default function DocumentDetailPage() {
   const [replaceFile, setReplaceFile] = useState(null)
   const [replacing, setReplacing] = useState(false)
   
+  const [chunks, setChunks] = useState([])
+  const [showChunks, setShowChunks] = useState(false)
+  
   const fetchTimeout = useRef(null)
 
   const fetchDocument = async () => {
@@ -28,6 +31,15 @@ export default function DocumentDetailPage() {
       setError(err.response?.data?.message || 'Gagal memuat detail dokumen.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchChunks = async () => {
+    try {
+      const res = await documentsApi.getChunks(id)
+      setChunks(res.chunks || [])
+    } catch (err) {
+      console.error('Gagal memuat chunks', err)
     }
   }
 
@@ -217,7 +229,7 @@ export default function DocumentDetailPage() {
           <div className={styles.card} style={{ display: 'flex', flexDirection: 'column', height: '500px', padding: 0, overflow: 'hidden' }}>
             <div className={styles.cardHeaderWithAction}>
               <h3 className={styles.cardTitle} style={{ margin: 0 }}>Pratinjau PDF</h3>
-              <a href={documentsApi.pdfUrl(id)} target="_blank" rel="noreferrer" className={styles.linkAction}>
+              <a href={documentsApi.pdfUrl(id)} target="_blank" rel="noopener" className={styles.linkAction}>
                 Buka di Tab Baru <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
               </a>
             </div>
@@ -228,6 +240,45 @@ export default function DocumentDetailPage() {
                 title={document.title}
               />
             </div>
+          </div>
+
+          {/* Card Chunks / Vektor */}
+          <div className={styles.card}>
+            <div className={styles.cardHeaderWithAction}>
+              <h3 className={styles.cardTitle} style={{ margin: 0 }}>Data Vektor ChromaDB</h3>
+              <button 
+                onClick={() => {
+                  setShowChunks(!showChunks);
+                  if (!showChunks && chunks.length === 0) fetchChunks();
+                }}
+                className={styles.btnSecondary}
+                style={{ fontSize: '12px', padding: '4px 10px' }}
+              >
+                {showChunks ? 'Sembunyikan' : 'Tampilkan Teks OCR'}
+              </button>
+            </div>
+            
+            {showChunks && (
+              <div style={{ marginTop: '16px', maxHeight: '450px', overflowY: 'auto' }}>
+                {chunks.length === 0 ? <p className={styles.emptyText}>Memuat atau tidak ada data...</p> : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {chunks.map(c => (
+                      <div key={c.id} style={{ background: 'var(--bg-main)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                          <span><strong>ID:</strong> {c.id}</span>
+                          <span style={{ background: 'var(--brand-primary)', color: '#000', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
+                            Halaman {c.metadata.page_number}
+                          </span>
+                        </div>
+                        <p style={{ fontSize: '14px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--text-primary)', lineHeight: '1.6' }}>
+                          {c.text}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Card Logs */}

@@ -38,6 +38,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/',              [DocumentController::class, 'index'])->name('api.documents.index');
         Route::post('/',             [DocumentController::class, 'upload'])->name('api.documents.upload');
         Route::get('/{id}',          [DocumentController::class, 'show'])->name('api.documents.show');
+        Route::get('/{id}/chunks',   [DocumentController::class, 'chunks'])->name('api.documents.chunks');
         Route::post('/{id}/replace', [DocumentController::class, 'replace'])->name('api.documents.replace');
         Route::delete('/{id}',       [DocumentController::class, 'destroy'])->name('api.documents.destroy');
         Route::get('/{id}/pdf',      [DocumentController::class, 'servePdf'])->name('api.documents.pdf');

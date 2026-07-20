@@ -11,6 +11,11 @@ export const documentsApi = {
     return data
   },
 
+  async getChunks(id) {
+    const { data } = await client.get(`/api/documents/${id}/chunks`)
+    return data
+  },
+
   async upload(title, pdfFile) {
     const formData = new FormData()
     formData.append('title', title)

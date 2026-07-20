@@ -202,3 +202,28 @@ async def process_document(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Gagal memproses dokumen: {str(e)}",
         ) from e
+
+
+@router.get(
+    "/{document_id}/chunks",
+    summary="Ambil daftar chunk dokumen",
+    description="Mengambil semua chunk teks yang tersimpan di ChromaDB untuk dokumen tertentu.",
+)
+async def get_document_chunks_route(
+    document_id: int,
+    _token: str = Depends(verify_token),
+) -> dict:
+    from app.services.embedding_service import get_document_chunks
+    try:
+        chunks = get_document_chunks(document_id)
+        return {
+            "document_id": document_id,
+            "total_chunks": len(chunks),
+            "chunks": chunks
+        }
+    except Exception as e:
+        logger.error("Gagal mengambil chunk dokumen %d: %s", document_id, str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Gagal mengambil chunk: {str(e)}"
+        )

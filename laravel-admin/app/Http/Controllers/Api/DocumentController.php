@@ -245,8 +245,8 @@ class DocumentController extends Controller
             'error_message'     => $document->error_message,
             'uploaded_by'       => $document->uploader?->name,
             'pdf_url'           => route('api.documents.pdf', $document->id),
-            'created_at'        => $document->created_at?->toIso8601String(),
-            'processed_at'      => $document->processed_at?->toIso8601String(),
+            'created_at'        => $document->created_at ? \Carbon\Carbon::parse($document->created_at)->toIso8601String() : null,
+            'processed_at'      => $document->processed_at ? \Carbon\Carbon::parse($document->processed_at)->toIso8601String() : null,
         ];
 
         if ($withLogs) {
@@ -256,10 +256,23 @@ class DocumentController extends Controller
                 'action_label'=> $log->action_label,
                 'action_color'=> $log->action_color,
                 'details'     => $log->details,
-                'created_at'  => $log->created_at?->toIso8601String(),
+                'created_at'  => $log->created_at ? \Carbon\Carbon::parse($log->created_at)->toIso8601String() : null,
             ])->values();
         }
 
         return $data;
+    }
+
+    /**
+     * Get document chunks from ChromaDB via AI microservice.
+     */
+    public function chunks($id)
+    {
+        $document = Document::findOrFail($id);
+        
+        $aiClient = new \App\Services\AiMicroserviceClient();
+        $chunks = $aiClient->getDocumentChunks($document->id);
+        
+        return response()->json($chunks);
     }
 }

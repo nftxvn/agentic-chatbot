@@ -109,4 +109,24 @@ class AiMicroserviceClient
             return false;
         }
     }
+
+    /**
+     * Get document chunks from ChromaDB via Python AI.
+     */
+    public function getDocumentChunks(int $documentId): array
+    {
+        try {
+            $response = Http::withToken($this->token)
+                ->timeout(30)
+                ->get("{$this->baseUrl}/api/docs/{$documentId}/chunks");
+
+            if ($response->successful()) {
+                return $response->json();
+            }
+            return [];
+        } catch (\Exception $e) {
+            Log::error('Failed to get chunks', ['error' => $e->getMessage()]);
+            return [];
+        }
+    }
 }

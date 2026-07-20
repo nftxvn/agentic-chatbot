@@ -21,7 +21,7 @@
   align-items: center;
   gap: 14px;
   padding: 18px 24px;
-  background: rgba(21, 21, 48, 0.7);
+  background: var(--bg-glass);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--border-subtle);
@@ -38,7 +38,7 @@
   background: var(--accent-gradient);
   color: #fff;
   flex-shrink: 0;
-  box-shadow: 0 4px 16px rgba(79, 143, 255, 0.25);
+  box-shadow: 0 4px 16px rgba(250, 162, 31, 0.25);
 }
 
 .chat-header-text h1 {
@@ -125,7 +125,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(10, 10, 25, 0.7);
+  background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   display: flex;
@@ -136,7 +136,7 @@
 }
 
 .clear-confirm-box {
-  background: rgba(30, 30, 63, 0.95);
+  background: var(--bg-secondary);
   border: 1px solid var(--border-glass);
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
   border-radius: 16px;
@@ -221,8 +221,8 @@
   width: 80px;
   height: 80px;
   border-radius: 24px;
-  background: rgba(79, 143, 255, 0.08);
-  border: 1px solid rgba(79, 143, 255, 0.12);
+  background: var(--banner-bg);
+  border: 1px solid var(--banner-border);
   color: var(--accent-blue);
   margin-bottom: 20px;
 }
@@ -250,7 +250,7 @@
 /* ---- Input Area ---- */
 .chat-input-area {
   padding: 16px 20px 20px;
-  background: rgba(21, 21, 48, 0.5);
+  background: var(--bg-primary);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-top: 1px solid var(--border-subtle);
@@ -261,7 +261,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  background: rgba(30, 30, 63, 0.6);
+  background: var(--bg-secondary);
   border: 1px solid var(--border-glass);
   border-radius: var(--radius-lg);
   padding: 6px 6px 6px 18px;
@@ -269,8 +269,8 @@
 }
 
 .chat-input-container:focus-within {
-  border-color: rgba(79, 143, 255, 0.35);
-  box-shadow: 0 0 0 3px rgba(79, 143, 255, 0.08), var(--shadow-glow);
+  border-color: rgba(250, 162, 31, 0.35);
+  box-shadow: 0 0 0 3px rgba(250, 162, 31, 0.08), var(--shadow-glow);
 }
 
 .chat-input {
@@ -301,7 +301,7 @@
   height: 40px;
   border-radius: 14px;
   border: none;
-  background: rgba(79, 143, 255, 0.15);
+  background: rgba(250, 162, 31, 0.15);
   color: var(--text-muted);
   cursor: not-allowed;
   transition: all var(--transition-normal);
@@ -312,12 +312,12 @@
   background: var(--accent-gradient);
   color: #fff;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(79, 143, 255, 0.3);
+  box-shadow: 0 4px 14px rgba(250, 162, 31, 0.3);
 }
 
 .chat-send-btn.active:hover {
   transform: scale(1.05);
-  box-shadow: 0 6px 20px rgba(79, 143, 255, 0.4);
+  box-shadow: 0 6px 20px rgba(250, 162, 31, 0.4);
 }
 
 .chat-send-btn.active:active {

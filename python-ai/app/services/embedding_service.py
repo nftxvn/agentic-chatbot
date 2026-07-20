@@ -241,3 +241,36 @@ def embed_and_store(document_id: int, chunks: list[dict]) -> int:
             str(e),
         )
         raise
+
+def get_document_chunks(document_id: int) -> list[dict]:
+    """
+    Mengambil semua chunk teks yang tersimpan di ChromaDB untuk dokumen tertentu.
+    
+    Args:
+        document_id: ID dokumen sumber.
+        
+    Returns:
+        List of dict berisi chunk data.
+    """
+    collection = get_chroma_collection()
+    try:
+        results = collection.get(
+            where={"document_id": document_id},
+            include=["documents", "metadatas"]
+        )
+        
+        chunks = []
+        if results and results.get("ids"):
+            for i in range(len(results["ids"])):
+                chunks.append({
+                    "id": results["ids"][i],
+                    "text": results["documents"][i],
+                    "metadata": results["metadatas"][i]
+                })
+                
+        # Urutkan berdasarkan chunk_index agar berurutan
+        chunks.sort(key=lambda x: x["metadata"].get("chunk_index", 0))
+        return chunks
+    except Exception as e:
+        logger.error("Gagal mengambil chunk dari ChromaDB (dokumen %d): %s", document_id, str(e))
+        return []

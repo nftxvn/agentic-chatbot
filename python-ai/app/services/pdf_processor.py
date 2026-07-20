@@ -113,8 +113,18 @@ def _ocr_page(page: fitz.Page, dpi: int = 300) -> str:
         img_data = pixmap.tobytes("png")
         image = Image.open(io.BytesIO(img_data))
 
-        # Jalankan OCR menggunakan Tesseract (bahasa Indonesia + Inggris)
-        text = pytesseract.image_to_string(image, lang="ind+eng")
+        # Preprocessing gambar untuk meningkatkan akurasi OCR
+        # 1. Ubah ke Grayscale
+        image = image.convert('L')
+        
+        # 2. Tingkatkan kontras
+        from PIL import ImageEnhance
+        enhancer = ImageEnhance.Contrast(image)
+        image = enhancer.enhance(1.5)
+
+        # Jalankan OCR menggunakan Tesseract dengan konfigurasi tambahan
+        custom_config = r'--oem 3 --psm 3'
+        text = pytesseract.image_to_string(image, lang="ind+eng", config=custom_config)
 
         return text.strip()
 

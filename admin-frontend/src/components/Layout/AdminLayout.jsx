@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import styles from './AdminLayout.module.css'
@@ -27,6 +28,7 @@ const NAV_ITEMS = [
 export default function AdminLayout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const [isChatOpen, setIsChatOpen] = useState(false)
 
   const handleLogout = async () => {
     await logout()
@@ -68,6 +70,17 @@ export default function AdminLayout() {
               {item.label}
             </NavLink>
           ))}
+          
+          <button
+            className={[styles.navLink, isChatOpen ? styles.navLinkActive : ''].join(' ')}
+            onClick={() => setIsChatOpen(!isChatOpen)}
+            style={{ width: '100%', textAlign: 'left', background: 'transparent' }}
+          >
+            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            Test Chat Widget
+          </button>
         </nav>
 
         {/* User section */}
@@ -87,9 +100,24 @@ export default function AdminLayout() {
       </aside>
 
       {/* ── Main ── */}
-      <main className={styles.main}>
+      <main className={`${styles.main} ${isChatOpen ? styles.mainWithChat : ''}`}>
         <Outlet />
       </main>
+
+      {/* ── Chat Panel ── */}
+      {isChatOpen && (
+        <aside className={styles.chatPanel}>
+          <div className={styles.chatHeader}>
+            <h3>Test Chatbot</h3>
+            <button onClick={() => setIsChatOpen(false)}>✕</button>
+          </div>
+          <iframe 
+            src="http://localhost:3000" 
+            className={styles.chatIframe}
+            title="Chat Widget Test"
+          />
+        </aside>
+      )}
     </div>
   )
 }

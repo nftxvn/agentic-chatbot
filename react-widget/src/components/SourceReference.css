@@ -34,8 +34,8 @@
   padding: 5px 10px;
   font-size: 11px;
   color: var(--text-secondary);
-  background: rgba(79, 143, 255, 0.06);
-  border: 1px solid rgba(79, 143, 255, 0.12);
+  background: rgba(250, 162, 31, 0.06);
+  border: 1px solid rgba(250, 162, 31, 0.12);
   border-radius: 8px;
   cursor: default;
   transition: all var(--transition-fast);
@@ -46,8 +46,8 @@
 }
 
 .source-badge:hover {
-  background: rgba(79, 143, 255, 0.12);
-  border-color: rgba(79, 143, 255, 0.22);
+  background: rgba(250, 162, 31, 0.12);
+  border-color: rgba(250, 162, 31, 0.22);
   color: var(--text-primary);
 }
 

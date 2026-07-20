@@ -23,8 +23,8 @@
   width: 30px;
   height: 30px;
   border-radius: 10px;
-  background: rgba(79, 143, 255, 0.1);
-  border: 1px solid rgba(79, 143, 255, 0.15);
+  background: rgba(250, 162, 31, 0.1);
+  border: 1px solid rgba(250, 162, 31, 0.15);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -54,7 +54,7 @@
   background: var(--user-bubble);
   color: #fff;
   border-radius: 18px 18px 4px 18px;
-  box-shadow: 0 2px 12px rgba(79, 143, 255, 0.2);
+  box-shadow: 0 2px 12px rgba(250, 162, 31, 0.2);
 }
 
 .message-bubble--bot {

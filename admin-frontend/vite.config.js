@@ -8,12 +8,12 @@ export default defineConfig({
     proxy: {
       // Proxy API requests ke Laravel backend
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8080',
         changeOrigin: true,
       },
       // Proxy Sanctum CSRF cookie endpoint
       '/sanctum': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8080',
         changeOrigin: true,
       },
     },
