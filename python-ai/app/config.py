@@ -21,6 +21,8 @@ class Settings:
     # --- LLM Configuration ---
     LLM_MODEL_NAME: str = os.getenv("LLM_MODEL_NAME", "qwen2.5:3b")
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    VISION_MODEL_NAME: str = os.getenv("VISION_MODEL_NAME", "qwen2.5vl")
+    VISION_TIMEOUT: int = int(os.getenv("VISION_TIMEOUT", "60"))
 
     # --- Embedding ---
     EMBEDDING_MODEL_NAME: str = os.getenv(

@@ -55,7 +55,7 @@ def test_health():
             return False
     except requests.exceptions.ConnectionError:
         log_result("Health check", False, "Server tidak berjalan di port 8000!")
-        print("\n  ⚠️  Jalankan dulu: uvicorn app.main:app --reload --port 8000")
+        print("\n  [!] Jalankan dulu: uvicorn app.main:app --reload --port 8000")
         return False
 
 
@@ -247,7 +247,7 @@ if __name__ == "__main__":
 
     # Cek server dulu
     if not test_health():
-        print("\n❌ Server tidak aktif. Jalankan dulu:")
+        print("\n[!] Server tidak aktif. Jalankan dulu:")
         print("   cd python-ai")
         print("   uvicorn app.main:app --reload --port 8000")
         sys.exit(1)
