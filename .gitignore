@@ -43,6 +43,8 @@ python-ai/chromadb/
 python-ai/uploads/
 python-ai/*.db
 python-ai/*.sqlite3
+python-ai/hasil
+python-ai/test_files
 
 # Celery
 python-ai/celerybeat-schedule

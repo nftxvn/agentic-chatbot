@@ -21,14 +21,14 @@
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 0px;
   padding: 24px 20px;
   border-bottom: 1px solid var(--border-color);
 }
 
 .brandIcon {
   width: 40px; height: 40px;
-  border-radius: var(--radius-sm);
+  border-radius: 0px;
   background: var(--brand-primary);
   display: flex; align-items: center; justify-content: center;
   color: #000;
@@ -53,7 +53,7 @@
   padding: 20px 12px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0px;
 }
 .navSection {
   font-size: 11px;
@@ -67,9 +67,9 @@
 .navLink {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0px;
   padding: 10px 12px;
-  border-radius: var(--radius-sm);
+  border-radius: 0px;
   font-size: 14px;
   font-weight: 500;
   color: var(--text-secondary);
@@ -83,7 +83,7 @@
   left: 0; top: 0;
   height: 100%; width: 3px;
   background: var(--brand-primary);
-  border-radius: 0 4px 4px 0;
+  border-radius: 0px;
   transform: scaleY(0);
   transition: transform var(--transition);
 }
@@ -102,13 +102,13 @@
 .userSection {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 0px;
   padding: 20px;
   border-top: 1px solid var(--border-color);
 }
 .avatar {
   width: 36px; height: 36px;
-  border-radius: var(--radius-sm);
+  border-radius: 0px;
   background: var(--brand-primary);
   display: flex; align-items: center; justify-content: center;
   font-size: 14px; font-weight: 700;
@@ -134,7 +134,7 @@
 .logoutBtn {
   color: var(--text-muted);
   padding: 6px;
-  border-radius: var(--radius-sm);
+  border-radius: 0px;
   transition: all var(--transition);
   flex-shrink: 0;
 }

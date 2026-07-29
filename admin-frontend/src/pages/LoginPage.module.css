@@ -2,11 +2,12 @@
   min-height: 100vh;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   position: relative;
   overflow: hidden;
-  padding: 20px;
-}
+  padding: 0px;
+
+  margin: 0px;}
 
 @keyframes pulseRotate {
   0% { transform: translate(-50%, -50%) scale(1) rotate(0deg); }
@@ -25,19 +26,24 @@
   animation: pulseRotate 15s ease-in-out infinite;
   z-index: 0;
   opacity: 0.25;
-  border-radius: 50%;
+  border-radius: 0px;
   filter: blur(50px);
 }
 
 .card {
   width: 100%;
-  max-width: 420px;
+  max-width: 500px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   background: var(--bg-card);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  padding: 40px;
+  border-right: none;
+  border-radius: 0px;
+  padding: 60px;
   position: relative;
   z-index: 10;
   box-shadow: var(--shadow-lg);
@@ -52,7 +58,7 @@
   width: 56px;
   height: 56px;
   background: var(--brand-primary);
-  border-radius: var(--radius-sm);
+  border-radius: 0px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -78,7 +84,7 @@
   background: var(--red-bg);
   color: var(--red-color);
   padding: 12px 16px;
-  border-radius: var(--radius-sm);
+  border-radius: 0px;
   font-size: 14px;
   margin-bottom: 24px;
   border: 1px solid var(--border-color);
@@ -106,7 +112,7 @@ input[type="text"] {
   width: 100%;
   background: var(--bg-input);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  border-radius: 0px;
   padding: 12px 16px;
   color: var(--text-primary);
   font-size: 15px;
@@ -148,7 +154,7 @@ input:disabled {
 .checkboxWrapper {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0px;
   font-size: 14px;
   color: var(--text-secondary);
   cursor: pointer;
@@ -163,7 +169,7 @@ input:disabled {
   width: 18px;
   height: 18px;
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: 0px;
   position: relative;
   transition: all var(--transition);
 }
@@ -203,7 +209,7 @@ input:disabled {
   color: white;
   font-weight: 600;
   font-size: 15px;
-  border-radius: var(--radius-sm);
+  border-radius: 0px;
   transition: all var(--transition);
   display: flex;
   align-items: center;
@@ -227,6 +233,6 @@ input:disabled {
   height: 20px;
   border: 2px solid rgba(255,255,255,0.3);
   border-top-color: white;
-  border-radius: 50%;
+  border-radius: 0px;
   animation: spin 0.8s linear infinite;
 }

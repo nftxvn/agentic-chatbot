@@ -30,9 +30,9 @@
   --banner-bg: rgba(250, 162, 31, 0.15);
   --banner-border: rgba(250, 162, 31, 0.3);
   --banner-text: #faa21f;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 20px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
   --radius-xl: 24px;
   --transition-fast: 150ms ease;
   --transition-normal: 250ms ease;
@@ -84,7 +84,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 0px;
   padding: 10px 16px;
   background: var(--banner-bg);
   border-bottom: 1px solid var(--banner-border);
@@ -113,7 +113,7 @@ body {
 
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.08);
-  border-radius: 3px;
+  border-radius: 0px;
 }
 
 ::-webkit-scrollbar-thumb:hover {

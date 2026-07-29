@@ -4,7 +4,7 @@
 
 .message-row {
   display: flex;
-  gap: 10px;
+  gap: 0px;
   max-width: 88%;
   animation: fadeInMsg 0.3s ease;
 }
@@ -22,7 +22,7 @@
 .message-avatar {
   width: 30px;
   height: 30px;
-  border-radius: 10px;
+  border-radius: 0px;
   background: rgba(250, 162, 31, 0.1);
   border: 1px solid rgba(250, 162, 31, 0.15);
   display: flex;
@@ -37,7 +37,7 @@
 .message-content-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0px;
   min-width: 0;
 }
 
@@ -53,14 +53,14 @@
 .message-bubble--user {
   background: var(--user-bubble);
   color: #fff;
-  border-radius: 18px 18px 4px 18px;
+  border-radius: 0px;
   box-shadow: 0 2px 12px rgba(250, 162, 31, 0.2);
 }
 
 .message-bubble--bot {
   background: var(--bot-bubble);
   color: var(--text-primary);
-  border-radius: 18px 18px 18px 4px;
+  border-radius: 0px;
   border: 1px solid var(--border-subtle);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -75,14 +75,14 @@
 .typing-indicator {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 0px;
   padding: 4px 2px;
 }
 
 .typing-dot {
   width: 7px;
   height: 7px;
-  border-radius: 50%;
+  border-radius: 0px;
   background: var(--text-muted);
   animation: typingBounce 1.4s ease-in-out infinite;
 }

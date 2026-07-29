@@ -1,7 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { documentsApi } from '../api/documents'
+import { categoriesApi } from '../api/categories'
 import styles from './DashboardPage.module.css'
+import ConfirmModal from '../components/ConfirmModal'
 
 export default function DashboardPage() {
   const [data, setData] = useState({ documents: [], stats: {}, meta: {} })
@@ -12,9 +14,19 @@ export default function DashboardPage() {
   const [showModal, setShowModal] = useState(false)
   const [uploadTitle, setUploadTitle] = useState('')
   const [uploadFile, setUploadFile] = useState(null)
+  const [uploadCategoryId, setUploadCategoryId] = useState('')
   const [uploading, setUploading] = useState(false)
+  
+  // Delete Confirmation state
+  const [deleteTarget, setDeleteTarget] = useState(null)
+
+  // Categories
+  const [categories, setCategories] = useState([])
 
   const fetchTimeout = useRef(null)
+  const statsGridRef = useRef(null)
+  const modalRef = useRef(null)
+  const headerRef = useRef(null)
 
   const fetchData = async (page = 1) => {
     try {
@@ -32,18 +44,61 @@ export default function DashboardPage() {
     }
   }
 
+  const fetchCategories = async () => {
+    try {
+      const res = await categoriesApi.list()
+      setCategories(res.data)
+      if (res.data && res.data.length > 0) {
+        setUploadCategoryId(res.data[0].id)
+      }
+    } catch (err) {
+      console.error('Failed to load categories', err)
+    }
+  }
+
   useEffect(() => {
     fetchData()
+    fetchCategories()
     return () => clearTimeout(fetchTimeout.current)
   }, [])
 
+  useLayoutEffect(() => {
+    if (headerRef.current && window.gsap) {
+      window.gsap.fromTo(
+        headerRef.current.children,
+        { opacity: 0, x: -20 },
+        { opacity: 1, x: 0, duration: 0.6, stagger: 0.1, ease: 'power2.out', clearProps: 'all' }
+      )
+    }
+    
+    if (!loading && statsGridRef.current && window.gsap) {
+      const cards = statsGridRef.current.children
+      
+      window.gsap.fromTo(
+        cards,
+        { opacity: 0, y: -20 },
+        { opacity: 1, y: 0, duration: 0.6, stagger: 0.05, ease: 'power2.out', clearProps: 'all' }
+      )
+    }
+  }, [loading])
+
+  useEffect(() => {
+    if (showModal && modalRef.current && window.gsap) {
+      window.gsap.fromTo(
+        modalRef.current,
+        { opacity: 0, scale: 0.9, y: 30 },
+        { opacity: 1, scale: 1, y: 0, duration: 0.4, ease: 'power2.inOut' }
+      )
+    }
+  }, [showModal])
+
   const handleUploadSubmit = async (e) => {
     e.preventDefault()
-    if (!uploadFile || !uploadTitle) return
+    if (!uploadFile || !uploadTitle || !uploadCategoryId) return
     
     setUploading(true)
     try {
-      await documentsApi.upload(uploadTitle, uploadFile)
+      await documentsApi.upload(uploadTitle, uploadFile, uploadCategoryId)
       setShowModal(false)
       setUploadTitle('')
       setUploadFile(null)
@@ -55,20 +110,24 @@ export default function DashboardPage() {
     }
   }
 
-  const handleDelete = async (id, title) => {
-    if (!window.confirm(`Yakin ingin menghapus dokumen "${title}"?`)) return
+  const confirmDelete = async () => {
+    if (!deleteTarget) return
     
     try {
-      await documentsApi.destroy(id)
+      await documentsApi.destroy(deleteTarget.id)
       fetchData(data.meta?.current_page || 1)
     } catch (err) {
       alert(err.response?.data?.message || 'Gagal menghapus dokumen.')
+    } finally {
+      setDeleteTarget(null)
     }
   }
 
-  const formatDate = (isoString) => {
-    if (!isoString) return '-'
-    return new Date(isoString).toLocaleDateString('id-ID', {
+  const formatDate = (dateString) => {
+    if (!dateString) return '-'
+    // Hapus 'Z' atau offset agar browser menterjemahkannya langsung sebagai waktu lokal
+    const localStr = dateString.replace('Z', '').replace('+00:00', '')
+    return new Date(localStr).toLocaleDateString('id-ID', {
       day: '2-digit', month: 'short', year: 'numeric',
       hour: '2-digit', minute: '2-digit'
     })
@@ -85,10 +144,10 @@ export default function DashboardPage() {
 
   return (
     <>
-      <div className={`fade-in ${styles.container}`}>
-        <div className={styles.header}>
-        <div>
-          <h1 className={styles.title}>Manajemen Dokumen</h1>
+      <div className={styles.container}>
+      <div className={styles.header}>
+        <div ref={headerRef}>
+          <h1 className={styles.title}>MANAJEMEN DOKUMEN</h1>
           <p className={styles.subtitle}>Kelola dokumen dasar pengetahuan untuk AI Assistant</p>
         </div>
         <button className={styles.primaryBtn} onClick={() => setShowModal(true)}>
@@ -99,9 +158,9 @@ export default function DashboardPage() {
 
       {error && <div className={styles.alert}>{error}</div>}
 
-      <div className={styles.statsGrid}>
+      <div className={styles.statsGrid} ref={statsGridRef}>
         <div className={styles.statCard}>
-          <div className={styles.statIcon} style={{ background: 'var(--brand-primary)' }}>
+          <div className={`${styles.statIcon} ${styles.statIconTotal}`}>
             <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
           </div>
           <div>
@@ -112,7 +171,7 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className={styles.statCard}>
-          <div className={styles.statIcon} style={{ background: 'var(--action-green)' }}>
+          <div className={`${styles.statIcon} ${styles.statIconSuccess}`}>
             <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
           </div>
           <div>
@@ -123,7 +182,7 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className={styles.statCard}>
-          <div className={styles.statIcon} style={{ background: 'var(--yellow-color)' }}>
+          <div className={`${styles.statIcon} ${styles.statIconProcessing}`}>
             <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
           </div>
           <div>
@@ -134,7 +193,7 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className={styles.statCard}>
-          <div className={styles.statIcon} style={{ background: 'var(--red-color)' }}>
+          <div className={`${styles.statIcon} ${styles.statIconFailed}`}>
             <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
           </div>
           <div>
@@ -154,7 +213,7 @@ export default function DashboardPage() {
                 <th>Nama Dokumen</th>
                 <th>File Asli</th>
                 <th>Status</th>
-                <th>Tipe PDF</th>
+                <th>Kategori</th>
                 <th>Chunks</th>
                 <th>Diunggah</th>
                 <th align="right">Aksi</th>
@@ -190,7 +249,11 @@ export default function DashboardPage() {
                         {doc.status_label}
                       </span>
                     </td>
-                    <td>{doc.pdf_type_label}</td>
+                    <td>
+                      <span className={styles.badge} style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
+                        {doc.category_name}
+                      </span>
+                    </td>
                     <td>{doc.total_chunks || '-'}</td>
                     <td style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
                       {formatDate(doc.created_at)}
@@ -198,7 +261,7 @@ export default function DashboardPage() {
                     <td align="right">
                       <div className={styles.actionGroup}>
                         <Link to={`/documents/${doc.id}`} className={styles.btnSm}>Lihat</Link>
-                        <button onClick={() => handleDelete(doc.id, doc.title)} className={`${styles.btnSm} ${styles.btnDanger}`}>Hapus</button>
+                        <button onClick={() => setDeleteTarget(doc)} className={`${styles.btnSm} ${styles.btnDanger}`}>Hapus</button>
                       </div>
                     </td>
                   </tr>
@@ -235,7 +298,7 @@ export default function DashboardPage() {
       {/* Upload Modal */}
       {showModal && (
         <div className={styles.modalOverlay} onClick={(e) => { if (e.target === e.currentTarget) setShowModal(false) }}>
-          <div className={`fade-in ${styles.modal}`}>
+          <div className={styles.modal} ref={modalRef}>
             <div className={styles.modalHeader}>
               <h3 className={styles.modalTitle}>Unggah Dokumen Baru</h3>
               <button className={styles.closeBtn} onClick={() => setShowModal(false)}>
@@ -254,6 +317,20 @@ export default function DashboardPage() {
                     required
                     disabled={uploading}
                   />
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Kategori Dokumen / AI Prompt</label>
+                  <select
+                    value={uploadCategoryId}
+                    onChange={e => setUploadCategoryId(e.target.value)}
+                    required
+                    disabled={uploading}
+                    className={styles.select}
+                  >
+                    {categories.map(cat => (
+                      <option key={cat.id} value={cat.id}>{cat.name}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className={styles.formGroup}>
                   <label>File PDF</label>
@@ -277,6 +354,15 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      <ConfirmModal 
+        isOpen={!!deleteTarget}
+        title="Hapus Dokumen"
+        message={`Yakin ingin menghapus dokumen "${deleteTarget?.title}"?`}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+        confirmText="Hapus"
+      />
     </>
   )
 }

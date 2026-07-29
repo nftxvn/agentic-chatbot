@@ -5,6 +5,7 @@ import LoginPage from './pages/LoginPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import DashboardPage from './pages/DashboardPage'
+import CategoriesPage from './pages/CategoriesPage'
 import DocumentDetailPage from './pages/DocumentDetailPage'
 import WhatsappSettingsPage from './pages/WhatsappSettingsPage'
 
@@ -42,10 +43,15 @@ function AppLoader() {
   )
 }
 
+import { ThemeProvider } from './context/ThemeContext'
+import ThemeToggle from './components/ThemeToggle'
+
 export default function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
+    <ThemeProvider>
+      <AuthProvider>
+        <ThemeToggle className="theme-toggle-floating" />
+        <BrowserRouter>
         <Routes>
           {/* Redirect root */}
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -64,11 +70,13 @@ export default function App() {
           {/* Protected routes dengan AdminLayout */}
           <Route element={<PrivateRoute><AdminLayout /></PrivateRoute>}>
             <Route path="/dashboard"          element={<DashboardPage />} />
+            <Route path="/categories"         element={<CategoriesPage />} />
             <Route path="/documents/:id"      element={<DocumentDetailPage />} />
             <Route path="/settings/whatsapp"  element={<WhatsappSettingsPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
     </AuthProvider>
+    </ThemeProvider>
   )
 }

@@ -62,13 +62,14 @@ export default function WhatsappSettingsPage() {
     }
   }
 
-  if (loading) return <div className={styles.container}>Loading settings...</div>
 
   return (
     <div className={styles.container}>
       <div className={styles.header}>
-        <h1>Pengaturan WhatsApp</h1>
-        <p>Konfigurasi endpoint dan kredensial WhatsApp Business API Anda.</p>
+        <div>
+          <h1 className={styles.title}>PENGATURAN WHATSAPP</h1>
+          <p className={styles.subtitle}>Konfigurasi endpoint dan kredensial WhatsApp Business API Anda.</p>
+        </div>
       </div>
 
       <div className={styles.card}>
@@ -153,6 +154,13 @@ export default function WhatsappSettingsPage() {
           {statusMsg && (
             <div className={`${styles.statusMessage} ${statusMsg.type === 'success' ? styles.statusSuccess : styles.statusError}`}>
               {statusMsg.text}
+            </div>
+          )}
+          
+          {loading && (
+            <div style={{ marginTop: '20px' }}>
+              <div className="skeleton" style={{ height: '40px', width: '100%', marginBottom: '10px' }}></div>
+              <div className="skeleton" style={{ height: '40px', width: '100%' }}></div>
             </div>
           )}
         </form>
