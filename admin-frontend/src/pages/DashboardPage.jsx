@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import { Link } from 'react-router-dom'
+import gsap from 'gsap'
 import { documentsApi } from '../api/documents'
 import { categoriesApi } from '../api/categories'
 import ConfirmModal from '../components/ConfirmModal'
+import { addAppNotification } from '../utils/notifications'
 
 export default function DashboardPage() {
   const [data, setData] = useState({ documents: [], stats: {}, meta: {} })
@@ -24,6 +26,7 @@ export default function DashboardPage() {
   const headerRef = useRef(null)
 
   const fetchData = async (page = 1) => {
+    const startTime = Date.now()
     try {
       const res = await documentsApi.list(page)
       setData(res.data)
@@ -33,7 +36,8 @@ export default function DashboardPage() {
     } catch (err) {
       setError(err.response?.data?.message || 'Gagal memuat data dokumen.')
     } finally {
-      setLoading(false)
+      const elapsed = Date.now() - startTime
+      setTimeout(() => setLoading(false), Math.max(0, 350 - elapsed))
     }
   }
 
@@ -56,26 +60,26 @@ export default function DashboardPage() {
   }, [])
 
   useLayoutEffect(() => {
-    if (headerRef.current && window.gsap) {
-      window.gsap.fromTo(
+    if (headerRef.current) {
+      gsap.fromTo(
         headerRef.current.children,
         { opacity: 0, x: -20 },
         { opacity: 1, x: 0, duration: 0.6, stagger: 0.1, ease: 'power2.out', clearProps: 'all' }
       )
     }
-    if (!loading && statsGridRef.current && window.gsap) {
+    if (!loading && statsGridRef.current) {
       const cards = statsGridRef.current.children
-      window.gsap.fromTo(
+      gsap.fromTo(
         cards,
-        { opacity: 0, y: -20 },
-        { opacity: 1, y: 0, duration: 0.6, stagger: 0.05, ease: 'power2.out', clearProps: 'all' }
+        { opacity: 0, scale: 0.98 },
+        { opacity: 1, scale: 1, duration: 0.4, stagger: 0.05, ease: 'power2.out', clearProps: 'all' }
       )
     }
   }, [loading])
 
   useEffect(() => {
-    if (showModal && modalRef.current && window.gsap) {
-      window.gsap.fromTo(
+    if (showModal && modalRef.current) {
+      gsap.fromTo(
         modalRef.current,
         { opacity: 0, scale: 0.9, y: 30 },
         { opacity: 1, scale: 1, y: 0, duration: 0.4, ease: 'power2.inOut' }
@@ -89,6 +93,11 @@ export default function DashboardPage() {
     setUploading(true)
     try {
       await documentsApi.upload(uploadTitle, uploadFile, uploadCategoryId)
+      addAppNotification({
+        title: 'Dokumen Baru',
+        message: `Anda baru saja mengunggah dokumen "${uploadTitle}"`,
+        type: 'info',
+      })
       setShowModal(false)
       setUploadTitle('')
       setUploadFile(null)
@@ -102,8 +111,14 @@ export default function DashboardPage() {
 
   const confirmDelete = async () => {
     if (!deleteTarget) return
+    const docTitle = deleteTarget.title || deleteTarget.original_filename || 'Dokumen'
     try {
       await documentsApi.destroy(deleteTarget.id)
+      addAppNotification({
+        title: 'Dokumen Dihapus',
+        message: `Anda baru saja menghapus dokumen "${docTitle}"`,
+        type: 'warning',
+      })
       fetchData(data.meta?.current_page || 1)
     } catch (err) {
       alert(err.response?.data?.message || 'Gagal menghapus dokumen.')
@@ -131,12 +146,11 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6 sm:space-y-8">
       {/* Top Banner & Action */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm">
         <div ref={headerRef}>
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-sky-500" />
             <h1 className="text-2xl font-black text-[var(--text-primary)] tracking-tight">MANAJEMEN DOKUMEN RAG</h1>
           </div>
           <p className="text-sm text-[var(--text-secondary)] mt-1">
@@ -144,7 +158,7 @@ export default function DashboardPage() {
           </p>
         </div>
         <button
-          className="px-5 py-3 rounded-xl bg-gradient-to-r from-sky-500 via-blue-600 to-blue-700 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-sky-500/25 transition-all duration-200 hover:scale-[1.02] shrink-0"
+          className="px-5 py-3 rounded-xl bg-gradient-to-r from-sky-500 via-sky-500 to-sky-300 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-sky-500/25 transition-all duration-200 hover:scale-[1.02] shrink-0"
           onClick={() => setShowModal(true)}
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -162,7 +176,7 @@ export default function DashboardPage() {
 
       {/* Stats Cards */}
       <div
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5"
+        className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5"
         ref={statsGridRef}
       >
         {[
@@ -357,12 +371,21 @@ export default function DashboardPage() {
                     value={uploadCategoryId}
                     onChange={e => setUploadCategoryId(e.target.value)}
                     required
-                    disabled={uploading}
+                    disabled={uploading || categories.length === 0}
                   >
-                    {categories.map(cat => (
-                      <option key={cat.id} value={cat.id}>{cat.name}</option>
-                    ))}
+                    {categories.length === 0 ? (
+                      <option value="" disabled>-- Kategori kosong / Tidak ada --</option>
+                    ) : (
+                      categories.map(cat => (
+                        <option key={cat.id} value={cat.id}>{cat.name}</option>
+                      ))
+                    )}
                   </select>
+                  {categories.length === 0 && (
+                    <p className="text-xs text-amber-500 font-semibold mt-1.5 flex items-center gap-1">
+                      ⚠️ Kategori AI masih kosong. Silakan buat kategori baru terlebih dahulu di menu Kategori AI.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">File PDF Dokumen</label>
@@ -389,7 +412,7 @@ export default function DashboardPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-sm shadow-md transition-all disabled:opacity-50"
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 via-sky-500 to-sky-100 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white font-bold text-sm shadow-lg shadow-sky-500/25 transition-all disabled:opacity-50"
                   disabled={uploading || !uploadTitle || !uploadFile}
                 >
                   {uploading ? 'Mengunggah & Memproses...' : 'Unggah Dokumen'}

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
+import gsap from 'gsap'
 import { documentsApi } from '../api/documents'
 import ConfirmModal from '../components/ConfirmModal'
 
@@ -76,23 +77,21 @@ export default function DocumentDetailPage() {
       const lines = timelineRef.current.querySelectorAll('.gsap-timeline-line')
       const icons = timelineRef.current.querySelectorAll('.gsap-timeline-icon')
 
-      if (window.gsap) {
-        window.gsap.fromTo(items,
-          { opacity: 0, y: 20 },
-          { opacity: 1, y: 0, duration: 0.4, stagger: 0.1, ease: 'power2.out' }
+      gsap.fromTo(items,
+        { opacity: 0, y: 20 },
+        { opacity: 1, y: 0, duration: 0.4, stagger: 0.1, ease: 'power2.out' }
+      )
+      if (lines.length) {
+        gsap.fromTo(lines,
+          { height: '0%' },
+          { height: '100%', duration: 0.5, stagger: 0.1, delay: 0.2, ease: 'power1.inOut' }
         )
-        if (lines.length) {
-          window.gsap.fromTo(lines,
-            { height: '0%' },
-            { height: '100%', duration: 0.5, stagger: 0.1, delay: 0.2, ease: 'power1.inOut' }
-          )
-        }
-        if (icons.length) {
-          window.gsap.fromTo(icons,
-            { scale: 0 },
-            { scale: 1, duration: 0.3, stagger: 0.1, ease: 'back.out(1.5)' }
-          )
-        }
+      }
+      if (icons.length) {
+        gsap.fromTo(icons,
+          { scale: 0 },
+          { scale: 1, duration: 0.3, stagger: 0.1, ease: 'back.out(1.5)' }
+        )
       }
     }
   }, [document?.logs])
@@ -232,11 +231,62 @@ export default function DocumentDetailPage() {
 
   if (loading) {
     return (
-      <div className="p-8 max-w-7xl mx-auto space-y-6">
-        <div className="skeleton h-12 w-64 rounded-2xl" />
-        <div className="grid grid-cols-2 gap-6">
-          <div className="skeleton h-96 rounded-2xl" />
-          <div className="skeleton h-96 rounded-2xl" />
+      <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
+        {/* Top Header Skeleton */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm">
+          <div className="flex items-center gap-4">
+            <div className="skeleton w-10 h-10 rounded-xl" />
+            <div className="space-y-2">
+              <div className="skeleton h-6 w-64 rounded-lg" />
+              <div className="skeleton h-4 w-36 rounded-md" />
+            </div>
+          </div>
+          <div className="skeleton h-8 w-32 rounded-full" />
+        </div>
+
+        {/* Two-Column Grid Skeleton */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 border border-[var(--border-color)] rounded-2xl p-6 bg-[var(--bg-card)] shadow-sm">
+          {/* Left Column Skeleton */}
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <div className="skeleton h-5 w-32 rounded-md" />
+              <div className="skeleton h-4 w-28 rounded-md" />
+            </div>
+            <div className="skeleton h-[480px] w-full rounded-xl" />
+            <div className="flex justify-between items-center pt-2">
+              <div className="skeleton h-5 w-48 rounded-md" />
+              <div className="skeleton h-8 w-40 rounded-lg" />
+            </div>
+            <div className="space-y-3">
+              <div className="skeleton h-24 w-full rounded-xl" />
+              <div className="skeleton h-24 w-full rounded-xl" />
+            </div>
+          </div>
+
+          {/* Right Column Skeleton */}
+          <div className="space-y-6 divide-y divide-[var(--border-color)]">
+            <div className="space-y-4">
+              <div className="skeleton h-5 w-44 rounded-md" />
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="flex justify-between items-center py-1">
+                  <div className="skeleton h-4 w-28 rounded-md" />
+                  <div className="skeleton h-4 w-36 rounded-md" />
+                </div>
+              ))}
+            </div>
+            <div className="pt-6 space-y-3">
+              <div className="flex justify-between">
+                <div className="skeleton h-4 w-36 rounded-md" />
+                <div className="skeleton h-4 w-20 rounded-md" />
+              </div>
+              <div className="skeleton h-3 w-full rounded-full" />
+            </div>
+            <div className="pt-6 space-y-3">
+              <div className="skeleton h-5 w-32 rounded-md" />
+              <div className="skeleton h-10 w-full rounded-xl" />
+              <div className="skeleton h-10 w-full rounded-xl" />
+            </div>
+          </div>
         </div>
       </div>
     )
@@ -244,7 +294,7 @@ export default function DocumentDetailPage() {
 
   if (error || !document) {
     return (
-      <div className="p-8 max-w-xl mx-auto space-y-4">
+      <div className="p-4 sm:p-6 lg:p-8 max-w-xl mx-auto space-y-4">
         <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-500 rounded-2xl text-sm font-medium">
           {error || 'Dokumen tidak ditemukan'}
         </div>
@@ -258,7 +308,7 @@ export default function DocumentDetailPage() {
   const statusBadge = getStatusBadge(document.status)
 
   return (
-    <div className="p-8 max-w-[1600px] mx-auto space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto space-y-6">
       {/* Sticky Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm">
         <div className="flex items-center gap-4">
@@ -303,7 +353,7 @@ export default function DocumentDetailPage() {
           {/* PDF Viewer Section */}
           <div className="p-6 flex flex-col h-[520px]">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider">Pratinjau PDF</h3>
+              <h2 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider">Pratinjau PDF</h2>
               <a
                 href={`${documentsApi.pdfUrl(id)}?t=${pdfTimestamp}`}
                 target="_blank"
@@ -328,7 +378,7 @@ export default function DocumentDetailPage() {
           {/* ChromaDB Chunks */}
           <div className="p-6">
             <div className="flex justify-between items-center">
-              <h3 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider">ChromaDB Vector Chunks</h3>
+              <h2 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider">ChromaDB Vector Chunks</h2>
               <button
                 onClick={() => {
                   setShowChunks(!showChunks)
@@ -367,7 +417,7 @@ export default function DocumentDetailPage() {
 
           {/* Timeline Logs */}
           <div className="p-6 flex-1 flex flex-col">
-            <h3 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider mb-5">Riwayat Pemrosesan Dokumen</h3>
+            <h2 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider mb-5">Riwayat Pemrosesan Dokumen</h2>
             <div className="space-y-6 overflow-y-auto flex-1 pr-2" ref={timelineRef}>
               {document.logs && document.logs.length > 0 ? (
                 document.logs.map((log, index) => (
@@ -380,20 +430,24 @@ export default function DocumentDetailPage() {
                         {getLogIcon(log.action)}
                       </svg>
                     </div>
-                    {index !== document.logs.length - 1 && (
-                      <div className="absolute left-[13px] top-7 bottom-0 w-0.5 bg-[var(--border-color)] z-[1]" />
+                    {index < document.logs.length - 1 && (
+                      <div className="absolute left-3.5 top-7 w-0.5 bottom-0 bg-[var(--border-color)] gsap-timeline-line" />
                     )}
-                    <div className="flex-1 pb-4 gsap-timeline-content">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-xs font-bold text-[var(--text-primary)]">{log.action_label}</span>
-                        <span className="text-[11px] text-[var(--text-muted)]">{formatDate(log.created_at)}</span>
+                    <div className="flex-1 pb-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-[var(--text-primary)]">{log.action_label || log.action}</span>
+                        <span className="text-[10px] text-[var(--text-muted)]">{formatDate(log.created_at)}</span>
                       </div>
-                      <p className="text-xs text-[var(--text-secondary)] leading-relaxed">{log.details}</p>
+                      {log.detail && (
+                        <p className="text-xs text-[var(--text-secondary)] mt-1 font-mono bg-[var(--bg-input)] p-2 rounded-lg border border-[var(--border-color)]">
+                          {log.detail}
+                        </p>
+                      )}
                     </div>
                   </div>
                 ))
               ) : (
-                <p className="text-xs text-[var(--text-muted)] italic text-center py-4">Belum ada riwayat pemrosesan.</p>
+                <p className="text-xs text-[var(--text-muted)] italic text-center py-4">Belum ada log aktivitas.</p>
               )}
             </div>
           </div>
@@ -412,7 +466,7 @@ export default function DocumentDetailPage() {
 
           {/* Info Details */}
           <div className="p-6 space-y-4">
-            <h3 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider mb-2">Informasi Dokumen</h3>
+            <h2 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider mb-2">Informasi Dokumen</h2>
 
             {[
               { label: 'File Asli', value: document.original_filename },
@@ -482,7 +536,7 @@ export default function DocumentDetailPage() {
 
           {/* Replace PDF File */}
           <div className="p-6 space-y-4">
-            <h3 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider">Ganti File PDF</h3>
+            <h2 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider">Ganti File PDF</h2>
             <p className="text-xs text-[var(--text-secondary)]">
               Mengganti file akan menghapus indexing lama dan mengulang proses OCR & RAG.
             </p>
@@ -506,7 +560,7 @@ export default function DocumentDetailPage() {
 
           {/* Danger Zone */}
           <div className="p-6 bg-red-500/5 space-y-4">
-            <h3 className="text-sm font-bold text-red-500 uppercase tracking-wider">Zona Berbahaya</h3>
+            <h2 className="text-sm font-bold text-red-500 uppercase tracking-wider">Zona Berbahaya</h2>
             <p className="text-xs text-[var(--text-secondary)]">
               Menghapus dokumen bersifat permanen dan akan menghapus semua vektor ChromaDB terkait.
             </p>

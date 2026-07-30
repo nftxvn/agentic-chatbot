@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getWhatsappSettings, updateWhatsappSettings } from '../api/settings'
+import { addAppNotification } from '../utils/notifications'
 
 export default function WhatsappSettingsPage() {
   const [loading, setLoading] = useState(true)
@@ -19,7 +20,9 @@ export default function WhatsappSettingsPage() {
   }, [])
 
   async function fetchSettings() {
+    const startTime = Date.now()
     try {
+      setLoading(true)
       const data = await getWhatsappSettings()
       setForm({
         wa_status: data.wa_status,
@@ -31,7 +34,8 @@ export default function WhatsappSettingsPage() {
       console.error(err)
       setStatusMsg({ type: 'error', text: 'Gagal mengambil pengaturan. Pastikan server berjalan.' })
     } finally {
-      setLoading(false)
+      const elapsed = Date.now() - startTime
+      setTimeout(() => setLoading(false), Math.max(0, 350 - elapsed))
     }
   }
 
@@ -52,6 +56,11 @@ export default function WhatsappSettingsPage() {
       const res = await updateWhatsappSettings(form)
       setStatusMsg({ type: 'success', text: res.message || 'Pengaturan berhasil disimpan!' })
       await fetchSettings()
+      addAppNotification({
+        title: 'Pengaturan API',
+        message: 'Anda baru saja memperbarui Pengaturan API WhatsApp',
+        type: 'system',
+      })
     } catch (err) {
       console.error(err)
       setStatusMsg({ type: 'error', text: err.response?.data?.message || 'Gagal menyimpan pengaturan.' })
@@ -60,13 +69,39 @@ export default function WhatsappSettingsPage() {
     }
   }
 
+  if (loading) {
+    return (
+      <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto space-y-6 sm:space-y-8">
+        <div className="p-6 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm space-y-2">
+          <div className="skeleton h-6 w-64 rounded-md" />
+          <div className="skeleton h-4 w-96 rounded-md" />
+        </div>
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-6 sm:p-8 shadow-sm space-y-6">
+          <div className="flex justify-between items-center pb-6 border-b border-[var(--border-color)]">
+            <div className="space-y-2">
+              <div className="skeleton h-5 w-48 rounded-md" />
+              <div className="skeleton h-4 w-80 rounded-md" />
+            </div>
+            <div className="skeleton w-12 h-6 rounded-full" />
+          </div>
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="space-y-2">
+              <div className="skeleton h-4 w-40 rounded-md" />
+              <div className="skeleton h-11 w-full rounded-xl" />
+            </div>
+          ))}
+          <div className="skeleton h-12 w-full rounded-xl" />
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="p-8 max-w-4xl mx-auto space-y-8">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto space-y-6 sm:space-y-8">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 sm:p-6 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm">
         <div>
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
             <h1 className="text-2xl font-black text-[var(--text-primary)] tracking-tight">PENGATURAN WHATSAPP API</h1>
           </div>
           <p className="text-sm text-[var(--text-secondary)] mt-1">
@@ -76,7 +111,7 @@ export default function WhatsappSettingsPage() {
       </div>
 
       {/* Settings Card */}
-      <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-8 shadow-sm">
+      <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-4 sm:p-6 lg:p-8 shadow-sm">
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Status Toggle Row */}
           <div className="flex items-center justify-between pb-6 border-b border-[var(--border-color)]">
@@ -166,7 +201,7 @@ export default function WhatsappSettingsPage() {
           {/* Action button */}
           <button
             type="submit"
-            className="w-full py-3.5 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-sm shadow-md shadow-sky-600/20 transition-all disabled:opacity-50"
+            className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-sky-500 via-sky-500 to-sky-100 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white font-bold text-sm shadow-md shadow-sky-600/20 transition-all disabled:opacity-50"
             disabled={saving}
           >
             {saving ? 'Menyimpan Pengaturan...' : 'Simpan Pengaturan WhatsApp'}

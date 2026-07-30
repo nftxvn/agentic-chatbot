@@ -23,7 +23,7 @@ class DocumentCategoryController extends Controller
             'description' => 'nullable|string',
             'vision_prompt' => 'nullable|string',
             'llm_prompt' => 'nullable|string',
-            'prompt_variables' => 'nullable|json',
+            'prompt_variables' => 'nullable',
             'ui_layout' => 'required|string',
             'vision_model' => 'nullable|string',
             'llm_model' => 'nullable|string',
@@ -45,7 +45,7 @@ class DocumentCategoryController extends Controller
             'description' => 'nullable|string',
             'vision_prompt' => 'nullable|string',
             'llm_prompt' => 'nullable|string',
-            'prompt_variables' => 'nullable|string', // Accept string JSON from frontend
+            'prompt_variables' => 'nullable',
             'ui_layout' => 'required|string',
             'vision_model' => 'nullable|string',
             'llm_model' => 'nullable|string',

@@ -30,7 +30,7 @@ export default function LoginPage() {
   const glowShape2Ref = useRef(null)
 
   const { login } = useAuth()
-  const { theme } = useTheme()
+  const { theme, toggleTheme } = useTheme()
   const isDark = theme === 'dark'
   const navigate = useNavigate()
 
@@ -99,29 +99,30 @@ export default function LoginPage() {
       // Type text character by character
       masterTimeline.to({}, {
         duration: phrase.length * 0.08,
-        ease: 'none',
-        onUpdate: function() {
-          if (replacementRef.current && !isCancelled) {
-            const count = Math.floor(this.progress() * phrase.length)
-            replacementRef.current.textContent = phrase.slice(0, count)
-          }
+        onUpdate: function () {
+          if (isCancelled || !replacementRef.current) return
+          const progress = this.progress()
+          const currentLength = Math.floor(progress * phrase.length)
+          replacementRef.current.textContent = phrase.slice(0, currentLength)
         }
       })
-      // Hold completed word
-      .to({}, { duration: 2.2 })
+
+      // Hold phrase for 2.2 seconds
+      masterTimeline.to({}, { duration: 2.2 })
+
       // Erase text character by character
-      .to({}, {
+      masterTimeline.to({}, {
         duration: phrase.length * 0.04,
-        ease: 'none',
-        onUpdate: function() {
-          if (replacementRef.current && !isCancelled) {
-            const count = Math.ceil((1 - this.progress()) * phrase.length)
-            replacementRef.current.textContent = phrase.slice(0, count)
-          }
+        onUpdate: function () {
+          if (isCancelled || !replacementRef.current) return
+          const progress = 1 - this.progress()
+          const currentLength = Math.floor(progress * phrase.length)
+          replacementRef.current.textContent = phrase.slice(0, currentLength)
         }
       })
-      // Brief pause before next word
-      .to({}, { duration: 0.4 })
+
+      // Pause briefly before typing next phrase
+      masterTimeline.to({}, { duration: 0.3 })
     })
 
     return () => {
@@ -134,11 +135,12 @@ export default function LoginPage() {
     e.preventDefault()
     setError('')
     setLoading(true)
+
     try {
       await login(email, password, remember)
       navigate('/dashboard')
     } catch (err) {
-      setError(err.response?.data?.message || 'Terjadi kesalahan saat login.')
+      setError(err.response?.data?.message || 'Email atau password salah.')
     } finally {
       setLoading(false)
     }
@@ -161,7 +163,24 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen grid grid-cols-1 lg:grid-cols-[65%_35%] bg-[var(--bg-main)] overflow-hidden">
+    <div className="min-h-screen grid grid-cols-1 lg:grid-cols-[65%_35%] bg-[var(--bg-main)] overflow-hidden relative">
+      {/* Theme Toggle Button on Login Page */}
+      <button
+        onClick={toggleTheme}
+        className="absolute top-6 right-6 z-20 p-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)]/80 backdrop-blur-md text-[var(--text-primary)] hover:border-sky-500 hover:text-sky-500 transition-all flex items-center justify-center shadow-sm cursor-pointer"
+        title={isDark ? 'Mode Terang' : 'Mode Gelap'}
+      >
+        {isDark ? (
+          <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+          </svg>
+        ) : (
+          <svg className="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+          </svg>
+        )}
+      </button>
+
       {/* Left side hero branding (65% width) */}
       <div className={`hidden lg:flex relative flex-col justify-center p-12 lg:p-16 overflow-hidden transition-colors duration-300 ${
         isDark 
@@ -340,7 +359,7 @@ export default function LoginPage() {
 
                 <button
                   type="submit"
-                  className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/20 hover:shadow-emerald-600/30 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center"
+                  className="w-full py-3.5 px-4 bg-gradient-to-r from-sky-500 via-sky-500 to-sky-100 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white font-bold rounded-xl shadow-lg shadow-sky-500/20 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center"
                   disabled={loading}
                 >
                   {loading ? (
@@ -388,7 +407,7 @@ export default function LoginPage() {
 
                 <button
                   type="submit"
-                  className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/20 hover:shadow-emerald-600/30 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center"
+                  className="w-full py-3.5 px-4 bg-gradient-to-r from-sky-500 via-sky-500 to-sky-100 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white font-bold rounded-xl shadow-lg shadow-sky-500/20 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center"
                   disabled={forgotLoading}
                 >
                   {forgotLoading ? (

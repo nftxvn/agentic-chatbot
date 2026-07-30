@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 
 @custom-variant dark (&:is(.dark *));
@@ -44,7 +43,7 @@
   --red-400: #ef4444;
   --yellow-400: #f59e0b;
 
-  --sidebar-width: 260px;
+  --sidebar-width: 285px;
   --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -82,10 +81,10 @@
 
 [data-theme="dark"] {
   /* Dark Mode - Sky Blue / Blue / Cyan gradient theme */
-  --bg-main: #090d16;
-  --bg-card: #111827;
-  --bg-sidebar: #0f172a;
-  --bg-input: #1e293b;
+  --bg-main: #0e0e0f;
+  --bg-card: #202122;
+  --bg-sidebar: #141415;
+  --bg-input: #191a1c;
 
   --text-primary: #f8fafc;
   --text-secondary: #e2e8f0;
@@ -360,10 +359,11 @@ select:-webkit-autofill:active {
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-  }
-  html {
-    @apply font-sans;
+  html, body, #root {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100vh;
+    @apply bg-background text-foreground font-sans;
   }
 }

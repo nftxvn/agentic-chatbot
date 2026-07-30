@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { ThemeProvider } from './context/ThemeContext'
 import AdminLayout from './components/Layout/AdminLayout'
 import LoginPage from './pages/LoginPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
@@ -19,26 +20,83 @@ function GuestRoute({ children }) {
 /** Route yang hanya bisa diakses saat sudah login */
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
-  if (loading) return <AppLoader />
+  if (loading) return <AdminLayoutSkeleton />
   return user ? children : <Navigate to="/login" replace />
 }
 
-function AppLoader() {
+function AdminLayoutSkeleton() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--bg-main)]">
-      <div className="w-10 h-10 border-[3px] border-[var(--border-color)] border-t-[var(--brand-primary)] rounded-full spin" />
+    <div className="flex min-h-screen bg-[var(--bg-main)] overflow-x-hidden">
+      {/* Sidebar Skeleton */}
+      <aside className="w-[285px] bg-[var(--bg-sidebar)] border-r border-[var(--border-color)] flex flex-col fixed h-screen z-50 top-0 left-0 hidden lg:flex">
+        <div className="h-[85px] px-4 border-b border-[var(--border-color)] flex items-center gap-3">
+          <div className="skeleton w-10 h-10 rounded-xl shrink-0" />
+          <div className="space-y-1.5 flex-1">
+            <div className="skeleton h-3.5 w-24 rounded-md" />
+            <div className="skeleton h-2.5 w-28 rounded-md" />
+          </div>
+        </div>
+        <div className="flex-1 px-3 py-4 space-y-3">
+          <div className="skeleton h-3 w-20 rounded-md mb-4 ml-2" />
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3 px-3.5 py-3 rounded-xl bg-[var(--bg-input)]/40 border border-[var(--border-color)]/30">
+              <div className="skeleton w-5 h-5 rounded-md shrink-0" />
+              <div className="skeleton h-4 w-32 rounded-md" />
+            </div>
+          ))}
+        </div>
+      </aside>
+
+      {/* Main Content Skeleton */}
+      <main className="ml-0 lg:ml-[285px] flex-1 min-h-screen w-full min-w-0 lg:w-[calc(100%-285px)]">
+        {/* Header Skeleton */}
+        <header className="h-[85px] px-4 lg:px-6 bg-[var(--bg-card)] border-b border-[var(--border-color)] flex items-center justify-between gap-3">
+          <div className="skeleton h-10 w-full max-w-md rounded-xl" />
+          <div className="flex items-center gap-3">
+            <div className="skeleton w-10 h-10 rounded-xl" />
+            <div className="flex items-center gap-3 pl-3 border-l border-[var(--border-color)]">
+              <div className="skeleton w-10 h-10 rounded-xl shrink-0" />
+              <div className="hidden sm:flex flex-col space-y-1.5">
+                <div className="skeleton h-4 w-28 rounded-md" />
+                <div className="skeleton h-3 w-36 rounded-md" />
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Dashboard Content Skeleton */}
+        <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
+          <div className="p-6 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm space-y-2">
+            <div className="skeleton h-6 w-64 rounded-md" />
+            <div className="skeleton h-4 w-96 rounded-md" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="p-6 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl flex items-center gap-4">
+                <div className="skeleton w-12 h-12 rounded-2xl shrink-0" />
+                <div className="space-y-2 flex-1">
+                  <div className="skeleton h-3 w-20 rounded-md" />
+                  <div className="skeleton h-7 w-16 rounded-md" />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-6 space-y-4">
+            <div className="skeleton h-6 w-48 rounded-md" />
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="skeleton h-10 w-full rounded-xl" />
+            ))}
+          </div>
+        </div>
+      </main>
     </div>
   )
 }
-
-import { ThemeProvider } from './context/ThemeContext'
-import ThemeToggle from './components/ThemeToggle'
 
 export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <ThemeToggle className="fixed bottom-6 left-6 z-[9999]" />
         <BrowserRouter>
         <Routes>
           {/* Redirect root */}

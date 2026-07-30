@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useLayoutEffect } from 'react'
+import gsap from 'gsap'
 import { categoriesApi } from '../api/categories'
 import ConfirmModal from '../components/ConfirmModal'
 import { Badge } from '@/components/ui/badge'
+import { addAppNotification } from '../utils/notifications'
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState([])
@@ -39,26 +41,26 @@ export default function CategoriesPage() {
   }, [])
 
   useLayoutEffect(() => {
-    if (headerRef.current && window.gsap) {
-      window.gsap.fromTo(
+    if (headerRef.current) {
+      gsap.fromTo(
         headerRef.current.children,
         { opacity: 0, x: -20 },
         { opacity: 1, x: 0, duration: 0.6, stagger: 0.1, ease: 'power2.out', clearProps: 'all' }
       )
     }
-    if (!loading && categories.length > 0 && gridRef.current && window.gsap) {
+    if (!loading && categories.length > 0 && gridRef.current) {
       const elements = gridRef.current.children
-      window.gsap.fromTo(
+      gsap.fromTo(
         elements,
-        { opacity: 0, y: -20 },
-        { opacity: 1, y: 0, duration: 0.6, stagger: 0.15, ease: 'power2.out', clearProps: 'all' }
+        { opacity: 0, scale: 0.98 },
+        { opacity: 1, scale: 1, duration: 0.4, stagger: 0.08, ease: 'power2.out', clearProps: 'all' }
       )
     }
   }, [loading, categories.length])
 
   useEffect(() => {
-    if (showModal && modalRef.current && window.gsap) {
-      window.gsap.fromTo(
+    if (showModal && modalRef.current) {
+      gsap.fromTo(
         modalRef.current,
         { opacity: 0, scale: 0.95, y: 20 },
         { opacity: 1, scale: 1, y: 0, duration: 0.3, ease: 'power2.inOut' }
@@ -78,6 +80,7 @@ export default function CategoriesPage() {
   }
 
   const fetchCategories = async () => {
+    const startTime = Date.now()
     try {
       setLoading(true)
       const res = await categoriesApi.list()
@@ -85,7 +88,8 @@ export default function CategoriesPage() {
     } catch (err) {
       console.error('Failed to load categories', err)
     } finally {
-      setLoading(false)
+      const elapsed = Date.now() - startTime
+      setTimeout(() => setLoading(false), Math.max(0, 350 - elapsed))
     }
   }
 
@@ -158,31 +162,63 @@ export default function CategoriesPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    try {
-      const payload = { ...formData }
-      if (payload.prompt_variables) {
-        JSON.parse(payload.prompt_variables)
-      } else {
-        payload.prompt_variables = null
+
+    let parsedVariables = null
+    if (formData.prompt_variables && typeof formData.prompt_variables === 'string') {
+      const trimmed = formData.prompt_variables.trim()
+      if (trimmed !== '') {
+        try {
+          parsedVariables = JSON.parse(trimmed)
+        } catch (jsonErr) {
+          alert('Format JSON Prompt Variables tidak valid: ' + jsonErr.message)
+          return
+        }
       }
+    } else if (typeof formData.prompt_variables === 'object') {
+      parsedVariables = formData.prompt_variables
+    }
+
+    try {
+      const payload = {
+        ...formData,
+        prompt_variables: parsedVariables,
+      }
+
       if (editingCategory) {
         await categoriesApi.update(editingCategory.id, payload)
+        addAppNotification({
+          title: 'Kategori AI Diperbarui',
+          message: `Anda baru saja memperbarui kategori "${formData.name}"`,
+          type: 'info',
+        })
       } else {
         await categoriesApi.create(payload)
+        addAppNotification({
+          title: 'Kategori AI Baru',
+          message: `Anda baru saja menambahkan kategori "${formData.name}"`,
+          type: 'info',
+        })
       }
       setShowModal(false)
       fetchCategories()
     } catch (err) {
       console.error('Save failed', err)
-      alert('Gagal menyimpan kategori. Pastikan JSON valid jika diisi.')
+      alert(err.response?.data?.message || 'Gagal menyimpan kategori.')
     }
   }
 
   const confirmDelete = async () => {
     if (!deleteTarget) return
+    const targetCat = categories.find((c) => c.id === deleteTarget)
+    const catName = targetCat ? targetCat.name : ''
     try {
       await categoriesApi.destroy(deleteTarget)
       fetchCategories()
+      addAppNotification({
+        title: 'Kategori AI Dihapus',
+        message: `Anda baru saja menghapus kategori "${catName}"`,
+        type: 'warning',
+      })
     } catch (err) {
       console.error('Delete failed', err)
       alert('Gagal menghapus kategori.')
@@ -192,12 +228,11 @@ export default function CategoriesPage() {
   }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6 sm:space-y-8">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm">
         <div ref={headerRef}>
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-purple-500" />
             <h1 className="text-2xl font-black text-[var(--text-primary)] tracking-tight">KATEGORI DOKUMEN AI</h1>
           </div>
           <p className="text-sm text-[var(--text-secondary)] mt-1">
@@ -205,7 +240,7 @@ export default function CategoriesPage() {
           </p>
         </div>
         <button
-          className="px-5 py-3 rounded-xl bg-gradient-to-r from-sky-500 via-blue-600 to-blue-700 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-sky-500/25 transition-all duration-200 hover:scale-[1.02] shrink-0"
+          className="px-5 py-3 rounded-xl bg-gradient-to-r from-sky-500 via-sky-500 to-sky-200 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-sky-500/25 transition-all duration-200 hover:scale-[1.02] shrink-0"
           onClick={() => handleOpenModal()}
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -250,7 +285,7 @@ export default function CategoriesPage() {
               >
                 <div>
                   <div className="flex justify-between items-start mb-3">
-                    <h3 className="text-xl font-bold text-[var(--text-primary)]">{cat.name}</h3>
+                    <h2 className="text-xl font-bold text-[var(--text-primary)]">{cat.name}</h2>
                     <Badge variant="default" className="uppercase tracking-wider">
                       {cat.ui_layout}
                     </Badge>
@@ -381,14 +416,22 @@ export default function CategoriesPage() {
                   <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">Vision Model</label>
                   <select className="w-full" value={formData.vision_model} onChange={e => setFormData({ ...formData, vision_model: e.target.value })}>
                     <option value="">-- Default Global --</option>
-                    {ollamaModels.map(m => <option key={m} value={m}>{m}</option>)}
+                    {ollamaModels.length === 0 ? (
+                      <option value="" disabled>-- Tidak ada model terdeteksi --</option>
+                    ) : (
+                      ollamaModels.map(m => <option key={m} value={m}>{m}</option>)
+                    )}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">LLM Model</label>
                   <select className="w-full" value={formData.llm_model} onChange={e => setFormData({ ...formData, llm_model: e.target.value })}>
                     <option value="">-- Default Global --</option>
-                    {ollamaModels.map(m => <option key={m} value={m}>{m}</option>)}
+                    {ollamaModels.length === 0 ? (
+                      <option value="" disabled>-- Tidak ada model terdeteksi --</option>
+                    ) : (
+                      ollamaModels.map(m => <option key={m} value={m}>{m}</option>)
+                    )}
                   </select>
                 </div>
               </div>
@@ -467,7 +510,7 @@ export default function CategoriesPage() {
               </button>
               <button
                 type="submit"
-                className="px-5 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-sm shadow-md transition-all"
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 via-sky-500 to-sky-300 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white font-bold text-sm shadow-lg shadow-sky-500/25 transition-all"
               >
                 Simpan Kategori
               </button>

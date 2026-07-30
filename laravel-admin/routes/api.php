@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\DocumentCategoryController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\ForgotPasswordController;
 use App\Http\Controllers\Api\ResetPasswordController;
@@ -31,6 +32,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('auth')->group(function () {
         Route::get('user',   [AuthController::class, 'user'])->name('api.auth.user');
         Route::post('logout',[AuthController::class, 'logout'])->name('api.auth.logout');
+    });
+
+    // Categories
+    Route::prefix('categories')->group(function () {
+        Route::get('/',              [DocumentCategoryController::class, 'index'])->name('api.categories.index');
+        Route::post('/',             [DocumentCategoryController::class, 'store'])->name('api.categories.store');
+        Route::put('/{id}',          [DocumentCategoryController::class, 'update'])->name('api.categories.update');
+        Route::delete('/{id}',       [DocumentCategoryController::class, 'destroy'])->name('api.categories.destroy');
     });
 
     // Documents
