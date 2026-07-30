@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react'
 import { getWhatsappSettings, updateWhatsappSettings } from '../api/settings'
-import styles from './WhatsappSettingsPage.module.css'
 
 export default function WhatsappSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [showToken, setShowToken] = useState(false)
   const [statusMsg, setStatusMsg] = useState(null)
-  
+
   const [form, setForm] = useState({
     wa_status: false,
     wa_api_url: '',
@@ -42,7 +41,7 @@ export default function WhatsappSettingsPage() {
       ...prev,
       [name]: type === 'checkbox' ? checked : value
     }))
-    setStatusMsg(null) // clear status when user types
+    setStatusMsg(null)
   }
 
   const handleSubmit = async (e) => {
@@ -52,7 +51,6 @@ export default function WhatsappSettingsPage() {
     try {
       const res = await updateWhatsappSettings(form)
       setStatusMsg({ type: 'success', text: res.message || 'Pengaturan berhasil disimpan!' })
-      // re-fetch to get masked token
       await fetchSettings()
     } catch (err) {
       console.error(err)
@@ -62,105 +60,135 @@ export default function WhatsappSettingsPage() {
     }
   }
 
-
   return (
-    <div className={styles.container}>
-      <div className={styles.header}>
+    <div className="p-8 max-w-4xl mx-auto space-y-8">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm">
         <div>
-          <h1 className={styles.title}>PENGATURAN WHATSAPP</h1>
-          <p className={styles.subtitle}>Konfigurasi endpoint dan kredensial WhatsApp Business API Anda.</p>
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+            <h1 className="text-2xl font-black text-[var(--text-primary)] tracking-tight">PENGATURAN WHATSAPP API</h1>
+          </div>
+          <p className="text-sm text-[var(--text-secondary)] mt-1">
+            Konfigurasi endpoint dan kredensial WhatsApp Business Cloud API.
+          </p>
         </div>
       </div>
 
-      <div className={styles.card}>
-        <form onSubmit={handleSubmit}>
-          
-          <div className={styles.toggleContainer}>
-            <div className={styles.toggleLabel}>
-              <span className={styles.toggleTitle}>Aktifkan Chatbot WhatsApp</span>
-              <span className={styles.toggleDesc}>Jika dimatikan, sistem tidak akan merespon pesan WhatsApp secara otomatis.</span>
+      {/* Settings Card */}
+      <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-8 shadow-sm">
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Status Toggle Row */}
+          <div className="flex items-center justify-between pb-6 border-b border-[var(--border-color)]">
+            <div className="flex flex-col">
+              <span className="text-sm font-bold text-[var(--text-primary)]">Aktifkan Chatbot WhatsApp</span>
+              <span className="text-sm text-[var(--text-secondary)] mt-0.5">
+                Jika dimatikan, sistem tidak akan merespon pesan WhatsApp masuk secara otomatis.
+              </span>
             </div>
-            <label className={styles.switch}>
-              <input 
-                type="checkbox" 
+            <label className="switch">
+              <input
+                type="checkbox"
                 name="wa_status"
                 checked={form.wa_status}
                 onChange={handleChange}
               />
-              <span className={styles.slider}></span>
+              <span className="slider" />
             </label>
           </div>
 
-          <div className={styles.formGroup}>
-            <label>WhatsApp API URL Endpoint</label>
-            <input 
-              className={styles.input}
+          {/* API Endpoint */}
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">
+              WhatsApp API URL Endpoint
+            </label>
+            <input
               type="url"
               name="wa_api_url"
+              className="w-full"
               value={form.wa_api_url}
               onChange={handleChange}
               placeholder="https://graph.facebook.com/v17.0/PHONE_NUMBER_ID/messages"
-              required={form.wa_status} // required if enabled
+              required={form.wa_status}
             />
           </div>
 
-          <div className={styles.formGroup}>
-            <label>API Bearer Token</label>
-            <div className={styles.inputWrapper}>
-              <input 
-                className={styles.input}
-                type={showToken ? "text" : "password"}
+          {/* Token */}
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">
+              API Bearer Access Token
+            </label>
+            <div className="relative">
+              <input
+                type={showToken ? 'text' : 'password'}
                 name="wa_token"
+                className="w-full pr-12 font-mono text-xs"
                 value={form.wa_token}
                 onChange={handleChange}
                 placeholder="EAAI..."
                 required={form.wa_status && !form.wa_token.includes('••••')}
               />
-              <button 
-                type="button" 
-                className={styles.passwordToggle}
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1.5 transition-colors"
                 onClick={() => setShowToken(!showToken)}
-                title={showToken ? "Sembunyikan Token" : "Lihat Token"}
+                title={showToken ? 'Sembunyikan Token' : 'Lihat Token'}
               >
                 {showToken ? (
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                  </svg>
                 ) : (
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
                 )}
               </button>
             </div>
           </div>
 
-          <div className={styles.formGroup}>
-            <label>Nomor WhatsApp Pengirim (Opsional)</label>
-            <input 
-              className={styles.input}
+          {/* Sender Phone Number */}
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">
+              Nomor WhatsApp Pengirim (Opsional)
+            </label>
+            <input
               type="text"
               name="wa_phone_number"
+              className="w-full"
               value={form.wa_phone_number}
               onChange={handleChange}
               placeholder="Misal: +6281234567890"
             />
           </div>
 
-          <button 
-            type="submit" 
-            className={styles.submitBtn}
+          {/* Action button */}
+          <button
+            type="submit"
+            className="w-full py-3.5 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-sm shadow-md shadow-sky-600/20 transition-all disabled:opacity-50"
             disabled={saving}
           >
-            {saving ? 'Menyimpan...' : 'Simpan Pengaturan'}
+            {saving ? 'Menyimpan Pengaturan...' : 'Simpan Pengaturan WhatsApp'}
           </button>
 
+          {/* Alert Message */}
           {statusMsg && (
-            <div className={`${styles.statusMessage} ${statusMsg.type === 'success' ? styles.statusSuccess : styles.statusError}`}>
+            <div
+              className={`p-4 rounded-xl text-sm font-medium border ${
+                statusMsg.type === 'success'
+                  ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                  : 'bg-red-500/10 text-red-500 border-red-500/20'
+              }`}
+            >
               {statusMsg.text}
             </div>
           )}
-          
+
           {loading && (
-            <div style={{ marginTop: '20px' }}>
-              <div className="skeleton" style={{ height: '40px', width: '100%', marginBottom: '10px' }}></div>
-              <div className="skeleton" style={{ height: '40px', width: '100%' }}></div>
+            <div className="space-y-3 pt-2">
+              <div className="skeleton h-10 w-full" />
+              <div className="skeleton h-10 w-full" />
             </div>
           )}
         </form>

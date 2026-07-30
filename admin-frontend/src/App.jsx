@@ -25,20 +25,8 @@ function PrivateRoute({ children }) {
 
 function AppLoader() {
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'var(--surface-950)',
-    }}>
-      <div style={{
-        width: 40, height: 40,
-        border: '3px solid var(--surface-700)',
-        borderTopColor: 'var(--brand-500)',
-        borderRadius: '50%',
-        animation: 'spin 0.8s linear infinite',
-      }} />
+    <div className="min-h-screen flex items-center justify-center bg-[var(--bg-main)]">
+      <div className="w-10 h-10 border-[3px] border-[var(--border-color)] border-t-[var(--brand-primary)] rounded-full spin" />
     </div>
   )
 }
@@ -50,7 +38,7 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <ThemeToggle className="theme-toggle-floating" />
+        <ThemeToggle className="fixed bottom-6 left-6 z-[9999]" />
         <BrowserRouter>
         <Routes>
           {/* Redirect root */}

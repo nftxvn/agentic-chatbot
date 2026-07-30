@@ -1,30 +1,30 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { documentsApi } from '../api/documents'
-import styles from './DocumentDetailPage.module.css'
 import ConfirmModal from '../components/ConfirmModal'
 
 export default function DocumentDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
-  
+
   const [document, setDocument] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  
+
   const [replaceFile, setReplaceFile] = useState(null)
   const [replacing, setReplacing] = useState(false)
   const [pdfTimestamp, setPdfTimestamp] = useState(Date.now())
-  
+
   const [chunks, setChunks] = useState([])
   const [showChunks, setShowChunks] = useState(false)
   const [loadingChunks, setLoadingChunks] = useState(false)
-  
+
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showReplaceModal, setShowReplaceModal] = useState(false)
 
   const [leftColWidth, setLeftColWidth] = useState(65)
   const isDragging = useRef(false)
+  const isMounted = useRef(true)
   const containerRef = useRef(null)
   const timelineRef = useRef(null)
   const fetchTimeout = useRef(null)
@@ -32,15 +32,17 @@ export default function DocumentDetailPage() {
   const fetchDocument = async () => {
     try {
       const res = await documentsApi.get(id)
+      if (!isMounted.current) return
       setDocument(res.data.document)
-      
       if (res.data.document.status === 'processing' || res.data.document.status === 'pending') {
+        if (fetchTimeout.current) clearTimeout(fetchTimeout.current)
         fetchTimeout.current = setTimeout(fetchDocument, 5000)
       }
     } catch (err) {
+      if (!isMounted.current) return
       setError(err.response?.data?.message || 'Gagal memuat detail dokumen.')
     } finally {
-      setLoading(false)
+      if (isMounted.current) setLoading(false)
     }
   }
 
@@ -48,17 +50,24 @@ export default function DocumentDetailPage() {
     setLoadingChunks(true)
     try {
       const res = await documentsApi.getChunks(id)
-      setChunks(res.chunks || [])
+      if (!isMounted.current) return
+      setChunks(res.chunks || res.data?.chunks || [])
     } catch (err) {
+      if (!isMounted.current) return
       console.error('Gagal memuat chunks', err)
+      setChunks([])
     } finally {
-      setLoadingChunks(false)
+      if (isMounted.current) setLoadingChunks(false)
     }
   }
 
   useEffect(() => {
+    isMounted.current = true
     fetchDocument()
-    return () => clearTimeout(fetchTimeout.current)
+    return () => {
+      isMounted.current = false
+      if (fetchTimeout.current) clearTimeout(fetchTimeout.current)
+    }
   }, [id])
 
   useEffect(() => {
@@ -66,9 +75,9 @@ export default function DocumentDetailPage() {
       const items = timelineRef.current.querySelectorAll('.gsap-timeline-item')
       const lines = timelineRef.current.querySelectorAll('.gsap-timeline-line')
       const icons = timelineRef.current.querySelectorAll('.gsap-timeline-icon')
-      
+
       if (window.gsap) {
-        window.gsap.fromTo(items, 
+        window.gsap.fromTo(items,
           { opacity: 0, y: 20 },
           { opacity: 1, y: 0, duration: 0.4, stagger: 0.1, ease: 'power2.out' }
         )
@@ -93,18 +102,14 @@ export default function DocumentDetailPage() {
     isDragging.current = true
     window.document.body.style.cursor = 'col-resize'
     window.document.body.style.userSelect = 'none'
-    if (containerRef.current) {
-      containerRef.current.style.pointerEvents = 'none'
-    }
+    if (containerRef.current) containerRef.current.style.pointerEvents = 'none'
   }
 
   const onDrag = (e) => {
     if (!isDragging.current || !containerRef.current) return
     const containerRect = containerRef.current.getBoundingClientRect()
     const newWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100
-    if (newWidth >= 20 && newWidth <= 80) {
-      setLeftColWidth(newWidth)
-    }
+    if (newWidth >= 20 && newWidth <= 80) setLeftColWidth(newWidth)
   }
 
   const stopDrag = () => {
@@ -112,9 +117,7 @@ export default function DocumentDetailPage() {
       isDragging.current = false
       window.document.body.style.cursor = 'default'
       window.document.body.style.userSelect = 'auto'
-      if (containerRef.current) {
-        containerRef.current.style.pointerEvents = 'auto'
-      }
+      if (containerRef.current) containerRef.current.style.pointerEvents = 'auto'
     }
   }
 
@@ -132,7 +135,7 @@ export default function DocumentDetailPage() {
     if (!replaceFile) return
     setShowReplaceModal(true)
   }
-  
+
   const confirmReplace = async () => {
     setShowReplaceModal(false)
     setReplacing(true)
@@ -148,10 +151,8 @@ export default function DocumentDetailPage() {
     }
   }
 
-  const handleDelete = () => {
-    setShowDeleteModal(true)
-  }
-  
+  const handleDelete = () => setShowDeleteModal(true)
+
   const confirmDelete = async () => {
     try {
       await documentsApi.destroy(id)
@@ -160,7 +161,7 @@ export default function DocumentDetailPage() {
       alert(err.response?.data?.message || 'Gagal menghapus dokumen.')
     }
   }
-  
+
   const handlePause = async () => {
     if (!window.confirm('Yakin ingin menunda pemrosesan AI?')) return
     try {
@@ -200,33 +201,42 @@ export default function DocumentDetailPage() {
 
   const getLogColor = (action) => {
     switch (action) {
-      case 'uploaded': return 'var(--blue-400)'
-      case 'processing': return 'var(--yellow-400)'
-      case 'completed': return 'var(--green-400)'
-      case 'failed': return 'var(--red-400)'
-      case 'replaced': return 'var(--orange-400)'
-      default: return 'var(--text-secondary)'
+      case 'uploaded':   return '#3b82f6'
+      case 'processing': return '#f59e0b'
+      case 'completed':  return '#10b981'
+      case 'failed':     return '#ef4444'
+      case 'replaced':   return '#f97316'
+      default:           return 'var(--text-muted)'
     }
   }
 
   const getLogIcon = (action) => {
     switch (action) {
-      case 'uploaded': return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+      case 'uploaded':   return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
       case 'processing': return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-      case 'completed': return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-      case 'failed': return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-      case 'replaced': return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-      default: return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      case 'completed':  return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+      case 'failed':     return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+      case 'replaced':   return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+      default:           return <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    }
+  }
+
+  const getStatusBadge = (status) => {
+    switch (status) {
+      case 'completed': return { bg: 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' }
+      case 'processing': return { bg: 'bg-amber-500/10 border-amber-500/20 text-amber-500' }
+      case 'failed': return { bg: 'bg-red-500/10 border-red-500/20 text-red-500' }
+      default: return { bg: 'bg-[var(--bg-input)] border-[var(--border-color)] text-[var(--text-muted)]' }
     }
   }
 
   if (loading) {
     return (
-      <div className={styles.container}>
-        <div className="skeleton" style={{ height: '40px', width: '30%', marginBottom: '32px' }}></div>
-        <div className={styles.grid}>
-          <div className="skeleton" style={{ height: '400px', borderRadius: '16px' }}></div>
-          <div className="skeleton" style={{ height: '400px', borderRadius: '16px' }}></div>
+      <div className="p-8 max-w-7xl mx-auto space-y-6">
+        <div className="skeleton h-12 w-64 rounded-2xl" />
+        <div className="grid grid-cols-2 gap-6">
+          <div className="skeleton h-96 rounded-2xl" />
+          <div className="skeleton h-96 rounded-2xl" />
         </div>
       </div>
     )
@@ -234,228 +244,234 @@ export default function DocumentDetailPage() {
 
   if (error || !document) {
     return (
-      <div className={styles.container}>
-        <div className={styles.errorBox}>{error || 'Dokumen tidak ditemukan'}</div>
-        <Link to="/dashboard" className={styles.linkAction} style={{ marginTop: '16px' }}>&larr; Kembali ke Dashboard</Link>
+      <div className="p-8 max-w-xl mx-auto space-y-4">
+        <div className="p-4 bg-red-500/10 border border-red-500/20 text-red-500 rounded-2xl text-sm font-medium">
+          {error || 'Dokumen tidak ditemukan'}
+        </div>
+        <Link to="/dashboard" className="inline-flex items-center gap-2 text-sm font-bold text-sky-500 hover:text-sky-400">
+          ← Kembali ke Dashboard
+        </Link>
       </div>
     )
   }
 
+  const statusBadge = getStatusBadge(document.status)
+
   return (
-    <div className={`fade-in ${styles.container}`}>
-      {/* Header */}
-      <div className={styles.header}>
-        <div className={styles.headerTitle}>
-          <Link to="/dashboard" className={styles.backBtn} title="Kembali">
-            <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+    <div className="p-8 max-w-[1600px] mx-auto space-y-6">
+      {/* Sticky Top Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm">
+        <div className="flex items-center gap-4">
+          <Link
+            to="/dashboard"
+            title="Kembali ke Dashboard"
+            className="flex items-center justify-center w-10 h-10 rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:scale-105 transition-all"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
           </Link>
           <div>
-            <h1 className={styles.title}>{document.title}</h1>
-            <p className={styles.subtitle}>ID Dokumen: {document.id}</p>
+            <h1 className="text-xl font-black text-[var(--text-primary)] tracking-tight">{document.title}</h1>
+            <p className="text-xs text-[var(--text-muted)] font-mono mt-0.5">ID: {document.id}</p>
           </div>
+        </div>
+        <div>
+          <span className={`px-4 py-1.5 rounded-full text-xs font-bold border inline-flex items-center gap-1.5 ${statusBadge.bg}`}>
+            {document.status === 'processing' && (
+              <svg className="spin w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            )}
+            {document.status_label}
+          </span>
         </div>
       </div>
 
-      <div ref={containerRef} className={styles.grid} style={{ alignItems: 'stretch', gridTemplateColumns: `calc(${leftColWidth}% - 4px) 8px calc(${100 - leftColWidth}% - 4px)` }}>
-        {/* KOLOM KIRI */}
-        <div className={styles.colLeft} style={{ display: 'flex', flexDirection: 'column', height: 0, minHeight: '100%' }}>
-          
-          {/* Card PDF */}
-          <div className={styles.card} style={{ display: 'flex', flexDirection: 'column', height: '500px', padding: 0, overflow: 'hidden', flexShrink: 0 }}>
-            <div className={styles.cardHeaderWithAction}>
-              <h3 className={styles.cardTitle} style={{ margin: 0 }}>Pratinjau PDF</h3>
-              <a href={`${documentsApi.pdfUrl(id)}?t=${pdfTimestamp}`} target="_blank" rel="noopener" className={styles.linkAction}>
-                Buka di Tab Baru <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+      {/* Two-Column Grid with Draggable Divider */}
+      <div
+        ref={containerRef}
+        className="grid border border-[var(--border-color)] rounded-2xl overflow-hidden bg-[var(--bg-card)] shadow-sm"
+        style={{
+          gridTemplateColumns: `calc(${leftColWidth}% - 4px) 8px calc(${100 - leftColWidth}% - 4px)`,
+          alignItems: 'stretch'
+        }}
+      >
+        {/* LEFT COLUMN */}
+        <div className="flex flex-col border-r border-[var(--border-color)] divide-y divide-[var(--border-color)] min-h-[700px]">
+
+          {/* PDF Viewer Section */}
+          <div className="p-6 flex flex-col h-[520px]">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider">Pratinjau PDF</h3>
+              <a
+                href={`${documentsApi.pdfUrl(id)}?t=${pdfTimestamp}`}
+                target="_blank"
+                rel="noopener"
+                className="text-xs font-bold text-sky-500 hover:text-sky-400 inline-flex items-center gap-1"
+              >
+                Buka Tab Baru
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
               </a>
             </div>
-            <div className={styles.iframeWrapper}>
-              <iframe 
-                src={`${documentsApi.pdfUrl(id)}?t=${pdfTimestamp}`} 
-                className={styles.iframe} 
+            <div className="flex-1 rounded-xl overflow-hidden border border-[var(--border-color)] bg-slate-950">
+              <iframe
+                src={`${documentsApi.pdfUrl(id)}?t=${pdfTimestamp}`}
+                className="w-full h-full border-none block"
                 title={document.title}
               />
             </div>
           </div>
 
-          {/* Card Chunks / Vektor */}
-          <div className={styles.card} style={{ flexShrink: 0 }}>
-            <div className={styles.cardHeaderWithAction}>
-              <h3 className={styles.cardTitle} style={{ margin: 0 }}>Data Vektor ChromaDB</h3>
-              <button 
+          {/* ChromaDB Chunks */}
+          <div className="p-6">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider">ChromaDB Vector Chunks</h3>
+              <button
                 onClick={() => {
-                  setShowChunks(!showChunks);
-                  if (!showChunks && chunks.length === 0) fetchChunks();
+                  setShowChunks(!showChunks)
+                  if (!showChunks && chunks.length === 0) fetchChunks()
                 }}
-                className={styles.btnSecondary}
-                style={{ fontSize: '12px', padding: '4px 10px' }}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-sky-500/10 text-sky-500 hover:bg-sky-500 hover:text-white transition-colors"
               >
-                {showChunks ? 'Sembunyikan' : 'Tampilkan Teks OCR'}
+                {showChunks ? 'Sembunyikan Chunks' : 'Tampilkan Teks OCR Chunks'}
               </button>
             </div>
-            
+
             {showChunks && (
-              <div style={{ marginTop: '16px', maxHeight: '450px', overflowY: 'auto' }}>
+              <div className="mt-4 max-h-96 overflow-y-auto space-y-3 pr-2">
                 {loadingChunks ? (
-                  <p className={styles.emptyText}>Memuat data teks OCR...</p>
+                  <p className="text-xs text-[var(--text-muted)] italic text-center py-4">Memuat data chunks OCR...</p>
                 ) : chunks.length === 0 ? (
-                  <p className={styles.emptyText}>Tidak ada data teks OCR yang ditemukan.</p>
+                  <p className="text-xs text-[var(--text-muted)] italic text-center py-4">Tidak ada data chunks.</p>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {chunks.map(c => (
-                      <div key={c.id} style={{ background: 'var(--bg-main)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px', color: 'var(--text-muted)' }}>
-                          <span><strong>ID:</strong> {c.id}</span>
-                          <span style={{ background: 'var(--brand-primary)', color: '#000', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
-                            Halaman {c.metadata.page_number}
-                          </span>
-                        </div>
-                        <p style={{ fontSize: '14px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: 'var(--text-primary)', lineHeight: '1.6' }}>
-                          {c.text}
-                        </p>
+                  chunks.map(c => (
+                    <div key={c.id} className="p-4 rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)] text-xs space-y-2">
+                      <div className="flex justify-between items-center text-[var(--text-muted)] font-mono text-[11px]">
+                        <span>ID: {c.id}</span>
+                        <span className="px-2 py-0.5 rounded-full bg-sky-500 text-white font-bold">
+                          Halaman {c.metadata.page_number}
+                        </span>
                       </div>
-                    ))}
-                  </div>
+                      <p className="whitespace-pre-wrap break-words text-[var(--text-primary)] leading-relaxed font-sans">
+                        {c.text}
+                      </p>
+                    </div>
+                  ))
                 )}
               </div>
             )}
           </div>
 
-          {/* Card Logs */}
-          <div className={styles.card} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-            <h3 className={styles.cardTitle}>Riwayat Pemrosesan</h3>
-            
-            <div className={styles.timeline} ref={timelineRef} style={{ overflowY: 'auto', flex: 1, paddingRight: '12px' }}>
+          {/* Timeline Logs */}
+          <div className="p-6 flex-1 flex flex-col">
+            <h3 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider mb-5">Riwayat Pemrosesan Dokumen</h3>
+            <div className="space-y-6 overflow-y-auto flex-1 pr-2" ref={timelineRef}>
               {document.logs && document.logs.length > 0 ? (
                 document.logs.map((log, index) => (
-                  <div key={log.id} className={`${styles.timelineItem} gsap-timeline-item`}>
-                    <div className={`${styles.timelineIcon} gsap-timeline-icon`} style={{ background: getLogColor(log.action) }}>
-                      <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--surface-900)' }}>
+                  <div key={log.id} className="flex gap-4 relative gsap-timeline-item">
+                    <div
+                      className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 z-10 gsap-timeline-icon text-white shadow-sm"
+                      style={{ background: getLogColor(log.action) }}
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         {getLogIcon(log.action)}
                       </svg>
                     </div>
                     {index !== document.logs.length - 1 && (
-                      <div className={styles.timelineLine}>
-                        <div className="gsap-timeline-line" style={{ width: '100%', height: '0%', background: 'var(--brand-primary)', transformOrigin: 'top' }}></div>
-                      </div>
+                      <div className="absolute left-[13px] top-7 bottom-0 w-0.5 bg-[var(--border-color)] z-[1]" />
                     )}
-                    <div className={`${styles.timelineContent} gsap-timeline-content`}>
-                      <div className={styles.timelineHeader}>
-                        <span className={styles.timelineAction}>{log.action_label}</span>
-                        <span className={styles.timelineDate}>{formatDate(log.created_at)}</span>
+                    <div className="flex-1 pb-4 gsap-timeline-content">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-xs font-bold text-[var(--text-primary)]">{log.action_label}</span>
+                        <span className="text-[11px] text-[var(--text-muted)]">{formatDate(log.created_at)}</span>
                       </div>
-                      <p className={styles.timelineDetails}>{log.details}</p>
+                      <p className="text-xs text-[var(--text-secondary)] leading-relaxed">{log.details}</p>
                     </div>
                   </div>
                 ))
               ) : (
-                <p className={styles.emptyText}>Belum ada riwayat.</p>
+                <p className="text-xs text-[var(--text-muted)] italic text-center py-4">Belum ada riwayat pemrosesan.</p>
               )}
             </div>
           </div>
-
         </div>
 
-        {/* RESIZER */}
-        <div className={styles.resizer} onMouseDown={startDrag}>
-          <div className={styles.resizerLine}></div>
+        {/* RESIZER BAR */}
+        <div
+          className="cursor-col-resize flex justify-center bg-transparent w-full h-full hover:bg-sky-500/20 transition-colors select-none"
+          onMouseDown={startDrag}
+        >
+          <div className="w-0.5 h-full bg-[var(--border-color)]" />
         </div>
 
-        {/* KOLOM KANAN */}
-        <div className={styles.colRight} style={{ display: 'flex', flexDirection: 'column' }}>
-          
-          {/* Card Info */}
-          <div className={styles.card}>
-            <h3 className={styles.cardTitle}>Informasi Dokumen</h3>
-            
-            <div className={styles.infoRow}>
-              <span className={styles.infoLabel}>Status</span>
-              <span className={styles.infoValue}>
-                <span className={styles.badge} style={{ 
-                  background: document.status === 'completed' ? 'var(--green-bg)' : 
-                              document.status === 'processing' ? 'var(--yellow-bg)' : 
-                              document.status === 'failed' ? 'var(--red-bg)' : 'rgba(255,255,255,0.1)',
-                  color: document.status === 'completed' ? 'var(--green-400)' : 
-                         document.status === 'processing' ? 'var(--yellow-400)' : 
-                         document.status === 'failed' ? 'var(--red-400)' : 'var(--text-secondary)'
-                }}>
-                  {document.status === 'processing' && <svg className="spin" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ marginRight: '4px', verticalAlign: '-2px' }}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>}
-                  {document.status_label}
-                </span>
-              </span>
-            </div>
-            
-            <div className={styles.infoRow}>
-              <span className={styles.infoLabel}>File Asli</span>
-              <span className={styles.infoValue}>{document.original_filename}</span>
-            </div>
-            <div className={styles.infoRow}>
-              <span className={styles.infoLabel}>Tipe PDF</span>
-              <span className={styles.infoValue}>{document.pdf_type_label}</span>
-            </div>
-            <div className={styles.infoRow}>
-              <span className={styles.infoLabel}>Halaman / Chunks</span>
-              <span className={styles.infoValue}>{document.total_pages || '-'} / {document.total_chunks || '-'}</span>
-            </div>
-            <div className={styles.infoRow}>
-              <span className={styles.infoLabel}>Diunggah Oleh</span>
-              <span className={styles.infoValue}>{document.uploaded_by || '-'}</span>
-            </div>
-            <div className={styles.infoRow}>
-              <span className={styles.infoLabel}>Waktu Unggah</span>
-              <span className={styles.infoValue}>{formatDate(document.created_at)}</span>
-            </div>
-            <div className={styles.infoRow}>
-              <span className={styles.infoLabel}>Selesai Diproses</span>
-              <span className={styles.infoValue}>{formatDate(document.processed_at)}</span>
-            </div>
-            
+        {/* RIGHT COLUMN */}
+        <div className="flex flex-col divide-y divide-[var(--border-color)]">
+
+          {/* Info Details */}
+          <div className="p-6 space-y-4">
+            <h3 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider mb-2">Informasi Dokumen</h3>
+
+            {[
+              { label: 'File Asli', value: document.original_filename },
+              { label: 'Tipe PDF', value: document.pdf_type_label },
+              { label: 'Halaman / Chunks', value: `${document.total_pages || '-'} / ${document.total_chunks || '-'}` },
+              { label: 'Diunggah Oleh', value: document.uploaded_by || '-' },
+              { label: 'Waktu Unggah', value: formatDate(document.created_at) },
+              { label: 'Selesai Diproses', value: formatDate(document.processed_at) },
+            ].map(({ label, value }) => (
+              <div key={label} className="flex justify-between items-center py-1.5 text-xs">
+                <span className="text-[var(--text-muted)] font-semibold">{label}</span>
+                <span className="text-[var(--text-primary)] font-bold text-right truncate max-w-[60%]">{value}</span>
+              </div>
+            ))}
+
             {document.error_message && (
-              <div className={styles.errorBox}>
-                <strong>Pesan Error:</strong><br/>
-                {document.error_message}
+              <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-500 rounded-xl text-xs leading-relaxed">
+                <strong>Error:</strong> {document.error_message}
               </div>
             )}
-            
+
+            {/* AI Extraction Progress */}
             {(document.status === 'processing' || document.status === 'paused' || (document.status === 'completed' && document.processed_pages > 0)) && document.total_pages > 0 && (
-              <div style={{ marginTop: '16px', background: 'var(--surface-900)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px', fontWeight: 'bold' }}>
-                  <span>Progres AI (Ekstraksi Halaman)</span>
-                  <span>{document.processed_pages || 0} / {document.total_pages} ({( (document.processed_pages || 0) / document.total_pages * 100).toFixed(0)}%)</span>
+              <div className="p-4 rounded-xl border border-[var(--border-color)] bg-[var(--bg-input)] space-y-3 mt-2">
+                <div className="flex justify-between text-xs font-bold">
+                  <span>Progres AI Extraksi</span>
+                  <span>{document.processed_pages || 0} / {document.total_pages} ({(((document.processed_pages || 0) / document.total_pages) * 100).toFixed(0)}%)</span>
                 </div>
-                <div style={{ height: '8px', background: 'var(--surface-800)', borderRadius: '4px', overflow: 'hidden' }}>
-                  <div style={{ 
-                    height: '100%', 
-                    width: `${((document.processed_pages || 0) / document.total_pages * 100)}%`, 
-                    background: document.status === 'paused' ? 'var(--orange-400)' : document.status === 'completed' ? 'var(--green-400)' : 'var(--brand-primary)',
-                    transition: 'width 0.5s ease'
-                  }}></div>
+                <div className="h-2 rounded-full bg-[var(--border-color)] overflow-hidden">
+                  <div
+                    className="h-full transition-all duration-500 rounded-full"
+                    style={{
+                      width: `${((document.processed_pages || 0) / document.total_pages * 100)}%`,
+                      background: document.status === 'paused' ? '#f97316' : document.status === 'completed' ? '#10b981' : '#0ea5e9',
+                    }}
+                  />
                 </div>
 
-                {document.status === 'processing' && (
-                  <div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--text-muted)' }}>
-                    <svg className="spin" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ marginRight: '4px', verticalAlign: '-2px' }}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                    Sedang memproses halaman {Math.min((document.processed_pages || 0) + 1, document.total_pages)}...
-                  </div>
-                )}
-                {document.status === 'paused' && (
-                  <div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--orange-400)' }}>
-                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ marginRight: '4px', verticalAlign: '-2px' }}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    AI terhenti. Klik lanjutkan untuk mulai kembali dari halaman {Math.min((document.processed_pages || 0) + 1, document.total_pages)}.
-                  </div>
-                )}
-                
                 {(document.status === 'processing' || document.status === 'paused') && (
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+                  <div className="flex gap-2 pt-2">
                     {document.status === 'processing' ? (
-                      <button onClick={handlePause} className={styles.btnSecondary} style={{ flex: 1, padding: '8px', fontSize: '13px' }}>
-                        Tunda / Cicil
+                      <button
+                        onClick={handlePause}
+                        className="flex-1 py-2 text-xs font-bold bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] hover:bg-[var(--border-color)] transition-colors"
+                      >
+                        Tunda / Pause
                       </button>
                     ) : (
-                      <button onClick={handleResume} className={styles.btnPrimary} style={{ flex: 1, padding: '8px', fontSize: '13px' }}>
+                      <button
+                        onClick={handleResume}
+                        className="flex-1 py-2 text-xs font-bold bg-sky-600 text-white rounded-xl hover:bg-sky-500 transition-colors"
+                      >
                         Lanjutkan
                       </button>
                     )}
-                    <button onClick={handleCancel} className={styles.btnDangerOutlined} style={{ flex: 1, padding: '8px', fontSize: '13px' }}>
+                    <button
+                      onClick={handleCancel}
+                      className="flex-1 py-2 text-xs font-bold bg-red-500/10 text-red-500 border border-red-500/20 rounded-xl hover:bg-red-500 hover:text-white transition-all"
+                    >
                       Batalkan
                     </button>
                   </div>
@@ -464,43 +480,47 @@ export default function DocumentDetailPage() {
             )}
           </div>
 
-          {/* Card Replace */}
-          <div className={styles.card}>
-            <h3 className={styles.cardTitle}>Ganti File PDF</h3>
-            <p className={styles.cardDesc}>Mengganti file akan menghapus indexing lama dan memproses ulang dokumen dari awal.</p>
-            <form onSubmit={handleReplace}>
-              <input 
-                type="file" 
+          {/* Replace PDF File */}
+          <div className="p-6 space-y-4">
+            <h3 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider">Ganti File PDF</h3>
+            <p className="text-xs text-[var(--text-secondary)]">
+              Mengganti file akan menghapus indexing lama dan mengulang proses OCR & RAG.
+            </p>
+            <form onSubmit={handleReplace} className="space-y-3">
+              <input
+                type="file"
                 accept="application/pdf"
                 onChange={(e) => setReplaceFile(e.target.files[0])}
-                className={styles.fileInput}
                 disabled={replacing || document.status === 'processing'}
+                className="w-full text-xs text-[var(--text-secondary)] file:mr-4 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-sky-500/10 file:text-sky-500"
               />
-              <button 
-                type="submit" 
-                className={styles.btnSecondary}
+              <button
+                type="submit"
+                className="w-full py-2.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)] text-xs font-bold text-[var(--text-primary)] hover:bg-sky-600 hover:text-white hover:border-sky-600 transition-all disabled:opacity-50"
                 disabled={!replaceFile || replacing || document.status === 'processing'}
-                style={{ width: '100%' }}
               >
                 {replacing ? 'Mengunggah...' : 'Ganti & Proses Ulang'}
               </button>
             </form>
           </div>
 
-          {/* Card Danger */}
-          <div className={`${styles.card} ${styles.cardDanger}`}>
-            <h3 className={styles.cardTitle} style={{ color: 'var(--red-400)' }}>Zona Berbahaya</h3>
-            <p className={styles.cardDesc}>Menghapus dokumen bersifat permanen. AI tidak akan bisa lagi mencari jawaban dari dokumen ini.</p>
-            <button onClick={handleDelete} className={styles.btnDangerOutlined} style={{ width: '100%' }}>
-              Hapus Dokumen
+          {/* Danger Zone */}
+          <div className="p-6 bg-red-500/5 space-y-4">
+            <h3 className="text-sm font-bold text-red-500 uppercase tracking-wider">Zona Berbahaya</h3>
+            <p className="text-xs text-[var(--text-secondary)]">
+              Menghapus dokumen bersifat permanen dan akan menghapus semua vektor ChromaDB terkait.
+            </p>
+            <button
+              onClick={handleDelete}
+              className="w-full py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-600 hover:text-white font-bold text-xs transition-all"
+            >
+              Hapus Dokumen Permanen
             </button>
           </div>
-
         </div>
-
       </div>
 
-      <ConfirmModal 
+      <ConfirmModal
         isOpen={showDeleteModal}
         title="Hapus Dokumen Permanen"
         message="PERINGATAN: Dokumen ini akan dihapus permanen. AI tidak akan bisa lagi mencari jawaban dari dokumen ini. Lanjutkan?"
@@ -509,7 +529,7 @@ export default function DocumentDetailPage() {
         confirmText="Hapus"
       />
 
-      <ConfirmModal 
+      <ConfirmModal
         isOpen={showReplaceModal}
         title="Konfirmasi Ganti File"
         message="Yakin ingin mengganti file ini? Proses indexing akan diulang dari awal."

@@ -1,26 +1,21 @@
 import { useState, useEffect, useRef, useLayoutEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { documentsApi } from '../api/documents'
 import { categoriesApi } from '../api/categories'
-import styles from './DashboardPage.module.css'
 import ConfirmModal from '../components/ConfirmModal'
 
 export default function DashboardPage() {
   const [data, setData] = useState({ documents: [], stats: {}, meta: {} })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  
-  // Modal Upload state
+
   const [showModal, setShowModal] = useState(false)
   const [uploadTitle, setUploadTitle] = useState('')
   const [uploadFile, setUploadFile] = useState(null)
   const [uploadCategoryId, setUploadCategoryId] = useState('')
   const [uploading, setUploading] = useState(false)
-  
-  // Delete Confirmation state
-  const [deleteTarget, setDeleteTarget] = useState(null)
 
-  // Categories
+  const [deleteTarget, setDeleteTarget] = useState(null)
   const [categories, setCategories] = useState([])
 
   const fetchTimeout = useRef(null)
@@ -32,10 +27,8 @@ export default function DashboardPage() {
     try {
       const res = await documentsApi.list(page)
       setData(res.data)
-      
-      // Polling if there's any document processing
       if (res.data.has_processing) {
-        fetchTimeout.current = setTimeout(() => fetchData(page), 10000) // Poll every 10s
+        fetchTimeout.current = setTimeout(() => fetchData(page), 10000)
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Gagal memuat data dokumen.')
@@ -70,10 +63,8 @@ export default function DashboardPage() {
         { opacity: 1, x: 0, duration: 0.6, stagger: 0.1, ease: 'power2.out', clearProps: 'all' }
       )
     }
-    
     if (!loading && statsGridRef.current && window.gsap) {
       const cards = statsGridRef.current.children
-      
       window.gsap.fromTo(
         cards,
         { opacity: 0, y: -20 },
@@ -95,14 +86,13 @@ export default function DashboardPage() {
   const handleUploadSubmit = async (e) => {
     e.preventDefault()
     if (!uploadFile || !uploadTitle || !uploadCategoryId) return
-    
     setUploading(true)
     try {
       await documentsApi.upload(uploadTitle, uploadFile, uploadCategoryId)
       setShowModal(false)
       setUploadTitle('')
       setUploadFile(null)
-      fetchData() // Refresh data immediately
+      fetchData()
     } catch (err) {
       alert(err.response?.data?.message || 'Gagal mengunggah dokumen.')
     } finally {
@@ -112,7 +102,6 @@ export default function DashboardPage() {
 
   const confirmDelete = async () => {
     if (!deleteTarget) return
-    
     try {
       await documentsApi.destroy(deleteTarget.id)
       fetchData(data.meta?.current_page || 1)
@@ -125,7 +114,6 @@ export default function DashboardPage() {
 
   const formatDate = (dateString) => {
     if (!dateString) return '-'
-    // Hapus 'Z' atau offset agar browser menterjemahkannya langsung sebagai waktu lokal
     const localStr = dateString.replace('Z', '').replace('+00:00', '')
     return new Date(localStr).toLocaleDateString('id-ID', {
       day: '2-digit', month: 'short', year: 'numeric',
@@ -135,133 +123,162 @@ export default function DashboardPage() {
 
   const getBadgeClass = (status) => {
     switch (status) {
-      case 'completed': return styles.badgeSuccess
-      case 'processing': return styles.badgeWarning
-      case 'failed': return styles.badgeDanger
-      default: return styles.badgeSecondary
+      case 'completed': return 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+      case 'processing': return 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+      case 'failed':     return 'bg-red-500/10 text-red-500 border border-red-500/20'
+      default:           return 'bg-[var(--bg-input)] text-[var(--text-muted)] border border-[var(--border-color)]'
     }
   }
 
   return (
-    <>
-      <div className={styles.container}>
-      <div className={styles.header}>
+    <div className="p-8 max-w-7xl mx-auto space-y-8">
+      {/* Top Banner & Action */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm">
         <div ref={headerRef}>
-          <h1 className={styles.title}>MANAJEMEN DOKUMEN</h1>
-          <p className={styles.subtitle}>Kelola dokumen dasar pengetahuan untuk AI Assistant</p>
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-sky-500" />
+            <h1 className="text-2xl font-black text-[var(--text-primary)] tracking-tight">MANAJEMEN DOKUMEN RAG</h1>
+          </div>
+          <p className="text-sm text-[var(--text-secondary)] mt-1">
+            Kelola basis pengetahuan (knowledge base) dokumen PDF untuk AI Assistant.
+          </p>
         </div>
-        <button className={styles.primaryBtn} onClick={() => setShowModal(true)}>
-          <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-          Unggah Dokumen
+        <button
+          className="px-5 py-3 rounded-xl bg-gradient-to-r from-sky-500 via-blue-600 to-blue-700 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-sky-500/25 transition-all duration-200 hover:scale-[1.02] shrink-0"
+          onClick={() => setShowModal(true)}
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Unggah Dokumen Baru
         </button>
       </div>
 
-      {error && <div className={styles.alert}>{error}</div>}
+      {error && (
+        <div className="bg-red-500/10 text-red-500 p-4 rounded-2xl border border-red-500/20 text-sm font-medium">
+          {error}
+        </div>
+      )}
 
-      <div className={styles.statsGrid} ref={statsGridRef}>
-        <div className={styles.statCard}>
-          <div className={`${styles.statIcon} ${styles.statIconTotal}`}>
-            <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+      {/* Stats Cards */}
+      <div
+        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5"
+        ref={statsGridRef}
+      >
+        {[
+          {
+            icon: <svg className="w-6 h-6 text-sky-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>,
+            bg: 'bg-sky-500/10 border-sky-500/20',
+            label: 'Total Dokumen',
+            value: data.stats?.total || 0,
+          },
+          {
+            icon: <svg className="w-6 h-6 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>,
+            bg: 'bg-emerald-500/10 border-emerald-500/20',
+            label: 'Selesai Ter-index',
+            value: data.stats?.completed || 0,
+          },
+          {
+            icon: <svg className="w-6 h-6 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>,
+            bg: 'bg-amber-500/10 border-amber-500/20',
+            label: 'Dalam Pemrosesan',
+            value: data.stats?.processing || 0,
+          },
+          {
+            icon: <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>,
+            bg: 'bg-red-500/10 border-red-500/20',
+            label: 'Gagal Ter-index',
+            value: data.stats?.failed || 0,
+          },
+        ].map((stat) => (
+          <div
+            key={stat.label}
+            className="bg-[var(--bg-card)] border border-[var(--border-color)] p-6 rounded-2xl flex items-center gap-4 transition-all duration-200 hover:shadow-lg hover:-translate-y-1"
+          >
+            <div className={`w-12 h-12 rounded-2xl border ${stat.bg} flex items-center justify-center shrink-0`}>
+              {stat.icon}
+            </div>
+            <div>
+              <p className="text-xs text-[var(--text-muted)] font-semibold uppercase tracking-wider">{stat.label}</p>
+              <h3 className="text-2xl font-black text-[var(--text-primary)] mt-1">
+                {loading ? <div className="skeleton h-7 w-16" /> : stat.value}
+              </h3>
+            </div>
           </div>
-          <div>
-            <p className={styles.statLabel}>Total Dokumen</p>
-            <h3 className={styles.statValue}>
-              {loading ? <div className="skeleton" style={{ height: '28px', width: '60px', marginTop: '4px', borderRadius: '4px' }}></div> : (data.stats?.total || 0)}
-            </h3>
-          </div>
-        </div>
-        <div className={styles.statCard}>
-          <div className={`${styles.statIcon} ${styles.statIconSuccess}`}>
-            <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-          </div>
-          <div>
-            <p className={styles.statLabel}>Selesai</p>
-            <h3 className={styles.statValue}>
-              {loading ? <div className="skeleton" style={{ height: '28px', width: '60px', marginTop: '4px', borderRadius: '4px' }}></div> : (data.stats?.completed || 0)}
-            </h3>
-          </div>
-        </div>
-        <div className={styles.statCard}>
-          <div className={`${styles.statIcon} ${styles.statIconProcessing}`}>
-            <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-          </div>
-          <div>
-            <p className={styles.statLabel}>Memproses</p>
-            <h3 className={styles.statValue}>
-              {loading ? <div className="skeleton" style={{ height: '28px', width: '60px', marginTop: '4px', borderRadius: '4px' }}></div> : (data.stats?.processing || 0)}
-            </h3>
-          </div>
-        </div>
-        <div className={styles.statCard}>
-          <div className={`${styles.statIcon} ${styles.statIconFailed}`}>
-            <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-          </div>
-          <div>
-            <p className={styles.statLabel}>Gagal</p>
-            <h3 className={styles.statValue}>
-              {loading ? <div className="skeleton" style={{ height: '28px', width: '60px', marginTop: '4px', borderRadius: '4px' }}></div> : (data.stats?.failed || 0)}
-            </h3>
-          </div>
-        </div>
+        ))}
       </div>
 
-      <div className={styles.tableCard}>
-        <div className={styles.tableResponsive}>
-          <table className={styles.table}>
+      {/* Table Section */}
+      <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
             <thead>
-              <tr>
-                <th>Nama Dokumen</th>
-                <th>File Asli</th>
-                <th>Status</th>
-                <th>Kategori</th>
-                <th>Chunks</th>
-                <th>Diunggah</th>
-                <th align="right">Aksi</th>
+              <tr className="bg-black/5 dark:bg-white/5 border-b border-[var(--border-color)]">
+                {['Judul Dokumen', 'File Asli', 'Status', 'Kategori AI', 'Chunks', 'Waktu Unggah', 'Aksi'].map((h, i) => (
+                  <th
+                    key={h}
+                    className={`px-6 py-4 text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider ${i === 6 ? 'text-right' : ''}`}
+                  >
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-[var(--border-color)] text-sm">
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i}>
-                    <td><div className="skeleton" style={{ height: '20px', width: '80%' }}></div></td>
-                    <td><div className="skeleton" style={{ height: '20px', width: '60%' }}></div></td>
-                    <td><div className="skeleton" style={{ height: '24px', width: '80px', borderRadius: '12px' }}></div></td>
-                    <td><div className="skeleton" style={{ height: '20px', width: '60px' }}></div></td>
-                    <td><div className="skeleton" style={{ height: '20px', width: '40px' }}></div></td>
-                    <td><div className="skeleton" style={{ height: '20px', width: '100px' }}></div></td>
-                    <td><div className="skeleton" style={{ height: '32px', width: '100%', borderRadius: '6px' }}></div></td>
+                    <td className="px-6 py-4"><div className="skeleton h-5 w-4/5" /></td>
+                    <td className="px-6 py-4"><div className="skeleton h-5 w-3/5" /></td>
+                    <td className="px-6 py-4"><div className="skeleton h-6 w-20 rounded-full" /></td>
+                    <td className="px-6 py-4"><div className="skeleton h-5 w-16" /></td>
+                    <td className="px-6 py-4"><div className="skeleton h-5 w-10" /></td>
+                    <td className="px-6 py-4"><div className="skeleton h-5 w-24" /></td>
+                    <td className="px-6 py-4 text-right"><div className="skeleton h-8 w-24 ml-auto" /></td>
                   </tr>
                 ))
               ) : data.documents.length === 0 ? (
                 <tr>
-                  <td colSpan="7" style={{ textAlign: 'center', padding: '40px' }}>
-                    <p style={{ color: 'var(--text-muted)' }}>Belum ada dokumen yang diunggah.</p>
+                  <td colSpan="7" className="text-center py-12 text-[var(--text-muted)] font-medium">
+                    Belum ada dokumen yang diunggah. Klik tombol diatas untuk mengunggah dokumen baru.
                   </td>
                 </tr>
               ) : (
-                data.documents.map(doc => (
-                  <tr key={doc.id}>
-                    <td className={styles.fw500}>{doc.title}</td>
-                    <td style={{ color: 'var(--text-secondary)' }}>{doc.original_filename}</td>
-                    <td>
-                      <span className={`${styles.badge} ${getBadgeClass(doc.status)}`}>
-                        {doc.status === 'processing' && <svg className="spin" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ marginRight: '4px' }}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>}
+                data.documents.map((doc) => (
+                  <tr key={doc.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                    <td className="px-6 py-4 font-bold text-[var(--text-primary)]">{doc.title}</td>
+                    <td className="px-6 py-4 text-[var(--text-secondary)] font-mono text-xs">{doc.original_filename}</td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${getBadgeClass(doc.status)}`}>
+                        {doc.status === 'processing' && (
+                          <svg className="spin w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                        )}
                         {doc.status_label}
                       </span>
                     </td>
-                    <td>
-                      <span className={styles.badge} style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
+                    <td className="px-6 py-4">
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[var(--bg-input)] text-[var(--text-secondary)] border border-[var(--border-color)]">
                         {doc.category_name}
                       </span>
                     </td>
-                    <td>{doc.total_chunks || '-'}</td>
-                    <td style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                      {formatDate(doc.created_at)}
-                    </td>
-                    <td align="right">
-                      <div className={styles.actionGroup}>
-                        <Link to={`/documents/${doc.id}`} className={styles.btnSm}>Lihat</Link>
-                        <button onClick={() => setDeleteTarget(doc)} className={`${styles.btnSm} ${styles.btnDanger}`}>Hapus</button>
+                    <td className="px-6 py-4 font-semibold text-[var(--text-primary)]">{doc.total_chunks || '-'}</td>
+                    <td className="px-6 py-4 text-xs text-[var(--text-muted)] font-medium">{formatDate(doc.created_at)}</td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex gap-2 justify-end">
+                        <Link
+                          to={`/documents/${doc.id}`}
+                          className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-sky-500/10 text-sky-500 hover:bg-sky-500 hover:text-white transition-all duration-200"
+                        >
+                          Detail
+                        </Link>
+                        <button
+                          onClick={() => setDeleteTarget(doc)}
+                          className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all duration-200"
+                        >
+                          Hapus
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -270,47 +287,62 @@ export default function DashboardPage() {
             </tbody>
           </table>
         </div>
-        
+
+        {/* Pagination */}
         {!loading && data.meta?.last_page > 1 && (
-          <div className={styles.pagination}>
-            <button 
+          <div className="flex justify-between items-center px-6 py-4 border-t border-[var(--border-color)] bg-black/5 dark:bg-white/5">
+            <button
               disabled={data.meta.current_page === 1}
               onClick={() => fetchData(data.meta.current_page - 1)}
-              className={styles.pageBtn}
+              className="px-4 py-2 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-xs font-bold text-[var(--text-primary)] hover:bg-[var(--border-color)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              &larr; Prev
+              ← Sebelumnya
             </button>
-            <span className={styles.pageInfo}>
-              Hal {data.meta.current_page} dari {data.meta.last_page}
+            <span className="text-xs font-bold text-[var(--text-muted)]">
+              Halaman {data.meta.current_page} dari {data.meta.last_page}
             </span>
-            <button 
+            <button
               disabled={data.meta.current_page === data.meta.last_page}
               onClick={() => fetchData(data.meta.current_page + 1)}
-              className={styles.pageBtn}
+              className="px-4 py-2 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-xs font-bold text-[var(--text-primary)] hover:bg-[var(--border-color)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              Next &rarr;
+              Berikutnya →
             </button>
           </div>
         )}
       </div>
-    </div>
 
       {/* Upload Modal */}
       {showModal && (
-        <div className={styles.modalOverlay} onClick={(e) => { if (e.target === e.currentTarget) setShowModal(false) }}>
-          <div className={styles.modal} ref={modalRef}>
-            <div className={styles.modalHeader}>
-              <h3 className={styles.modalTitle}>Unggah Dokumen Baru</h3>
-              <button className={styles.closeBtn} onClick={() => setShowModal(false)}>
-                <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowModal(false) }}
+        >
+          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden" ref={modalRef}>
+            <div className="px-6 py-5 border-b border-[var(--border-color)] flex justify-between items-center bg-black/5 dark:bg-white/5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-sky-500/10 text-sky-500 flex items-center justify-center">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-bold text-[var(--text-primary)]">Unggah Dokumen Baru</h3>
+              </div>
+              <button
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 rounded-lg transition-colors"
+                onClick={() => setShowModal(false)}
+              >
+                ✕
               </button>
             </div>
+
             <form onSubmit={handleUploadSubmit}>
-              <div className={styles.modalBody}>
-                <div className={styles.formGroup}>
-                  <label>Judul Dokumen</label>
-                  <input 
-                    type="text" 
+              <div className="p-6 space-y-5">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">Judul Dokumen</label>
+                  <input
+                    type="text"
+                    className="w-full"
                     value={uploadTitle}
                     onChange={e => setUploadTitle(e.target.value)}
                     placeholder="Contoh: SK Pelayanan Publik 2024"
@@ -318,36 +350,49 @@ export default function DashboardPage() {
                     disabled={uploading}
                   />
                 </div>
-                <div className={styles.formGroup}>
-                  <label>Kategori Dokumen / AI Prompt</label>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">Kategori AI Prompt</label>
                   <select
+                    className="w-full"
                     value={uploadCategoryId}
                     onChange={e => setUploadCategoryId(e.target.value)}
                     required
                     disabled={uploading}
-                    className={styles.select}
                   >
                     {categories.map(cat => (
                       <option key={cat.id} value={cat.id}>{cat.name}</option>
                     ))}
                   </select>
                 </div>
-                <div className={styles.formGroup}>
-                  <label>File PDF</label>
-                  <input 
-                    type="file" 
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">File PDF Dokumen</label>
+                  <input
+                    type="file"
                     accept="application/pdf"
                     onChange={e => setUploadFile(e.target.files[0])}
                     required
                     disabled={uploading}
+                    className="w-full text-xs text-[var(--text-secondary)] file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-sky-500/10 file:text-sky-500 hover:file:bg-sky-500/20"
                   />
-                  <p className={styles.helpText}>Maksimal ukuran file: 50MB</p>
+                  <p className="text-xs text-[var(--text-muted)] mt-1.5">Maksimal ukuran file: 50MB (Format PDF)</p>
                 </div>
               </div>
-              <div className={styles.modalFooter}>
-                <button type="button" className={styles.btnSecondary} onClick={() => setShowModal(false)} disabled={uploading}>Batal</button>
-                <button type="submit" className={styles.primaryBtn} disabled={uploading || !uploadTitle || !uploadFile}>
-                  {uploading ? 'Mengunggah...' : 'Unggah & Proses'}
+
+              <div className="px-6 py-4 border-t border-[var(--border-color)] bg-black/5 dark:bg-white/5 flex justify-end gap-3">
+                <button
+                  type="button"
+                  className="px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-input)] text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--border-color)] transition-colors"
+                  onClick={() => setShowModal(false)}
+                  disabled={uploading}
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-sm shadow-md transition-all disabled:opacity-50"
+                  disabled={uploading || !uploadTitle || !uploadFile}
+                >
+                  {uploading ? 'Mengunggah & Memproses...' : 'Unggah Dokumen'}
                 </button>
               </div>
             </form>
@@ -355,7 +400,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <ConfirmModal 
+      <ConfirmModal
         isOpen={!!deleteTarget}
         title="Hapus Dokumen"
         message={`Yakin ingin menghapus dokumen "${deleteTarget?.title}"?`}
@@ -363,6 +408,6 @@ export default function DashboardPage() {
         onCancel={() => setDeleteTarget(null)}
         confirmText="Hapus"
       />
-    </>
+    </div>
   )
 }
