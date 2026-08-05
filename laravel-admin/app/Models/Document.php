@@ -19,7 +19,11 @@ class Document extends Model
         'original_filename',
         'storage_path',
         'status',
+        'flowchart_data',
+        'flowchart_status',
+        'flowchart_markdown',
         'pdf_type',
+        'category_id',
         'error_message',
         'total_pages',
         'total_chunks',
@@ -36,6 +40,7 @@ class Document extends Model
             'processed_at' => 'datetime',
             'total_pages' => 'integer',
             'total_chunks' => 'integer',
+            'flowchart_data' => 'array',
         ];
     }
 
@@ -45,6 +50,14 @@ class Document extends Model
     public function uploader(): BelongsTo
     {
         return $this->belongsTo(User::class, 'uploaded_by');
+    }
+
+    /**
+     * Get the category associated with the document.
+     */
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(DocumentCategory::class, 'category_id');
     }
 
     /**

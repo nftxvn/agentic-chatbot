@@ -78,66 +78,80 @@ def process_document_task(
         file_path,
     )
 
-    try:
+        # Import di sini untuk menghindari circular imports
+        import fitz
+        from app.database import get_document_by_id, update_document_status
+        from app.services import embedding_service, pdf_processor
+
         # ── Langkah 1: Update status ke 'processing' ──
         update_document_status(document_id, status="processing")
-        logger.info("[1/7] Status dokumen %d diupdate ke 'processing'", document_id)
+        logger.info("[1/5] Status dokumen %d diupdate ke 'processing'", document_id)
 
         # ── Langkah 2: Deteksi tipe PDF ──
         pdf_type = pdf_processor.detect_pdf_type(file_path)
-        logger.info("[2/7] Tipe PDF terdeteksi: %s", pdf_type)
-
-        # ── Langkah 3: Update tipe PDF di database ──
         update_document_status(document_id, status="processing", pdf_type=pdf_type)
-        logger.info("[3/7] Tipe PDF '%s' disimpan ke database", pdf_type)
+        logger.info("[2/5] Tipe PDF '%s' disimpan ke database", pdf_type)
 
-        # ── Langkah 4: Ekstrak teks dari PDF ──
-        pages = pdf_processor.extract_text(file_path)
-        total_pages = len(pages)
-        logger.info("[4/7] Berhasil mengekstrak teks dari %d halaman", total_pages)
-
-        if not pages:
-            logger.warning(
-                "Dokumen %d: tidak ada teks yang bisa diekstrak", document_id
-            )
-            update_document_status(
-                document_id,
-                status="completed",
-                total_chunks=0,
-                total_pages=0,
-                processed_at=datetime.utcnow(),
-            )
-            return {
-                "document_id": document_id,
-                "status": "completed",
-                "message": "Tidak ada teks yang bisa diekstrak dari dokumen.",
-                "total_pages": 0,
-                "total_chunks": 0,
-            }
-
-        # ── Langkah 5: Pecah teks menjadi chunk ──
-        chunks = embedding_service.chunk_text(pages)
-        total_chunks = len(chunks)
-        logger.info("[5/7] Teks dipecah menjadi %d chunk", total_chunks)
-
-        # ── Langkah 6: Hapus vektor lama jika overwrite ──
+        # ── Langkah 3: Hapus vektor lama jika overwrite ──
         if action == "overwrite":
             deleted_count = embedding_service.delete_document_vectors(document_id)
-            logger.info(
-                "[6/7] Mode overwrite: %d vektor lama dihapus", deleted_count
+            logger.info("[3/5] Mode overwrite: %d vektor lama dihapus", deleted_count)
+
+        # ── Langkah 4: Pemrosesan Streaming Halaman per Halaman ──
+        doc = fitz.open(file_path)
+        total_pages = len(doc)
+        total_accumulated_chunks = 0
+
+        logger.info("[4/5] Memulai pemrosesan streaming %d halaman PDF...", total_pages)
+
+        for page_idx in range(total_pages):
+            page_num = page_idx + 1
+
+            # Cek apakah admin membatalkan / menunda pemrosesan di tengah jalan
+            current_doc = get_document_by_id(document_id)
+            if current_doc and current_doc.get("status") in ["failed", "paused"]:
+                logger.info(
+                    "Pemrosesan dokumen %d dihentikan (status saat ini: %s)",
+                    document_id,
+                    current_doc.get("status"),
+                )
+                doc.close()
+                return {
+                    "document_id": document_id,
+                    "status": current_doc.get("status"),
+                    "message": "Pemrosesan dihentikan oleh admin.",
+                }
+
+            page = doc[page_idx]
+            page_content = pdf_processor.process_single_page(page, page_num)
+
+            if page_content and page_content.get("text"):
+                page_chunks = embedding_service.chunk_text([page_content])
+                if page_chunks:
+                    stored_count = embedding_service.embed_and_store(document_id, page_chunks)
+                    total_accumulated_chunks += stored_count
+
+            # Update progres halaman & total chunks ke database secara real-time
+            update_document_status(
+                document_id,
+                status="processing",
+                total_pages=total_pages,
+                total_chunks=total_accumulated_chunks,
             )
-        else:
-            logger.info("[6/7] Mode '%s': melewati penghapusan vektor lama", action)
+            logger.info(
+                "Progres Halaman %d/%d (Total Chunks: %d)",
+                page_num,
+                total_pages,
+                total_accumulated_chunks,
+            )
 
-        # ── Langkah 7: Embed dan simpan vektor baru ──
-        stored_count = embedding_service.embed_and_store(document_id, chunks)
-        logger.info("[7/7] Berhasil menyimpan %d vektor ke ChromaDB", stored_count)
+        doc.close()
 
-        # ── Selesai: Update status ke 'completed' ──
+        # ── Langkah 5: Selesai - Update status ke 'completed' ──
         update_document_status(
             document_id,
             status="completed",
-            total_chunks=total_chunks,
+            total_chunks=total_accumulated_chunks,
             total_pages=total_pages,
             processed_at=datetime.utcnow(),
         )
@@ -147,14 +161,14 @@ def process_document_task(
             "status": "completed",
             "pdf_type": pdf_type,
             "total_pages": total_pages,
-            "total_chunks": total_chunks,
+            "total_chunks": total_accumulated_chunks,
         }
 
         logger.info(
             "═══ Pemrosesan dokumen %d selesai ═══ (%d halaman, %d chunk)",
             document_id,
             total_pages,
-            total_chunks,
+            total_accumulated_chunks,
         )
 
         return result

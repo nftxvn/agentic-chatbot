@@ -10,6 +10,16 @@ import CategoriesPage from './pages/CategoriesPage'
 import DocumentDetailPage from './pages/DocumentDetailPage'
 import WhatsappSettingsPage from './pages/WhatsappSettingsPage'
 
+function AppLoader() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[var(--bg-main)]">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-10 h-10 border-4 border-sky-500/30 border-t-sky-500 rounded-full animate-spin" />
+      </div>
+    </div>
+  )
+}
+
 /** Route yang hanya bisa diakses saat belum login */
 function GuestRoute({ children }) {
   const { user, loading } = useAuth()

@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import gsap from 'gsap'
 import { documentsApi } from '../api/documents'
 import ConfirmModal from '../components/ConfirmModal'
+import { SopFlowchartEditorWrapper } from '../components/SopFlowchartEditor'
 
 export default function DocumentDetailPage() {
   const { id } = useParams()
@@ -24,6 +25,7 @@ export default function DocumentDetailPage() {
   const [showReplaceModal, setShowReplaceModal] = useState(false)
 
   const [leftColWidth, setLeftColWidth] = useState(65)
+  const [activeTab, setActiveTab] = useState('pdf') // 'pdf' | 'flowchart'
   const isDragging = useRef(false)
   const isMounted = useRef(true)
   const containerRef = useRef(null)
@@ -176,7 +178,9 @@ export default function DocumentDetailPage() {
       await documentsApi.resume(id)
       fetchDocument()
     } catch (err) {
-      alert(err.response?.data?.message || 'Gagal melanjutkan pemrosesan')
+      const msg = err.response?.data?.message || err.message || 'Server AI (Python Uvicorn / Celery) sedang tidak berjalan.'
+      alert(`⚠️ ${msg}`)
+      fetchDocument()
     }
   }
 
@@ -350,8 +354,39 @@ export default function DocumentDetailPage() {
         {/* LEFT COLUMN */}
         <div className="flex flex-col border-r border-[var(--border-color)] divide-y divide-[var(--border-color)] min-h-[700px]">
 
+          {/* PDF / Flowchart Tab Switcher — hanya tampil jika kategori adalah flowchart */}
+          {document.category_ui_layout === 'flowchart' && (
+            <div className="px-6 pt-5 flex gap-2">
+              <button
+                onClick={() => setActiveTab('pdf')}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  activeTab === 'pdf'
+                    ? 'bg-sky-500 text-white shadow-sm'
+                    : 'bg-[var(--bg-input)] text-[var(--text-muted)] border border-[var(--border-color)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                📄 Pratinjau PDF
+              </button>
+              <button
+                onClick={() => setActiveTab('flowchart')}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  activeTab === 'flowchart'
+                    ? 'bg-violet-600 text-white shadow-sm'
+                    : 'bg-[var(--bg-input)] text-[var(--text-muted)] border border-[var(--border-color)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                🔀 Flowchart Editor
+                {document.flowchart_status === 'finalized' && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-emerald-400/20 text-emerald-400 text-[9px] font-black">✓ Final</span>
+                )}
+              </button>
+            </div>
+          )}
+
           {/* PDF Viewer Section */}
-          <div className="p-6 flex flex-col h-[520px]">
+          <div className={`p-6 flex flex-col h-[520px] ${
+            document.category_ui_layout === 'flowchart' && activeTab !== 'pdf' ? 'hidden' : ''
+          }`}>
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider">Pratinjau PDF</h2>
               <a
@@ -374,6 +409,20 @@ export default function DocumentDetailPage() {
               />
             </div>
           </div>
+
+          {/* Flowchart Editor — hanya tampil jika tab aktif & kategori flowchart */}
+          {document.category_ui_layout === 'flowchart' && activeTab === 'flowchart' && (
+            <div className="flex flex-col" style={{ height: 520 }}>
+              <SopFlowchartEditorWrapper
+                documentId={document.id}
+                markdownContent={chunks.length > 0
+                  ? chunks.map(c => c.text).join('\n\n')
+                  : null
+                }
+                category={document.category_ui_layout}
+              />
+            </div>
+          )}
 
           {/* ChromaDB Chunks */}
           <div className="p-6">
@@ -470,6 +519,7 @@ export default function DocumentDetailPage() {
 
             {[
               { label: 'File Asli', value: document.original_filename },
+              { label: 'Kategori AI', value: document.category_name || document.category?.name || 'Umum' },
               { label: 'Tipe PDF', value: document.pdf_type_label },
               { label: 'Halaman / Chunks', value: `${document.total_pages || '-'} / ${document.total_chunks || '-'}` },
               { label: 'Diunggah Oleh', value: document.uploaded_by || '-' },
@@ -478,7 +528,15 @@ export default function DocumentDetailPage() {
             ].map(({ label, value }) => (
               <div key={label} className="flex justify-between items-center py-1.5 text-xs">
                 <span className="text-[var(--text-muted)] font-semibold">{label}</span>
-                <span className="text-[var(--text-primary)] font-bold text-right truncate max-w-[60%]">{value}</span>
+                <span className="text-[var(--text-primary)] font-bold text-right truncate max-w-[60%]">
+                  {label === 'Kategori AI' ? (
+                    <span className="px-2 py-0.5 rounded-lg text-[11px] font-semibold bg-sky-500/10 text-sky-500 border border-sky-500/20">
+                      {value}
+                    </span>
+                  ) : (
+                    value
+                  )}
+                </span>
               </div>
             ))}
 
@@ -505,29 +563,31 @@ export default function DocumentDetailPage() {
                   />
                 </div>
 
-                {(document.status === 'processing' || document.status === 'paused') && (
+                {(document.status === 'processing' || document.status === 'paused' || document.status === 'failed') && (
                   <div className="flex gap-2 pt-2">
                     {document.status === 'processing' ? (
                       <button
-                        onClick={handlePause}
-                        className="flex-1 py-2 text-xs font-bold bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] hover:bg-[var(--border-color)] transition-colors"
+                        onClick={handleCancel}
+                        className="flex-1 py-2 text-xs font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded-xl hover:bg-amber-500 hover:text-white transition-all flex items-center justify-center gap-1.5"
+                        title="Hentikan (Stop) pemrosesan dokumen ini"
                       >
-                        Tunda / Pause
+                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                          <rect x="6" y="6" width="12" height="12" rx="1.5" />
+                        </svg>
+                        Stop
                       </button>
                     ) : (
                       <button
                         onClick={handleResume}
-                        className="flex-1 py-2 text-xs font-bold bg-sky-600 text-white rounded-xl hover:bg-sky-500 transition-colors"
+                        className="flex-1 py-2 text-xs font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-xl hover:bg-emerald-500 hover:text-white transition-all flex items-center justify-center gap-1.5"
+                        title="Lanjutkan (Resume) pemrosesan dokumen ini"
                       >
-                        Lanjutkan
+                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                        Resume
                       </button>
                     )}
-                    <button
-                      onClick={handleCancel}
-                      className="flex-1 py-2 text-xs font-bold bg-red-500/10 text-red-500 border border-red-500/20 rounded-xl hover:bg-red-500 hover:text-white transition-all"
-                    >
-                      Batalkan
-                    </button>
                   </div>
                 )}
               </div>
@@ -550,10 +610,21 @@ export default function DocumentDetailPage() {
               />
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)] text-xs font-bold text-[var(--text-primary)] hover:bg-sky-600 hover:text-white hover:border-sky-600 transition-all disabled:opacity-50"
+                className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all relative overflow-hidden flex items-center justify-center gap-2 ${
+                  replacing
+                    ? 'bg-gradient-to-r from-sky-500 via-sky-500 to-sky-100 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 btn-light-sweep cursor-wait opacity-95'
+                    : 'bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] hover:bg-sky-600 hover:text-white hover:border-sky-600 disabled:opacity-50'
+                }`}
                 disabled={!replaceFile || replacing || document.status === 'processing'}
               >
-                {replacing ? 'Mengunggah...' : 'Ganti & Proses Ulang'}
+                {replacing ? (
+                  <>
+                    <span className="spin w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full shrink-0" />
+                    <span>Mengunggah & Memproses...</span>
+                  </>
+                ) : (
+                  'Ganti & Proses Ulang'
+                )}
               </button>
             </form>
           </div>

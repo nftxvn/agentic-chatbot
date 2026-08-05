@@ -6,6 +6,7 @@ Menerima request dari Laravel untuk memproses PDF dan mengecek status dokumen.
 import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from starlette.requests import Request
 
 from app.config import settings
 from app.database import get_all_documents, get_document_by_id
@@ -226,4 +227,52 @@ async def get_document_chunks_route(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Gagal mengambil chunk: {str(e)}"
+        )
+
+
+@router.post(
+    "/{document_id}/re-embed",
+    summary="Re-embed dokumen dari markdown flowchart",
+    description="Menghapus vektor lama dan meng-embed ulang dari markdown yang diberikan (hasil konversi flowchart).",
+)
+async def re_embed_document(
+    document_id: int,
+    request: Request,
+    _token: str = Depends(verify_token),
+) -> dict:
+    from app.database import update_document_status
+    from app.services import embedding_service
+    
+    try:
+        body = await request.json()
+        markdown = body.get("markdown", "").strip()
+        
+        if not markdown:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Markdown content cannot be empty."
+            )
+            
+        logger.info("Re-embedding document %d from markdown", document_id)
+        
+        embedding_service.delete_document_vectors(document_id)
+        
+        pages = [{"page_number": 1, "text": markdown}]
+        chunks = embedding_service.chunk_text(pages)
+        embedding_service.embed_and_store(document_id, chunks)
+        
+        update_document_status(document_id, "completed")
+        
+        return {
+            "success": True,
+            "message": f"Dokumen {document_id} berhasil di-embed ulang.",
+            "total_chunks": len(chunks)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Gagal melakukan re-embed dokumen %d: %s", document_id, str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Gagal melakukan re-embed: {str(e)}"
         )

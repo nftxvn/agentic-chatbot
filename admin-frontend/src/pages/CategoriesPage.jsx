@@ -228,22 +228,22 @@ export default function CategoriesPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-6 sm:space-y-8">
+    <div className="p-4 sm:p-5 max-w-[1600px] mx-auto space-y-4 sm:space-y-5">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 sm:p-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-sm">
         <div ref={headerRef}>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-black text-[var(--text-primary)] tracking-tight">KATEGORI DOKUMEN AI</h1>
+            <h1 className="text-xl sm:text-2xl font-black text-[var(--text-primary)] tracking-tight">KATEGORI DOKUMEN AI</h1>
           </div>
-          <p className="text-sm text-[var(--text-secondary)] mt-1">
+          <p className="text-xs sm:text-sm text-[var(--text-secondary)] mt-0.5">
             Konfigurasi instruksi LLM, Vision model, serta template antarmuka per jenis dokumen.
           </p>
         </div>
         <button
-          className="px-5 py-3 rounded-xl bg-gradient-to-r from-sky-500 via-sky-500 to-sky-200 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-sky-500/25 transition-all duration-200 hover:scale-[1.02] shrink-0"
+          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 via-sky-500 to-sky-200 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md shadow-sky-500/25 transition-all duration-200 hover:scale-[1.02] shrink-0"
           onClick={() => handleOpenModal()}
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
           Tambah Kategori Baru
@@ -253,9 +253,9 @@ export default function CategoriesPage() {
       {/* Grid of Categories */}
       <div>
         {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="bg-[var(--bg-card)] border border-[var(--border-color)] p-6 rounded-2xl space-y-4">
+              <div key={i} className="bg-[var(--bg-card)] border border-[var(--border-color)] p-5 rounded-xl space-y-3">
                 <div className="skeleton h-6 w-1/2" />
                 <div className="skeleton h-4 w-full" />
                 <div className="skeleton h-4 w-3/4" />
@@ -277,15 +277,15 @@ export default function CategoriesPage() {
             <p className="text-sm">Tambahkan kategori pertama Anda untuk mulai mengatur prompt AI.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6" ref={gridRef}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5" ref={gridRef}>
             {categories.map((cat) => (
               <div
                 key={cat.id}
-                className="bg-[var(--bg-card)] border border-[var(--border-color)] p-6 rounded-2xl flex flex-col justify-between hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
+                className="bg-[var(--bg-card)] border border-[var(--border-color)] p-4 sm:p-5 rounded-xl flex flex-col justify-between hover:shadow-md hover:-translate-y-0.5 transition-all duration-300"
               >
                 <div>
-                  <div className="flex justify-between items-start mb-3">
-                    <h2 className="text-xl font-bold text-[var(--text-primary)]">{cat.name}</h2>
+                  <div className="flex justify-between items-start mb-2.5">
+                    <h2 className="text-lg font-bold text-[var(--text-primary)]">{cat.name}</h2>
                     <Badge variant="default" className="uppercase tracking-wider">
                       {cat.ui_layout}
                     </Badge>

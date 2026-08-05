@@ -129,4 +129,61 @@ class AiMicroserviceClient
             return [];
         }
     }
+
+    /**
+     * Re-embed document with markdown content.
+     */
+    public function reEmbedDocument(int $documentId, string $markdownContent): array
+    {
+        try {
+            $response = Http::withToken($this->token)
+                ->timeout(30)
+                ->connectTimeout(10)
+                ->post("{$this->baseUrl}/api/docs/{$documentId}/re-embed", [
+                    'markdown' => $markdownContent,
+                ]);
+
+            if ($response->successful()) {
+                return [
+                    'success' => true,
+                    'message' => 'Dokumen berhasil di-re-embed.',
+                    'data' => $response->json(),
+                ];
+            }
+
+            Log::warning('AI Microservice returned error on re-embed', [
+                'status' => $response->status(),
+                'body' => $response->body(),
+                'document_id' => $documentId,
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'AI Service mengembalikan error: ' . $response->status(),
+                'data' => $response->json(),
+            ];
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            Log::error('AI Microservice connection failed on re-embed', [
+                'error' => $e->getMessage(),
+                'document_id' => $documentId,
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Tidak dapat terhubung ke AI Service.',
+                'data' => null,
+            ];
+        } catch (\Exception $e) {
+            Log::error('AI Microservice unexpected error on re-embed', [
+                'error' => $e->getMessage(),
+                'document_id' => $documentId,
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Terjadi kesalahan: ' . $e->getMessage(),
+                'data' => null,
+            ];
+        }
+    }
 }

@@ -73,4 +73,38 @@ class AuthController extends Controller
             ],
         ]);
     }
+
+    /**
+     * Change user password directly without email verification link.
+     */
+    public function changePassword(Request $request): JsonResponse
+    {
+        $request->validate([
+            'current_password' => ['required', 'string'],
+            'new_password'     => ['required', 'string', 'min:8', 'confirmed'],
+        ], [
+            'current_password.required' => 'Password saat ini wajib diisi.',
+            'new_password.required'     => 'Password baru wajib diisi.',
+            'new_password.min'          => 'Password baru minimal 8 karakter.',
+            'new_password.confirmed'    => 'Konfirmasi password baru tidak cocok.',
+        ]);
+
+        $user = $request->user();
+
+        if (!\Illuminate\Support\Facades\Hash::check($request->input('current_password'), $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Password saat ini yang Anda masukkan salah.',
+            ], 422);
+        }
+
+        $user->update([
+            'password' => \Illuminate\Support\Facades\Hash::make($request->input('new_password')),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Password berhasil diperbarui.',
+        ]);
+    }
 }

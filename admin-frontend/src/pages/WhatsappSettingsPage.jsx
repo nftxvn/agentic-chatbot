@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useLayoutEffect } from 'react'
+import gsap from 'gsap'
 import { getWhatsappSettings, updateWhatsappSettings } from '../api/settings'
 import { addAppNotification } from '../utils/notifications'
 
@@ -7,6 +8,9 @@ export default function WhatsappSettingsPage() {
   const [saving, setSaving] = useState(false)
   const [showToken, setShowToken] = useState(false)
   const [statusMsg, setStatusMsg] = useState(null)
+
+  const headerRef = useRef(null)
+  const formCardRef = useRef(null)
 
   const [form, setForm] = useState({
     wa_status: false,
@@ -18,6 +22,23 @@ export default function WhatsappSettingsPage() {
   useEffect(() => {
     fetchSettings()
   }, [])
+
+  useLayoutEffect(() => {
+    if (headerRef.current) {
+      gsap.fromTo(
+        headerRef.current.children,
+        { opacity: 0, x: -20 },
+        { opacity: 1, x: 0, duration: 0.6, stagger: 0.1, ease: 'power2.out', clearProps: 'all' }
+      )
+    }
+    if (!loading && formCardRef.current) {
+      gsap.fromTo(
+        formCardRef.current,
+        { opacity: 0, scale: 0.98 },
+        { opacity: 1, scale: 1, duration: 0.4, ease: 'power2.out', clearProps: 'all' }
+      )
+    }
+  }, [loading])
 
   async function fetchSettings() {
     const startTime = Date.now()
@@ -71,50 +92,53 @@ export default function WhatsappSettingsPage() {
 
   if (loading) {
     return (
-      <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto space-y-6 sm:space-y-8">
-        <div className="p-6 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm space-y-2">
+      <div className="p-4 sm:p-5 max-w-5xl mx-auto space-y-4 sm:space-y-5">
+        <div className="p-4 sm:p-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-sm space-y-2">
           <div className="skeleton h-6 w-64 rounded-md" />
           <div className="skeleton h-4 w-96 rounded-md" />
         </div>
-        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-6 sm:p-8 shadow-sm space-y-6">
-          <div className="flex justify-between items-center pb-6 border-b border-[var(--border-color)]">
-            <div className="space-y-2">
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-5 sm:p-6 shadow-sm space-y-5">
+          <div className="flex justify-between items-center pb-4 border-b border-[var(--border-color)]">
+            <div className="space-y-1.5">
               <div className="skeleton h-5 w-48 rounded-md" />
               <div className="skeleton h-4 w-80 rounded-md" />
             </div>
             <div className="skeleton w-12 h-6 rounded-full" />
           </div>
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="space-y-1.5">
               <div className="skeleton h-4 w-40 rounded-md" />
-              <div className="skeleton h-11 w-full rounded-xl" />
+              <div className="skeleton h-10 w-full rounded-lg" />
             </div>
           ))}
-          <div className="skeleton h-12 w-full rounded-xl" />
+          <div className="skeleton h-11 w-full rounded-lg" />
         </div>
       </div>
     )
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto space-y-6 sm:space-y-8">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 sm:p-6 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-black text-[var(--text-primary)] tracking-tight">PENGATURAN WHATSAPP API</h1>
-          </div>
-          <p className="text-sm text-[var(--text-secondary)] mt-1">
-            Konfigurasi endpoint dan kredensial WhatsApp Business Cloud API.
+    <div className="p-4 sm:p-5 max-w-5xl mx-auto space-y-4 sm:space-y-5">
+      {/* Header Banner */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 sm:p-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-sm">
+        <div ref={headerRef} className="space-y-1">
+          <h1 className="text-xl sm:text-2xl font-black text-[var(--text-primary)] tracking-tight">
+            Pengaturan API WhatsApp
+          </h1>
+          <p className="text-xs sm:text-sm text-[var(--text-secondary)] font-medium">
+            Konfigurasi endpoint, akses token, dan kredensial WhatsApp Business Cloud API.
           </p>
         </div>
       </div>
 
       {/* Settings Card */}
-      <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-4 sm:p-6 lg:p-8 shadow-sm">
-        <form onSubmit={handleSubmit} className="space-y-6">
+      <div
+        ref={formCardRef}
+        className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-5 sm:p-6 shadow-sm"
+      >
+        <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
           {/* Status Toggle Row */}
-          <div className="flex items-center justify-between pb-6 border-b border-[var(--border-color)]">
+          <div className="flex items-center justify-between pb-4 border-b border-[var(--border-color)]">
             <div className="flex flex-col">
               <span className="text-sm font-bold text-[var(--text-primary)]">Aktifkan Chatbot WhatsApp</span>
               <span className="text-sm text-[var(--text-secondary)] mt-0.5">
@@ -201,10 +225,19 @@ export default function WhatsappSettingsPage() {
           {/* Action button */}
           <button
             type="submit"
-            className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-sky-500 via-sky-500 to-sky-100 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white font-bold text-sm shadow-md shadow-sky-600/20 transition-all disabled:opacity-50"
+            className={`w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-sky-500 via-sky-500 to-sky-100 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white font-bold text-sm shadow-md shadow-sky-600/20 transition-all relative overflow-hidden flex items-center justify-center gap-2 ${
+              saving ? 'btn-light-sweep cursor-wait opacity-95' : 'disabled:opacity-50 hover:scale-[1.01]'
+            }`}
             disabled={saving}
           >
-            {saving ? 'Menyimpan Pengaturan...' : 'Simpan Pengaturan WhatsApp'}
+            {saving ? (
+              <>
+                <span className="spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full shrink-0" />
+                <span>Menyimpan & Memproses...</span>
+              </>
+            ) : (
+              'Simpan Pengaturan WhatsApp'
+            )}
           </button>
 
           {/* Alert Message */}

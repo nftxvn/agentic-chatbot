@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\ForgotPasswordController;
 use App\Http\Controllers\Api\ResetPasswordController;
 use App\Http\Controllers\Api\SettingController;
+use App\Http\Controllers\Api\FlowchartController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -30,8 +31,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Auth
     Route::prefix('auth')->group(function () {
-        Route::get('user',   [AuthController::class, 'user'])->name('api.auth.user');
-        Route::post('logout',[AuthController::class, 'logout'])->name('api.auth.logout');
+        Route::get('user',            [AuthController::class, 'user'])->name('api.auth.user');
+        Route::post('change-password',[AuthController::class, 'changePassword'])->name('api.auth.change-password');
+        Route::post('logout',         [AuthController::class, 'logout'])->name('api.auth.logout');
     });
 
     // Categories
@@ -49,8 +51,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}',          [DocumentController::class, 'show'])->name('api.documents.show');
         Route::get('/{id}/chunks',   [DocumentController::class, 'chunks'])->name('api.documents.chunks');
         Route::post('/{id}/replace', [DocumentController::class, 'replace'])->name('api.documents.replace');
+        Route::post('/{id}/cancel',  [DocumentController::class, 'cancel'])->name('api.documents.cancel');
+        Route::post('/{id}/resume',  [DocumentController::class, 'resume'])->name('api.documents.resume');
         Route::delete('/{id}',       [DocumentController::class, 'destroy'])->name('api.documents.destroy');
         Route::get('/{id}/pdf',      [DocumentController::class, 'servePdf'])->name('api.documents.pdf');
+
+        // Flowchart
+        Route::get('/{id}/flowchart', [FlowchartController::class, 'show'])->name('api.documents.flowchart.show');
+        Route::put('/{id}/flowchart', [FlowchartController::class, 'update'])->name('api.documents.flowchart.update');
+        Route::post('/{id}/flowchart/finalize', [FlowchartController::class, 'finalize'])->name('api.documents.flowchart.finalize');
     });
 
     // Settings

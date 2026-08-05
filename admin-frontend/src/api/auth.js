@@ -33,4 +33,13 @@ export const authApi = {
     })
     return data
   },
+
+  async changePassword(currentPassword, newPassword, newPasswordConfirmation) {
+    const { data } = await client.post('/api/auth/change-password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+      new_password_confirmation: newPasswordConfirmation,
+    })
+    return data
+  },
 }

@@ -298,7 +298,24 @@ def extract_text(file_path: str) -> list[dict]:
 
         return pages_content
 
-    except Exception as e:
-        logger.error("Gagal mengekstrak teks dari PDF '%s': %s", file_path, str(e))
-        raise
-# contoh — sesuaikan dengan struktur data aktual di pdf_processor
+def process_single_page(page: fitz.Page, page_num: int) -> dict:
+    """
+    Ekstrak dan bersihkan teks dari satu halaman PDF (text / vision / llm correction).
+    """
+    text = _extract_text_from_page(page)
+
+    if len(text) < _MIN_TEXT_LENGTH:
+        logger.info(
+            "Halaman %d: teks minim (%d karakter), mengekstrak via Vision Model...",
+            page_num,
+            len(text),
+        )
+        vision_text = _vision_extract_page(page)
+        if vision_text:
+            logger.info("Halaman %d: Mengoreksi hasil Vision via LLM...", page_num)
+            text = _clean_text_with_llm(vision_text)
+
+    if text:
+        return {"page_number": page_num, "text": text}
+    return {"page_number": page_num, "text": ""}
+

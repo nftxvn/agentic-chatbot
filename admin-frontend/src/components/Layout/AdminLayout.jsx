@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import gsap from 'gsap'
 import { useAuth } from '../../context/AuthContext'
@@ -9,6 +9,7 @@ import bandaAcehLogo from '../../assets/banda-aceh-logo.svg'
 import { documentsApi } from '../../api/documents'
 import { categoriesApi } from '../../api/categories'
 import { getWhatsappSettings } from '../../api/settings'
+import { authApi } from '../../api/auth'
 
 function formatRelativeTime(dateString) {
   if (!dateString) return 'Baru saja'
@@ -52,6 +53,14 @@ const NAV_ITEMS = [
   }
 ]
 
+const QUICK_FEATURES = [
+  { id: 'f-dashboard', label: 'Dashboard Utama', desc: 'Ringkasan dokumen RAG & statistik pengindeksan', to: '/dashboard' },
+  { id: 'f-categories', label: 'Kategori Dokumen AI', desc: 'Kelola kategori, prompt LLM & model vision', to: '/categories' },
+  { id: 'f-whatsapp', label: 'Pengaturan WhatsApp API', desc: 'Konfigurasi bot WhatsApp & akses token API', to: '/settings/whatsapp' },
+  { id: 'f-theme', label: 'Ganti Mode Tampilan', desc: 'Beralih antara mode gelap & terang', action: 'toggle-theme' },
+  { id: 'f-logout', label: 'Keluar dari Sistem', desc: 'Logout dari akun administrator', action: 'logout' },
+]
+
 export default function AdminLayout() {
   const { user, logout, loading: authLoading } = useAuth()
   const navigate = useNavigate()
@@ -76,12 +85,76 @@ export default function AdminLayout() {
     }
   })
 
+  // Search System States & Optimization
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [searchIndexData, setSearchIndexData] = useState({ documents: [], categories: [] })
+
   const { theme, toggleTheme, isDark } = useTheme()
   const isDarkMode = isDark
 
   const handleLogout = async () => {
     await logout()
     navigate('/login')
+  }
+
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
+  const userMenuRef = useRef(null)
+  const userMenuDropdownRef = useRef(null)
+  const isUserMenuClosingRef = useRef(false)
+
+  // Change Password Settings Modal States
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [passwordForm, setPasswordForm] = useState({
+    current_password: '',
+    new_password: '',
+    new_password_confirmation: '',
+  })
+  const [showCurrentPass, setShowCurrentPass] = useState(false)
+  const [showNewPass, setShowNewPass] = useState(false)
+  const [showConfirmPass, setShowConfirmPass] = useState(false)
+  const [changingPass, setChangingPass] = useState(false)
+  const [passError, setPassError] = useState('')
+  const [passSuccess, setPassSuccess] = useState('')
+  const passwordModalRef = useRef(null)
+
+  const handleChangePasswordSubmit = async (e) => {
+    e.preventDefault()
+    setPassError('')
+    setPassSuccess('')
+
+    if (passwordForm.new_password !== passwordForm.new_password_confirmation) {
+      setPassError('Konfirmasi password baru tidak cocok.')
+      return
+    }
+
+    if (passwordForm.new_password.length < 8) {
+      setPassError('Password baru minimal 8 karakter.')
+      return
+    }
+
+    setChangingPass(true)
+    try {
+      const res = await authApi.changePassword(
+        passwordForm.current_password,
+        passwordForm.new_password,
+        passwordForm.new_password_confirmation
+      )
+      setPassSuccess(res.message || 'Password berhasil diperbarui.')
+      setPasswordForm({
+        current_password: '',
+        new_password: '',
+        new_password_confirmation: '',
+      })
+      setTimeout(() => {
+        setShowPasswordModal(false)
+        setPassSuccess('')
+      }, 1500)
+    } catch (err) {
+      setPassError(err.response?.data?.message || 'Gagal mengubah password. Pastikan password saat ini benar.')
+    } finally {
+      setChangingPass(false)
+    }
   }
 
   const wrapperRef = useRef(null)
@@ -98,6 +171,143 @@ export default function AdminLayout() {
   const activePillRef = useRef(null)
   const searchContainerRef = useRef(null)
   const searchIconRef = useRef(null)
+  const searchCardRef = useRef(null)
+
+  // Pre-fetch search index asynchronously in background
+  useEffect(() => {
+    let isMounted = true
+    const prepareSearchIndex = async () => {
+      try {
+        const [docRes, catRes] = await Promise.all([
+          documentsApi.list(1).catch(() => null),
+          categoriesApi.list().catch(() => null),
+        ])
+        if (!isMounted) return
+        const docs = docRes?.data?.documents || docRes?.documents || []
+        const cats = catRes?.data || catRes || []
+        setSearchIndexData({
+          documents: docs,
+          categories: Array.isArray(cats) ? cats : (cats.data || [])
+        })
+      } catch (e) {
+        console.error('Failed to prepare search index', e)
+      }
+    }
+    prepareSearchIndex()
+    return () => { isMounted = false }
+  }, [location.pathname])
+
+  // Fast In-Memory Search Filtering
+  const filteredSearchResults = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) {
+      return {
+        features: QUICK_FEATURES,
+        documents: searchIndexData.documents.slice(0, 4),
+        categories: searchIndexData.categories.slice(0, 3)
+      }
+    }
+
+    const matchedFeatures = QUICK_FEATURES.filter(f => 
+      f.label.toLowerCase().includes(q) || f.desc.toLowerCase().includes(q)
+    )
+
+    const matchedDocs = searchIndexData.documents.filter(doc => 
+      (doc.title && doc.title.toLowerCase().includes(q)) ||
+      (doc.original_filename && doc.original_filename.toLowerCase().includes(q)) ||
+      (doc.category_name && doc.category_name.toLowerCase().includes(q))
+    ).slice(0, 5)
+
+    const matchedCats = searchIndexData.categories.filter(cat =>
+      (cat.name && cat.name.toLowerCase().includes(q)) ||
+      (cat.description && cat.description.toLowerCase().includes(q))
+    ).slice(0, 4)
+
+    return {
+      features: matchedFeatures,
+      documents: matchedDocs,
+      categories: matchedCats
+    }
+  }, [searchQuery, searchIndexData])
+
+  const isSearchClosingRef = useRef(false)
+
+  const closeSearch = () => {
+    if (isSearchClosingRef.current) return
+    if (searchCardRef.current) {
+      isSearchClosingRef.current = true
+      gsap.killTweensOf(searchCardRef.current)
+      gsap.to(searchCardRef.current, {
+        opacity: 0,
+        scale: 0.85,
+        y: -14,
+        duration: 0.22,
+        ease: 'power2.in',
+        onComplete: () => {
+          setIsSearchOpen(false)
+          isSearchClosingRef.current = false
+        },
+      })
+    } else {
+      setIsSearchOpen(false)
+    }
+  }
+
+  // GSAP animation for Search Dropdown Card (Spring back.out interaction identical to Notification)
+  useEffect(() => {
+    if (isSearchOpen && searchCardRef.current) {
+      isSearchClosingRef.current = false
+      gsap.killTweensOf(searchCardRef.current)
+      gsap.fromTo(
+        searchCardRef.current,
+        { opacity: 0, scale: 0.85, y: -14, transformOrigin: 'top center' },
+        { opacity: 1, scale: 1, y: 0, duration: 0.38, ease: 'back.out(1.7)' }
+      )
+    }
+  }, [isSearchOpen])
+
+  const closeUserMenu = () => {
+    if (isUserMenuClosingRef.current) return
+    if (userMenuDropdownRef.current) {
+      isUserMenuClosingRef.current = true
+      gsap.killTweensOf(userMenuDropdownRef.current)
+      gsap.to(userMenuDropdownRef.current, {
+        opacity: 0,
+        scale: 0.85,
+        y: -14,
+        duration: 0.22,
+        ease: 'power2.in',
+        onComplete: () => {
+          setIsUserMenuOpen(false)
+          isUserMenuClosingRef.current = false
+        },
+      })
+    } else {
+      setIsUserMenuOpen(false)
+    }
+  }
+
+  const toggleUserMenu = () => {
+    if (isUserMenuOpen) {
+      closeUserMenu()
+    } else {
+      isUserMenuClosingRef.current = false
+      setIsUserMenuOpen(true)
+    }
+  }
+
+  // GSAP animation for User Profile Dropdown Menu (Spring back.out interaction)
+  useEffect(() => {
+    if (isUserMenuOpen && userMenuDropdownRef.current) {
+      isUserMenuClosingRef.current = false
+      gsap.killTweensOf(userMenuDropdownRef.current)
+      gsap.fromTo(
+        userMenuDropdownRef.current,
+        { opacity: 0, scale: 0.85, y: -14, transformOrigin: 'top right' },
+        { opacity: 1, scale: 1, y: 0, duration: 0.38, ease: 'back.out(1.7)' }
+      )
+    }
+  }, [isUserMenuOpen])
 
   // GSAP Smooth Route Transition Animation on Menu Switch
   useEffect(() => {
@@ -343,10 +553,34 @@ export default function AdminLayout() {
       ) {
         closeNotification()
       }
+      if (
+        isSearchOpen &&
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(event.target)
+      ) {
+        closeSearch()
+      }
+      if (
+        isUserMenuOpen &&
+        userMenuRef.current &&
+        !userMenuRef.current.contains(event.target)
+      ) {
+        closeUserMenu()
+      }
+    }
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        closeSearch()
+        closeUserMenu()
+      }
     }
     document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isNotificationOpen])
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isNotificationOpen, isSearchOpen, isUserMenuOpen])
 
   const unreadCount = notifications.filter((n) => n.unread).length
 
@@ -513,10 +747,10 @@ export default function AdminLayout() {
               </svg>
             </button>
             
-            <div ref={searchContainerRef} className="relative w-full max-w-md mx-auto rounded-xl">
+            <div ref={searchContainerRef} className="relative w-full max-w-md mx-auto">
               <svg
                 ref={searchIconRef}
-                className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none"
+                className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none z-10"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -531,51 +765,164 @@ export default function AdminLayout() {
               <input
                 type="text"
                 placeholder="Cari dokumen, kategori, atau fitur..."
-                style={{ paddingLeft: '2.75rem' }}
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value)
+                  if (!isSearchOpen) setIsSearchOpen(true)
+                }}
                 onFocus={() => {
+                  setIsSearchOpen(true)
                   if (!searchContainerRef.current || !searchIconRef.current) return
                   gsap.killTweensOf([searchContainerRef.current, searchIconRef.current])
                   const tl = gsap.timeline()
-                  tl.to(searchContainerRef.current, {
-                    scale: 1.025,
-                    duration: 0.35,
-                    ease: 'back.out(2)',
-                  })
-                  tl.to(
-                    searchIconRef.current,
-                    {
-                      scale: 1.25,
-                      rotate: 90,
-                      color: '#0ea5e9',
-                      duration: 0.3,
-                      ease: 'back.out(2.5)',
-                    },
-                    '-=0.25'
-                  )
+                  tl.to(searchContainerRef.current, { scale: 1.02, duration: 0.25, ease: 'power2.out' })
+                  tl.to(searchIconRef.current, { scale: 1.15, rotate: 90, color: '#0ea5e9', duration: 0.25 }, '-=0.2')
                 }}
                 onBlur={() => {
                   if (!searchContainerRef.current || !searchIconRef.current) return
                   gsap.killTweensOf([searchContainerRef.current, searchIconRef.current])
                   const tl = gsap.timeline()
-                  tl.to(searchContainerRef.current, {
-                    scale: 1.0,
-                    duration: 0.3,
-                    ease: 'power2.out',
-                  })
-                  tl.to(
-                    searchIconRef.current,
-                    {
-                      scale: 1.0,
-                      rotate: 0,
-                      color: 'var(--text-muted)',
-                      duration: 0.25,
-                      ease: 'power2.out',
-                    },
-                    '-=0.2'
-                  )
+                  tl.to(searchContainerRef.current, { scale: 1.0, duration: 0.25, ease: 'power2.out' })
+                  tl.to(searchIconRef.current, { scale: 1.0, rotate: 0, color: 'var(--text-muted)', duration: 0.2 }, '-=0.2')
                 }}
-                className="w-full !pl-11 pr-4 py-2.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)] text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 transition-colors"
+                className="w-full !pl-11 pr-8 py-2.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)] text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 transition-all shadow-sm"
               />
+              {searchQuery && (
+                <button
+                  onClick={() => { setSearchQuery(''); closeSearch() }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xs font-bold z-10"
+                >
+                  ✕
+                </button>
+              )}
+
+              {/* Floating Search Results Dropdown Card */}
+              {isSearchOpen && (
+                <div
+                  ref={searchCardRef}
+                  className="absolute left-0 right-0 top-full mt-2 bg-[var(--bg-card)] border border-[var(--border-color)] shadow-2xl rounded-xl overflow-hidden z-50 divide-y divide-[var(--border-color)]"
+                >
+                  <div className="max-h-96 overflow-y-auto p-2 space-y-3">
+                    {/* Check if all empty */}
+                    {filteredSearchResults.features.length === 0 &&
+                     filteredSearchResults.documents.length === 0 &&
+                     filteredSearchResults.categories.length === 0 ? (
+                      <div className="p-6 text-center text-xs text-[var(--text-muted)]">
+                        <p className="font-semibold text-[var(--text-primary)] mb-1">Hasil Tidak Ditemukan</p>
+                        <p>Tidak ada dokumen, kategori, atau fitur yang cocok dengan "<span className="text-sky-500 font-bold">{searchQuery}</span>".</p>
+                      </div>
+                    ) : (
+                      <>
+                        {/* FITUR & MENU */}
+                        {filteredSearchResults.features.length > 0 && (
+                          <div>
+                            <p className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--text-muted)] px-3 py-1">
+                              FITUR & AKSI
+                            </p>
+                            <div className="space-y-0.5">
+                              {filteredSearchResults.features.map((feat) => (
+                                <button
+                                  key={feat.id || feat.label}
+                                  onClick={() => {
+                                    closeSearch()
+                                    if (feat.to) navigate(feat.to)
+                                    else if (feat.action === 'toggle-theme') toggleTheme()
+                                    else if (feat.action === 'logout') setShowLogoutModal(true)
+                                  }}
+                                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-sky-500/10 dark:hover:bg-sky-500/15 transition-colors flex items-center justify-between group cursor-pointer"
+                                >
+                                  <div>
+                                    <p className="text-xs font-bold text-[var(--text-primary)] group-hover:text-sky-500 transition-colors">
+                                      {feat.label}
+                                    </p>
+                                    <p className="text-[11px] text-[var(--text-muted)] truncate max-w-[280px]">
+                                      {feat.desc}
+                                    </p>
+                                  </div>
+                                  <span className="text-[10px] font-semibold text-sky-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    Buka →
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* DOKUMEN RAG */}
+                        {filteredSearchResults.documents.length > 0 && (
+                          <div>
+                            <p className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--text-muted)] px-3 py-1">
+                              DOKUMEN RAG
+                            </p>
+                            <div className="space-y-0.5">
+                              {filteredSearchResults.documents.map((doc) => (
+                                <button
+                                  key={doc.id}
+                                  onClick={() => {
+                                    closeSearch()
+                                    navigate(`/documents/${doc.id}`)
+                                  }}
+                                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-sky-500/10 dark:hover:bg-sky-500/15 transition-colors flex items-center justify-between group cursor-pointer"
+                                >
+                                  <div className="min-w-0 pr-2">
+                                    <p className="text-xs font-bold text-[var(--text-primary)] group-hover:text-sky-500 transition-colors truncate">
+                                      {doc.title}
+                                    </p>
+                                    <p className="text-[11px] text-[var(--text-muted)] font-mono truncate">
+                                      {doc.original_filename} • {doc.category_name}
+                                    </p>
+                                  </div>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-sky-500/15 text-sky-500 shrink-0">
+                                    {doc.status_label || doc.status}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* KATEGORI AI */}
+                        {filteredSearchResults.categories.length > 0 && (
+                          <div>
+                            <p className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--text-muted)] px-3 py-1">
+                              KATEGORI AI
+                            </p>
+                            <div className="space-y-0.5">
+                              {filteredSearchResults.categories.map((cat) => (
+                                <button
+                                  key={cat.id}
+                                  onClick={() => {
+                                    closeSearch()
+                                    navigate('/categories')
+                                  }}
+                                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-sky-500/10 dark:hover:bg-sky-500/15 transition-colors flex items-center justify-between group cursor-pointer"
+                                >
+                                  <div className="min-w-0 pr-2">
+                                    <p className="text-xs font-bold text-[var(--text-primary)] group-hover:text-sky-500 transition-colors">
+                                      {cat.name}
+                                    </p>
+                                    <p className="text-[11px] text-[var(--text-muted)] truncate max-w-[280px]">
+                                      {cat.description || 'Kategori dokumen'}
+                                    </p>
+                                  </div>
+                                  <span className="text-[10px] font-semibold text-sky-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    Buka →
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  {/* Search Card Footer */}
+                  <div className="px-3 py-2 bg-black/5 dark:bg-white/5 flex items-center justify-between text-[10px] text-[var(--text-muted)] font-medium">
+                    <span>{searchQuery ? `Hasil pencarian: "${searchQuery}"` : 'Pencarian Instan'}</span>
+                    <span className="font-mono">Esc untuk menutup</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Top Header Right Actions (Notification + Theme Switch + User Account Info) */}
@@ -744,7 +1091,7 @@ export default function AdminLayout() {
                 )}
               </button>
 
-              {/* User Account Info (Positioned to the right of Theme Switch Button) */}
+              {/* User Account Info & Interactive Profile Dropdown Menu */}
               {authLoading ? (
                 <div className="flex items-center gap-3 pl-3 border-l border-[var(--border-color)]">
                   <div className="skeleton w-10 h-10 rounded-xl shrink-0" />
@@ -754,28 +1101,99 @@ export default function AdminLayout() {
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center gap-3 pl-3 border-l border-[var(--border-color)]">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 via-sky-500 to-sky-100 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white flex items-center justify-center text-sm font-bold text-white shadow-sm shrink-0">
-                    {initial}
-                  </div>
-                  <div className="hidden sm:flex flex-col min-w-0">
-                    <span className="text-sm font-bold text-[var(--text-primary)] truncate">
-                      {user?.name || 'Admin Diskominfotik'}
-                    </span>
-                    <span className="text-sm text-[var(--text-muted)] truncate">
-                      {user?.email || 'admin@diskominfotik.go.id'}
-                    </span>
-                  </div>
+                <div className="relative" ref={userMenuRef}>
                   <button
-                    className="text-[var(--text-muted)] hover:text-red-500 p-1.5 rounded-lg transition-colors ml-1"
-                    onClick={() => setShowLogoutModal(true)}
-                    title="Keluar"
+                    onClick={(e) => {
+                      toggleUserMenu()
+                      gsap.fromTo(
+                        e.currentTarget,
+                        { scale: 0.95 },
+                        { scale: 1, duration: 0.3, ease: 'back.out(2)' }
+                      )
+                    }}
+                    className="flex items-center gap-2.5 pl-3 border-l border-[var(--border-color)] text-left hover:opacity-90 transition-opacity cursor-pointer group"
+                    title="Menu Akun Admin"
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-500 via-sky-500 to-sky-100 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 text-sm font-bold flex items-center justify-center shadow-sm shrink-0">
+                      {initial}
+                    </div>
+                    <div className="hidden sm:flex flex-col min-w-0">
+                      <span className="text-xs font-bold text-[var(--text-primary)] group-hover:text-sky-500 transition-colors truncate max-w-[140px]">
+                        {user?.name || 'Admin Diskominfotik'}
+                      </span>
+                      <span className="text-[11px] text-[var(--text-muted)] truncate max-w-[140px]">
+                        {user?.email || 'admin@diskominfotik.go.id'}
+                      </span>
+                    </div>
+                    <svg
+                      className={`w-4 h-4 text-[var(--text-muted)] group-hover:text-[var(--text-primary)] transition-transform duration-200 ${
+                        isUserMenuOpen ? 'rotate-180 text-sky-500' : ''
+                      }`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </button>
+
+                  {/* User Profile Dropdown Menu Window */}
+                  {isUserMenuOpen && (
+                    <div
+                      ref={userMenuDropdownRef}
+                      className="absolute right-0 mt-3 w-64 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl z-50 overflow-hidden divide-y divide-[var(--border-color)]"
+                    >
+                      {/* User Header Info in Dropdown */}
+                      <div className="p-3.5 bg-black/5 dark:bg-white/5 flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-500 via-sky-500 to-sky-100 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 text-sm font-bold flex items-center justify-center shrink-0 shadow-sm">
+                          {initial}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-[var(--text-primary)] truncate">
+                            {user?.name || 'Admin Diskominfotik'}
+                          </p>
+                          <p className="text-[11px] text-[var(--text-muted)] truncate">
+                            {user?.email || 'admin@diskominfotik.go.id'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Navigation Actions */}
+                      <div className="p-1.5 space-y-0.5">
+                        <button
+                          onClick={() => {
+                            closeUserMenu()
+                            setPassError('')
+                            setPassSuccess('')
+                            setShowPasswordModal(true)
+                          }}
+                          className="w-full px-3 py-2 rounded-lg text-xs font-semibold text-[var(--text-primary)] hover:bg-sky-500/10 hover:text-sky-500 transition-colors flex items-center gap-2.5 text-left group cursor-pointer"
+                        >
+                          <svg className="w-4 h-4 text-sky-500 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                          <span>Settings</span>
+                        </button>
+                      </div>
+
+                      {/* Logout Action */}
+                      <div className="p-1.5">
+                        <button
+                          onClick={() => {
+                            closeUserMenu()
+                            setShowLogoutModal(true)
+                          }}
+                          className="w-full px-3 py-2 rounded-lg text-xs font-bold text-red-500 hover:bg-red-500/10 transition-colors flex items-center gap-2.5 text-left group cursor-pointer"
+                        >
+                          <svg className="w-4 h-4 text-red-500 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                          </svg>
+                          <span>Keluar / Logout</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -829,6 +1247,177 @@ export default function AdminLayout() {
           onCancel={() => setShowLogoutModal(false)}
           confirmText="Keluar"
         />
+
+        {/* Settings Change Password Modal */}
+        {showPasswordModal && (
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+            onClick={(e) => { if (e.target === e.currentTarget && !changingPass) setShowPasswordModal(false) }}
+          >
+            <div className="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-md rounded-2xl shadow-2xl overflow-hidden" ref={passwordModalRef}>
+              <div className="px-6 py-5 border-b border-[var(--border-color)] flex justify-between items-center bg-black/5 dark:bg-white/5">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-sky-500/10 text-sky-500 flex items-center justify-center">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-base font-bold text-[var(--text-primary)]">Settings</h3>
+                </div>
+                <button
+                  className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 rounded-lg transition-colors disabled:opacity-30 disabled:pointer-events-none"
+                  onClick={() => !changingPass && setShowPasswordModal(false)}
+                  disabled={changingPass}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleChangePasswordSubmit}>
+                <div className="p-6 space-y-4">
+                  {passSuccess && (
+                    <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 rounded-xl text-xs font-semibold flex items-center gap-2">
+                      <span>✓</span>
+                      <span>{passSuccess}</span>
+                    </div>
+                  )}
+
+                  {passError && (
+                    <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-500 rounded-xl text-xs font-semibold flex items-center gap-2">
+                      <span>⚠️</span>
+                      <span>{passError}</span>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1.5">Password Saat Ini</label>
+                    <div className="relative">
+                      <input
+                        type={showCurrentPass ? 'text' : 'password'}
+                        required
+                        value={passwordForm.current_password}
+                        onChange={(e) => setPasswordForm({ ...passwordForm, current_password: e.target.value })}
+                        placeholder="Masukkan password lama"
+                        disabled={changingPass}
+                        className="w-full pr-10 py-2.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-sky-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowCurrentPass(!showCurrentPass)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 transition-colors"
+                        title={showCurrentPass ? 'Sembunyikan Password' : 'Lihat Password'}
+                      >
+                        {showCurrentPass ? (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1.5">Password Baru</label>
+                    <div className="relative">
+                      <input
+                        type={showNewPass ? 'text' : 'password'}
+                        required
+                        minLength={8}
+                        value={passwordForm.new_password}
+                        onChange={(e) => setPasswordForm({ ...passwordForm, new_password: e.target.value })}
+                        placeholder="Minimal 8 karakter"
+                        disabled={changingPass}
+                        className="w-full pr-10 py-2.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-sky-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPass(!showNewPass)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 transition-colors"
+                        title={showNewPass ? 'Sembunyikan Password' : 'Lihat Password'}
+                      >
+                        {showNewPass ? (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1.5">Konfirmasi Password Baru</label>
+                    <div className="relative">
+                      <input
+                        type={showConfirmPass ? 'text' : 'password'}
+                        required
+                        minLength={8}
+                        value={passwordForm.new_password_confirmation}
+                        onChange={(e) => setPasswordForm({ ...passwordForm, new_password_confirmation: e.target.value })}
+                        placeholder="Ketik ulang password baru"
+                        disabled={changingPass}
+                        className="w-full pr-10 py-2.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)] text-xs text-[var(--text-primary)] focus:outline-none focus:border-sky-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPass(!showConfirmPass)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 transition-colors"
+                        title={showConfirmPass ? 'Sembunyikan Password' : 'Lihat Password'}
+                      >
+                        {showConfirmPass ? (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="px-6 py-4 border-t border-[var(--border-color)] bg-black/5 dark:bg-white/5 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    className="px-4 py-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-input)] text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--border-color)] transition-colors"
+                    onClick={() => setShowPasswordModal(false)}
+                    disabled={changingPass}
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className={`px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 via-sky-500 to-sky-100 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 font-bold text-xs shadow-lg shadow-sky-500/25 transition-all relative overflow-hidden flex items-center justify-center gap-2 ${
+                      changingPass ? 'btn-light-sweep cursor-wait opacity-95' : 'hover:scale-[1.02] disabled:opacity-50'
+                    }`}
+                    disabled={changingPass || !passwordForm.current_password || !passwordForm.new_password || !passwordForm.new_password_confirmation}
+                  >
+                    {changingPass ? (
+                      <>
+                        <span className="spin w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full shrink-0" />
+                        <span>Menyimpan Password...</span>
+                      </>
+                    ) : (
+                      'Simpan Password Baru'
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </>
   )

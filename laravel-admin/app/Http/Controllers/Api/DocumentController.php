@@ -18,7 +18,7 @@ class DocumentController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $documents = Document::with('uploader')
+        $documents = Document::with(['uploader', 'category'])
             ->orderBy('created_at', 'desc')
             ->paginate(15);
 
@@ -50,7 +50,7 @@ class DocumentController extends Controller
      */
     public function show(int $id): JsonResponse
     {
-        $document = Document::with(['uploader', 'logs'])->findOrFail($id);
+        $document = Document::with(['uploader', 'category', 'logs'])->findOrFail($id);
 
         return response()->json([
             'success' => true,
@@ -66,8 +66,9 @@ class DocumentController extends Controller
     public function upload(Request $request): JsonResponse
     {
         $request->validate([
-            'title'    => ['required', 'string', 'max:255'],
-            'pdf_file' => ['required', 'file', 'mimes:pdf', 'max:51200'],
+            'title'       => ['required', 'string', 'max:255'],
+            'pdf_file'    => ['required', 'file', 'mimes:pdf', 'max:51200'],
+            'category_id' => ['nullable', 'exists:document_categories,id'],
         ], [
             'title.required'    => 'Judul dokumen wajib diisi.',
             'pdf_file.required' => 'File PDF wajib diunggah.',
@@ -85,6 +86,7 @@ class DocumentController extends Controller
             'storage_path'      => $storagePath,
             'status'            => 'pending',
             'pdf_type'          => 'unknown',
+            'category_id'       => $request->input('category_id'),
             'uploaded_by'       => Auth::id(),
         ]);
 
@@ -93,6 +95,20 @@ class DocumentController extends Controller
             'action'      => 'uploaded',
             'details'     => "File \"{$originalFilename}\" diunggah oleh " . Auth::user()->name,
         ]);
+
+        $client = new AiMicroserviceClient();
+        if (!$client->healthCheck()) {
+            $document->update([
+                'status'        => 'failed',
+                'error_message' => 'Server AI (Python Uvicorn / Celery) sedang tidak berjalan. Silakan aktifkan service AI terlebih dahulu.',
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Server AI (Python Uvicorn / Celery) sedang tidak berjalan. Silakan aktifkan service AI terlebih dahulu.',
+                'data'    => ['document' => $this->formatDocument($document->fresh())],
+            ], 503);
+        }
 
         $this->dispatchToAiService($document, 'new');
 
@@ -148,6 +164,72 @@ class DocumentController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'File PDF berhasil diganti dan sedang diproses ulang.',
+            'data'    => ['document' => $this->formatDocument($document->fresh())],
+        ]);
+    }
+
+    /**
+     * Cancel an active or pending document AI processing.
+     */
+    public function cancel(int $id): JsonResponse
+    {
+        $document = Document::findOrFail($id);
+
+        $document->update([
+            'status'        => 'failed',
+            'error_message' => 'Pemrosesan dibatalkan oleh Admin.',
+        ]);
+
+        DocumentLog::create([
+            'document_id' => $document->id,
+            'action'      => 'failed',
+            'details'     => 'Pemrosesan AI dibatalkan oleh ' . (Auth::user()?->name ?? 'Admin') . '.',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Pemrosesan dokumen berhasil dibatalkan.',
+            'data'    => ['document' => $this->formatDocument($document->fresh())],
+        ]);
+    }
+
+    /**
+     * Resume / Continue (Cicil) document AI processing.
+     */
+    public function resume(int $id): JsonResponse
+    {
+        $document = Document::findOrFail($id);
+        $client   = new AiMicroserviceClient();
+
+        if (!$client->healthCheck()) {
+            $document->update([
+                'status'        => 'failed',
+                'error_message' => 'Server AI (Python Uvicorn / Celery) sedang tidak berjalan. Silakan aktifkan service AI terlebih dahulu.',
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Server AI (Python Uvicorn / Celery) sedang tidak berjalan. Silakan aktifkan service AI terlebih dahulu.',
+                'data'    => ['document' => $this->formatDocument($document->fresh())],
+            ], 503);
+        }
+
+        $document->update([
+            'status'        => 'processing',
+            'error_message' => null,
+        ]);
+
+        DocumentLog::create([
+            'document_id' => $document->id,
+            'action'      => 'processing',
+            'details'     => 'Pemrosesan AI dilanjutkan kembali oleh ' . (Auth::user()?->name ?? 'Admin') . '.',
+        ]);
+
+        $this->dispatchToAiService($document, 'overwrite');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Pemrosesan dokumen berhasil dilanjutkan.',
             'data'    => ['document' => $this->formatDocument($document->fresh())],
         ]);
     }
@@ -240,6 +322,10 @@ class DocumentController extends Controller
             'status_label'      => $badge['label'],
             'pdf_type'          => $document->pdf_type,
             'pdf_type_label'    => $document->pdf_type_label,
+            'category_id'       => $document->category_id,
+            'category_name'     => $document->category?->name ?? 'Umum',
+            'category_ui_layout'=> $document->category?->ui_layout ?? 'general',
+            'flowchart_status'  => $document->flowchart_status ?? 'draft',
             'total_pages'       => $document->total_pages,
             'total_chunks'      => $document->total_chunks,
             'error_message'     => $document->error_message,
