@@ -1,12 +1,11 @@
 """
-Service untuk memproses file PDF.
-Mendukung PDF teks biasa, PDF hasil scan (vision), dan campuran keduanya.
-Ekstraksi halaman scan menggunakan vision-language model via Ollama
-sehingga mampu memahami struktur tabel dan layout dokumen lebih baik.
+Service untuk memproses file PDF dan mengekstrak gambar secara umum.
+Tidak lagi terbatas pada tabel SOP.
 """
 
 import base64
 import logging
+import re
 from pathlib import Path
 
 import fitz  # PyMuPDF
@@ -16,28 +15,15 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Threshold minimum jumlah karakter untuk dianggap sebagai halaman teks
-_MIN_TEXT_LENGTH = 30
+# Threshold minimum jumlah karakter untuk dianggap sebagai halaman teks murni
+# Ditingkatkan ke 300 agar halaman SOP (yang sebagian besar flowchart/gambar tapi punya header teks)
+# tetap dikirim ke vision pipeline agar tidak terlewat.
+_MIN_TEXT_LENGTH = 300
 
 
 def detect_pdf_type(file_path: str) -> str:
     """
     Mendeteksi tipe PDF berdasarkan konten setiap halaman.
-
-    Mengecek setiap halaman apakah memiliki teks yang bisa diekstrak.
-    - 'text'    : Semua halaman memiliki teks yang bisa diekstrak.
-    - 'scanned' : Semua halaman berupa gambar tanpa teks.
-    - 'mixed'   : Campuran halaman teks dan halaman scan.
-
-    Args:
-        file_path: Path absolut ke file PDF.
-
-    Returns:
-        String tipe PDF: 'text', 'scanned', atau 'mixed'.
-
-    Raises:
-        FileNotFoundError: Jika file tidak ditemukan.
-        Exception: Jika terjadi error saat membaca PDF.
     """
     if not Path(file_path).exists():
         raise FileNotFoundError(f"File tidak ditemukan: {file_path}")
@@ -54,12 +40,10 @@ def detect_pdf_type(file_path: str) -> str:
             if len(text) >= _MIN_TEXT_LENGTH:
                 has_text_pages = True
             else:
-                # Cek apakah halaman memiliki gambar (indikasi scan)
                 image_list = page.get_images(full=True)
                 if image_list:
                     has_scanned_pages = True
                 else:
-                    # Halaman kosong tanpa teks dan tanpa gambar
                     has_scanned_pages = True
 
         doc.close()
@@ -81,60 +65,118 @@ def detect_pdf_type(file_path: str) -> str:
 
 def _extract_text_from_page(page: fitz.Page) -> str:
     """
-    Ekstrak teks dari satu halaman menggunakan PyMuPDF.
-
-    Args:
-        page: Objek halaman PyMuPDF.
-
-    Returns:
-        Teks yang diekstrak dari halaman.
+    Ekstrak teks dan tabel dari halaman secara native dengan PyMuPDF.
+    Hanya membaca teks — tidak mencoba membaca gambar flowchart.
     """
-    return page.get_text().strip()
+    tabs = page.find_tables()
+
+    if not tabs.tables:
+        return page.get_text().strip()
+
+    elements = []
+    table_bboxes = []
+
+    for tab in tabs:
+        table_bboxes.append(tab.bbox)
+        rows = tab.extract()
+
+        # Convert ke Markdown
+        md_table = []
+        for r in rows:
+            cleaned_row = [str(c).replace("\n", " ").replace("|", "/").strip() if c else "-" for c in r]
+            md_table.append("| " + " | ".join(cleaned_row) + " |")
+
+        if len(rows) > 0:
+            sep = "| " + " | ".join(["---"] * len(rows[0])) + " |"
+            md_table.insert(1, sep)
+
+        elements.append({
+            "type": "table",
+            "y0": tab.bbox[1],
+            "content": "\n".join(md_table)
+        })
+
+    # Ekstrak blocks teks biasa (di luar tabel)
+    blocks = page.get_text("blocks")
+    for b in blocks:
+        b_rect = fitz.Rect(b[:4])
+        b_text = b[4].strip()
+
+        if not b_text:
+            continue
+
+        in_table = False
+        for t_bbox in table_bboxes:
+            t_rect = fitz.Rect(t_bbox)
+            if t_rect.intersects(b_rect):
+                in_table = True
+                break
+
+        if not in_table:
+            elements.append({
+                "type": "text",
+                "y0": b_rect.y0,
+                "content": b_text
+            })
+
+    # Urutkan berdasarkan posisi Y (dari atas ke bawah)
+    elements.sort(key=lambda x: x["y0"])
+    return "\n\n".join([e["content"] for e in elements])
 
 
-def _vision_extract_page(page: fitz.Page, dpi: int = 200, retries: int = 2) -> str:
-    """
-    Mengekstrak teks dari satu halaman PDF menggunakan vision-language model via Ollama.
+def _strip_garbage(text: str) -> str:
+    """Hapus tag HTML dan base64 image dari output LLM, tanpa merusak tabel Markdown."""
+    text = re.sub(r'<img[^>]+/?>', '', text)
+    
+    # Bersihkan markdown code fences (misalnya ```markdown ... ```)
+    if text.startswith("```"):
+        lines = text.split('\n')
+        if len(lines) > 2:
+            text = '\n'.join(lines[1:-1])
+    
+    return text.strip()
 
-    Mengkonversi halaman ke gambar (pixmap PNG), meng-encode ke base64, lalu
-    mengirimkan ke endpoint Ollama /api/generate bersama prompt ekstraksi teks.
-    Model vision mampu memahami struktur paragraf, tabel, dan layout dokumen
-    lebih baik dibandingkan Tesseract OCR konvensional.
 
-    Args:
-        page: Objek halaman PyMuPDF.
-        dpi: Resolusi render gambar (default: 200 DPI, cukup untuk vision model).
-        retries: Jumlah maksimal percobaan ulang jika request gagal (default: 2).
-
-    Returns:
-        Teks yang diekstrak oleh vision model, atau string kosong jika gagal total.
-        Tidak melempar exception agar proses halaman lain tetap berjalan.
-    """
-    # Render halaman PDF ke PNG bytes lalu encode ke base64
-    zoom = dpi / 72  # 72 adalah DPI default PDF
-    matrix = fitz.Matrix(zoom, zoom)
-    pixmap = page.get_pixmap(matrix=matrix)
-    img_bytes = pixmap.tobytes("png")
-    img_base64 = base64.b64encode(img_bytes).decode("utf-8")
+def vision_extract_general(img_base64: str, retries: int = 2) -> str:
+    """Fallback pipeline: uses LLM vision to extract text from a full page image."""
+    logger.info("Using general vision extraction pipeline...")
 
     prompt = (
-        "Anda adalah sistem ekstraksi dokumen tingkat lanjut. Tugas Anda adalah mengekstrak seluruh teks dari gambar dokumen Standar Operasional Prosedur (SOP) ini secara akurat dan menyusunnya kembali secara ketat ke dalam format tabel Markdown.\n\n"
-        "Ikuti aturan \"cara berpikir\" ekstraksi berikut:\n"
-        "1. IDENTIFIKASI STRUKTUR: Perhatikan garis vertikal dan horizontal. Dokumen ini adalah tabel dengan kolom utama: \"No\", \"Uraian Prosedur\", \"Pelaksana\", \"Mutu Baku\", dan \"Ket\".\n"
-        "2. BACA PER BARIS, BUKAN PER GARIS LURUS: Jangan menggabungkan teks dari kolom yang berbeda (misalnya, teks 'Uraian' dengan nama jabatan di kolom 'Pelaksana').\n"
-        "3. EKSTRAKSI PENUH: Tangkap semua teks, termasuk catatan kecil di kolom \"Ket\" (Keterangan) jika ada.\n"
-        "4. FORMAT: Keluarkan hasil HANYA dalam bentuk tabel Markdown. Jangan menambahkan basa-basi."
-    )
+        "Anda adalah sistem OCR canggih yang membaca dokumen pemerintahan Indonesia. "
+        "Ekstrak SEMUA teks dari gambar ini ke format teks/daftar. JANGAN gunakan tabel Markdown (tanda |).\n\n"
 
+        "ATURAN SANGAT PENTING (BACA BAIK-BAIK):\n"
+        "Dokumen ini terdiri dari 2 bagian: HEADER (Informasi SOP) dan TABEL PROSEDUR (Langkah-langkah).\n\n"
+
+        "1. BAGIAN HEADER (Teks Biasa & Daftar):\n"
+        "Bagian seperti 'Nomor SOP', 'Dasar Hukum', 'Kualifikasi Pelaksana', 'Keterkaitan', 'Peralatan/Perlengkapan', "
+        "dan 'Peringatan' BUKAN TABEL PROSEDUR. Tulis bagian ini SEBAGAI TEKS BIASA ATAU DAFTAR (LIST) NORMAL. "
+        "DILARANG KERAS menambahkan atribut 'Pelaksana', 'Kelengkapan', 'Waktu', atau 'Output' pada bagian ini!\n\n"
+
+        "2. BAGIAN TABEL PROSEDUR (Uraian Prosedur / Langkah-langkah):\n"
+        "HANYA UNTUK TABEL YANG MEMILIKI KOLOM 'Uraian Prosedur', 'Pelaksana', dan 'Mutu Baku', gunakan format ini PERSIS untuk setiap langkah:\n"
+        "- <Nomor>. <Uraian Prosedur>\n"
+        "  - Pelaksana: <nama jabatan yang ada centang/simbol di kolomnya>\n"
+        "  - Kelengkapan: <isi kolom Kelengkapan>\n"
+        "  - Waktu: <isi kolom Waktu>\n"
+        "  - Output: <isi kolom Output>\n\n"
+
+        "ATURAN TAMBAHAN:\n"
+        "- Pelaksana ditentukan dari POSISI simbol flowchart (kotak/belah ketupat). Lihat simbol berada di bawah kolom jabatan mana.\n"
+        "- Waktu dan Output adalah DUA kolom BERBEDA. JANGAN digabung. (Contoh BENAR: Waktu: 30 menit / Output: Disposisi).\n"
+        "- HANYA keluarkan teks hasil ekstraksi, tanpa penjelasan atau komentar.\n"
+    )
+    
     payload = {
         "model": settings.VISION_MODEL_NAME,
         "prompt": prompt,
         "images": [img_base64],
         "stream": False,
         "options": {
-            "num_ctx": 8192,      # naikkan context window, dari default 4096
-            "num_predict": 2048,  # batas token output biar teks nggak kepotong
-        },
+            "num_ctx": 8192, 
+            "num_predict": -1, 
+            "temperature": 0.1
+        }
     }
     url = f"{settings.OLLAMA_BASE_URL}/api/generate"
 
@@ -142,64 +184,31 @@ def _vision_extract_page(page: fitz.Page, dpi: int = 200, retries: int = 2) -> s
         try:
             response = requests.post(url, json=payload, timeout=settings.VISION_TIMEOUT)
             response.raise_for_status()
-            result = response.json()
-            return result.get("response", "").strip()
-
-        except requests.exceptions.RequestException as exc:
-            body = getattr(getattr(exc, "response", None), "text", "")
-            logger.warning(
-                "Percobaan %d/%d gagal memanggil vision model untuk ekstraksi halaman: %s | Body: %s",
-                attempt,
-                retries,
-                str(exc),
-                body,
-            )
-
-    logger.error(
-        "Semua percobaan (%d) gagal, halaman dilewati tanpa teks vision.", retries
-    )
+            raw = response.json().get("response", "").strip()
+            return _strip_garbage(raw)
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Attempt {attempt}/{retries}: Timeout/Error saat vision extract: {e}")
+            
     return ""
 
 
 def _clean_text_with_llm(dirty_text: str, retries: int = 2) -> str:
-    """
-    Menggunakan LLM untuk mengoreksi typo dan merapikan teks kotor hasil OCR/Vision.
-    """
+    """Menggunakan LLM untuk mengoreksi typo pada teks bebas hasil OCR/Vision."""
     if not dirty_text.strip():
         return dirty_text
 
     prompt = (
-        "Anda adalah editor ahli dan auditor bahasa untuk dokumen Standar Operasional Prosedur (SOP) birokrasi pemerintahan Indonesia. Tugas Anda adalah memperbaiki hasil teks OCR (Optical Character Recognition) yang kotor tanpa merusak format tabel Markdown aslinya.\n\n"
-        "Aturan Koreksi Anda:\n"
-        "1. Pahami konteks kalimat birokrasi, keuangan, dan tata usaha pemerintahan (contoh: SPJ, BKU, PA/KPA, PPKD).\n"
-        "2. Koreksi halusinasi OCR yang tidak masuk akal (misal: \"Ursian\" menjadi \"Uraian\", \"Kelesekaan\" menjadi \"Kelengkapan\", \"disrap\" menjadi \"diarsip\").\n"
-        "3. JANGAN mengubah struktur tabel Markdown (simbol `|` dan `-`).\n"
-        "4. JANGAN merangkum atau memotong teks.\n\n"
-        "Berikut adalah teks OCR kotor dari sebuah tabel SOP:\n\n"
-        f"{dirty_text}\n\n"
-        "Sebelum Anda memberikan tabel yang sudah diperbaiki, Anda WAJIB menjabarkan proses berpikir Anda di dalam blok <analisis>.\n"
-        "Dalam blok tersebut, lakukan langkah berikut:\n"
-        "1. Deteksi kata-kata aneh/typo dari teks di atas.\n"
-        "2. Tentukan perbaikan yang masuk akal berdasarkan konteks tata bahasa birokrasi.\n\n"
-        "Setelah blok <analisis> selesai, berikan hasil akhir HANYA berupa tabel Markdown yang sudah bersih.\n\n"
-        "Format jawaban Anda harus seperti ini:\n"
-        "<analisis>\n"
-        "- Menemukan kata \"X\", seharusnya \"Y\" karena konteksnya adalah Z.\n"
-        "- Menemukan kata \"A\", seharusnya \"B\"...\n"
-        "</analisis>\n\n"
-        "[Tabel Markdown Bersih]"
+        "Anda adalah editor ahli bahasa. Koreksi typo dari teks OCR berikut tanpa merubah makna asli. "
+        "Pertahankan struktur Markdown (seperti tabel, header). "
+        "Keluarkan HANYA teks yang sudah diperbaiki.\n\n"
+        f"{dirty_text}"
     )
 
     payload = {
         "model": settings.LLM_MODEL_NAME,
         "prompt": prompt,
         "stream": False,
-        "options": {
-            "num_ctx": 4096,
-            "num_predict": 2048,
-            "temperature": 0.0,  # Mematikan kreativitas agar tidak halusinasi
-            "top_p": 0.1,
-        },
+        "options": {"num_ctx": 4096, "num_predict": 2048, "temperature": 0.0, "top_p": 0.1},
     }
     url = f"{settings.OLLAMA_BASE_URL}/api/generate"
 
@@ -207,53 +216,19 @@ def _clean_text_with_llm(dirty_text: str, retries: int = 2) -> str:
         try:
             response = requests.post(url, json=payload, timeout=120)
             response.raise_for_status()
-            result = response.json()
-            raw_response = result.get("response", "").strip()
+            raw = response.json().get("response", "").strip()
+            return _strip_garbage(raw)
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Attempt {attempt}/{retries} LLM correction gagal: {e}")
             
-            # Hapus blok <analisis>...</analisis> dari output LLM
-            if "</analisis>" in raw_response:
-                clean_text = raw_response.split("</analisis>")[-1].strip()
-            else:
-                clean_text = raw_response
-                
-            # Jika LLM mengembalikan string kosong, fallback ke teks asli
-            return clean_text if clean_text else dirty_text
-
-        except requests.exceptions.RequestException as exc:
-            body = getattr(getattr(exc, "response", None), "text", "")
-            logger.warning(
-                "Percobaan %d/%d gagal memanggil LLM untuk koreksi teks: %s | Body: %s",
-                attempt,
-                retries,
-                str(exc),
-                body,
-            )
-
-    logger.error("Semua percobaan (%d) gagal, mengembalikan teks asli tanpa koreksi.", retries)
     return dirty_text
 
 
-def extract_text(file_path: str) -> list[dict]:
+def extract_text(file_path: str, page_num: int | None = None) -> list[dict]:
     """
     Mengekstrak teks dari seluruh halaman PDF.
-
-    Untuk halaman yang memiliki teks, menggunakan PyMuPDF langsung.
-    Untuk halaman hasil scan, menggunakan vision-language model via Ollama.
-
-    Args:
-        file_path: Path absolut ke file PDF.
-
-    Returns:
-        List of dict dengan format:
-        [
-            {"page_number": 1, "text": "isi teks halaman 1"},
-            {"page_number": 2, "text": "isi teks halaman 2"},
-            ...
-        ]
-
-    Raises:
-        FileNotFoundError: Jika file tidak ditemukan.
-        Exception: Jika terjadi error saat memproses PDF.
+    - Halaman teks: PyMuPDF langsung.
+    - Halaman scan: Ekstrak menggunakan Ollama Vision Model secara umum.
     """
     if not Path(file_path).exists():
         raise FileNotFoundError(f"File tidak ditemukan: {file_path}")
@@ -263,42 +238,40 @@ def extract_text(file_path: str) -> list[dict]:
     try:
         doc = fitz.open(file_path)
         total_pages = len(doc)
-        logger.info("Memproses PDF '%s' (%d halaman)", file_path, total_pages)
+        if page_num is not None:
+            pages_to_process = [page_num]
+            logger.info("Memproses PDF '%s' (hanya halaman %d)", file_path, page_num + 1)
+        else:
+            pages_to_process = list(range(total_pages))
+            logger.info("Memproses PDF '%s' (%d halaman)", file_path, total_pages)
 
-        for page_num in range(total_pages):
-            page = doc[page_num]
+        for p_idx in pages_to_process:
+            if p_idx >= total_pages:
+                logger.warning(f"Halaman {p_idx + 1} di luar jangkauan (total {total_pages}).")
+                continue
+                
+            page = doc[p_idx]
             text = _extract_text_from_page(page)
 
-            # Jika teks terlalu sedikit, gunakan vision model untuk ekstraksi
+            # Jika teks terlalu sedikit, masuk ke vision pipeline
             if len(text) < _MIN_TEXT_LENGTH:
-                logger.info(
-                    "Halaman %d: teks minim (%d karakter), mencoba ekstraksi via vision model...",
-                    page_num + 1,
-                    len(text),
-                )
-                vision_text = _vision_extract_page(page)
-                if vision_text:
-                    logger.info("Halaman %d: Mengoreksi typo teks hasil vision via LLM...", page_num + 1)
-                    text = _clean_text_with_llm(vision_text)
+                logger.info(f"Halaman {p_idx + 1}: teks minim ({len(text)} karakter), memulai vision pipeline umum...")
 
-            if text:  # Hanya tambahkan halaman yang memiliki konten
+                pixmap = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+                img_base64 = base64.b64encode(pixmap.tobytes("png")).decode("utf-8")
+
+                text = vision_extract_general(img_base64)
+
+            if text:
                 pages_content.append({
-                    "page_number": page_num + 1,
+                    "page_number": p_idx + 1,
                     "text": text,
                 })
 
         doc.close()
-
-        logger.info(
-            "Berhasil mengekstrak teks dari %d/%d halaman PDF '%s'",
-            len(pages_content),
-            total_pages,
-            file_path,
-        )
-
+        logger.info("Berhasil mengekstrak teks dari %d/%d halaman PDF '%s'", len(pages_content), total_pages, file_path)
         return pages_content
 
     except Exception as e:
         logger.error("Gagal mengekstrak teks dari PDF '%s': %s", file_path, str(e))
         raise
-# contoh — sesuaikan dengan struktur data aktual di pdf_processor

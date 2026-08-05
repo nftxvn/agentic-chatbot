@@ -69,7 +69,7 @@ def process_document_task(
     """
     # Import di sini untuk menghindari circular imports
     from app.database import update_document_status
-    from app.services import embedding_service, pdf_processor
+    from app.services import embedding_service, document_processor
 
     logger.info(
         "═══ Memulai pemrosesan dokumen %d ═══ (action=%s, path=%s)",
@@ -83,18 +83,18 @@ def process_document_task(
         update_document_status(document_id, status="processing")
         logger.info("[1/7] Status dokumen %d diupdate ke 'processing'", document_id)
 
-        # ── Langkah 2: Deteksi tipe PDF ──
-        pdf_type = pdf_processor.detect_pdf_type(file_path)
-        logger.info("[2/7] Tipe PDF terdeteksi: %s", pdf_type)
+        # ── Langkah 2: Deteksi tipe PDF / Dokumen ──
+        pdf_type = document_processor.detect_document_type(file_path)
+        logger.info("[2/7] Tipe dokumen terdeteksi: %s", pdf_type)
 
         # ── Langkah 3: Update tipe PDF di database ──
         update_document_status(document_id, status="processing", pdf_type=pdf_type)
-        logger.info("[3/7] Tipe PDF '%s' disimpan ke database", pdf_type)
+        logger.info("[3/7] Tipe dokumen '%s' disimpan ke database", pdf_type)
 
         # ── Langkah 4: Ekstrak teks dari PDF ──
-        pages = pdf_processor.extract_text(file_path)
+        pages = document_processor.extract_document(file_path)
         total_pages = len(pages)
-        logger.info("[4/7] Berhasil mengekstrak teks dari %d halaman", total_pages)
+        logger.info("[4/7] Berhasil mengekstrak teks dari %d halaman/bagian", total_pages)
 
         if not pages:
             logger.warning(
