@@ -64,12 +64,9 @@ def _retrieve_context(query: str, original_query: str = "") -> tuple[str, str]:
 
     # Tentukan limit chunk secara dinamis: lebih longgar untuk query "daftar/list"
     check_query = original_query if original_query else query
-    is_list = _is_list_query(check_query)
-    max_chunks = _MAX_CONTEXT_CHUNKS_LIST_QUERY if is_list else _MAX_CONTEXT_CHUNKS
-    top_k = _TOP_K * 4 if is_list else _TOP_K  # Naikkan pencarian vector hingga 4x lipat
-    
+    max_chunks = _MAX_CONTEXT_CHUNKS_LIST_QUERY if _is_list_query(check_query) else _MAX_CONTEXT_CHUNKS
     if max_chunks != _MAX_CONTEXT_CHUNKS:
-        logger.info("Query terdeteksi sebagai list-query, max_chunks dinaikkan ke %d, top_k ke %d", max_chunks, top_k)
+        logger.info("Query terdeteksi sebagai list-query, max_chunks dinaikkan ke %d", max_chunks)
 
     try:
         # Gunakan query yang diberikan langsung
@@ -107,7 +104,7 @@ def _retrieve_context(query: str, original_query: str = "") -> tuple[str, str]:
             try:
                 results = collection.query(
                     query_embeddings=[q_embedding],
-                    n_results=top_k,
+                    n_results=_TOP_K,
                     where={"chunk_type": "child"} if use_hierarchical else None,
                     include=["documents", "metadatas", "distances"],
                 )
@@ -115,7 +112,7 @@ def _retrieve_context(query: str, original_query: str = "") -> tuple[str, str]:
                 use_hierarchical = False
                 results = collection.query(
                     query_embeddings=[q_embedding],
-                    n_results=top_k,
+                    n_results=_TOP_K,
                     include=["documents", "metadatas", "distances"],
                 )
 
@@ -132,7 +129,7 @@ def _retrieve_context(query: str, original_query: str = "") -> tuple[str, str]:
             if bm25 and all_docs:
                 tokenized_query = q.lower().split()
                 bm25_scores = bm25.get_scores(tokenized_query)
-                top_n = min(top_k, len(all_docs))
+                top_n = min(_TOP_K, len(all_docs))
                 if top_n > 0:
                     top_indices = np.argsort(bm25_scores)[::-1][:top_n]
                     for idx in top_indices:
@@ -153,7 +150,7 @@ def _retrieve_context(query: str, original_query: str = "") -> tuple[str, str]:
         if use_hierarchical:
             # Kumpulkan parent_id unik dari child yang paling relevan
             sorted_children = sorted(seen.values(), key=lambda x: x[2])
-            top_children = sorted_children[:top_k]
+            top_children = sorted_children[:_TOP_K]
 
             parent_ids_ordered: list[str] = []
             parent_best_dist: dict[str, float] = {}
