@@ -40,13 +40,14 @@ DOC_IDS_TO_CLEAN = [1, 999]
 # Daftar pertanyaan uji RAG — disesuaikan dengan konten PDF halaman 1-10
 # (Keputusan Walikota + daftar nama SOP Diskominfotik 2025)
 QUESTIONS = [
-    "apa saja sop pada dinas komunikasi ,informatika dan statistik kota banda aceh?"
+    "sebutkan sop renja yang lengkap dengan waktu dan output nya?"
 ]
 
 
 # ──────────────────────────────────────────────────────
 # Fase 1: Ingest PDF ke ChromaDB
 # ──────────────────────────────────────────────────────
+
 def phase_ingest():
     from app.services.document_processor import detect_document_type, extract_document
     from app.services.embedding_service import (

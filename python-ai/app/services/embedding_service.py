@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Variabel global untuk lazy loading (singleton pattern)
 _embedding_model: SentenceTransformer | None = None
-_chroma_client: chromadb.ClientAPI | None = None
+
 _chroma_collection: Collection | None = None
 
 # Nama koleksi di ChromaDB
@@ -55,7 +55,7 @@ def get_chroma_collection() -> Collection:
     Returns:
         Koleksi ChromaDB 'documents'.
     """
-    global _chroma_client, _chroma_collection
+    global _chroma_collection
     if _chroma_collection is None:
         logger.info(
             "Menginisialisasi ChromaDB di: %s", settings.CHROMA_PERSIST_DIR
@@ -149,7 +149,85 @@ _CHILD_CHUNK_SIZE = 300
 _CHILD_CHUNK_OVERLAP = 50
 
 
-def chunk_text_hierarchical(pages: list[dict]) -> tuple[list[dict], list[dict]]:
+# Panjang maksimum judul dokumen yang disuntikkan sebagai konteks global ke chunk.
+_DOC_TITLE_MAX_LEN = 180
+
+
+def derive_document_title(pages: list[dict]) -> str | None:
+    """
+    Menurunkan judul dokumen dari ISI dokumen itu sendiri (halaman pertama),
+    bukan dari nilai yang dipatok di kode.
+
+    Halaman pertama dokumen resmi umumnya berupa halaman sampul yang memuat
+    judul. Teksnya dirapikan (spasi/newline dipadatkan) lalu dipotong.
+
+    Dipakai sebagai prefix "[Topik Utama: ...]" pada setiap chunk supaya halaman
+    yang isinya hanya daftar panjang tetap punya konteks global. Sebelumnya
+    prefix ini berisi nama satu instansi yang ditulis langsung di kode, sehingga
+    dokumen dari instansi lain ikut terlabeli keliru dan embedding-nya tercemar.
+
+    Returns:
+        Judul dokumen, atau None bila tidak bisa diturunkan (lebih baik tanpa
+        label sama sekali daripada label yang salah).
+    """
+    if not pages:
+        return None
+
+    first_page_text = (pages[0].get("text") or "").strip()
+    if not first_page_text:
+        return None
+
+    # Padatkan whitespace agar judul multi-baris jadi satu baris rapi
+    title = re.sub(r"\s+", " ", first_page_text).strip()
+    # Buang sisa markdown bold dari hasil OCR
+    title = re.sub(r"\*+", "", title).strip()
+
+    if len(title) < 10:
+        return None
+
+    return title[:_DOC_TITLE_MAX_LEN].strip()
+
+
+# ── Deteksi & pemecahan daftar (dipakai untuk parent MAUPUN child) ──
+# Mengenali item berformat nomor "1." / "1)", huruf "a." / "a)", romawi "i." / "I.",
+# atau bullet "- • *" — berlaku umum untuk berbagai jenis dokumen, bukan hanya
+# format Diktum KEDUA pada dokumen SOP ini.
+_list_item_boundary = re.compile(
+    r"(?=^\s*(?:\d{1,3}[.\)]|[a-zA-Z]{1,3}[.\)]|[ivxlcdmIVXLCDM]{1,7}[.\)]|[-•*])\s+)",
+    re.MULTILINE,
+)
+_LIST_ITEM_THRESHOLD = 10     # min. item beruntun agar halaman dianggap "daftar besar"
+_LIST_BLOCK_HARD_CAP = 6000   # di atas ini daftar tetap dipecah, demi keamanan num_ctx LLM
+
+
+def _split_list_preserving_items(list_text: str, max_size: int) -> list[str]:
+    """
+    Pecah daftar per BATAS ITEM (bukan per karakter), sehingga satu item tidak
+    pernah terbelah di tengah — walau daftar keseluruhan harus dipecah karena
+    melebihi max_size.
+
+    Dipakai untuk parent (agar item tidak terpotong dari konteks LLM) dan untuk
+    child (agar vektor pencarian memuat item utuh; item yang terbelah membuat
+    pencarian meleset).
+    """
+    raw_items = _list_item_boundary.split(list_text)
+    raw_items = [i.strip() for i in raw_items if i.strip()]
+    out, current = [], ""
+    for item in raw_items:
+        if current and len(current) + len(item) + 1 > max_size:
+            out.append(current)
+            current = item
+        else:
+            current = f"{current}\n{item}" if current else item
+    if current:
+        out.append(current)
+    return out
+
+
+def chunk_text_hierarchical(
+    pages: list[dict],
+    document_title: str | None = None,
+) -> tuple[list[dict], list[dict]]:
     """
     Memecah teks menjadi parent chunks (besar) dan child chunks (kecil).
 
@@ -160,9 +238,20 @@ def chunk_text_hierarchical(pages: list[dict]) -> tuple[list[dict], list[dict]]:
     Untuk dokumen SOP yang memiliki format "**No. X**", setiap entri prosedur
     dijadikan satu parent chunk utuh agar tidak terpotong.
 
+    Args:
+        pages: List halaman hasil ekstraksi PDF.
+        document_title: Judul dokumen untuk konteks global tiap chunk. Bila None,
+            diturunkan otomatis dari halaman pertama lewat derive_document_title().
+
     Returns:
         Tuple of (parent_chunks, child_chunks).
     """
+    if document_title is None:
+        document_title = derive_document_title(pages)
+    if document_title:
+        logger.info("Judul dokumen (konteks global chunk): '%s'", document_title)
+    else:
+        logger.info("Judul dokumen tidak bisa diturunkan — chunk tanpa prefix topik")
     parent_splitter = RecursiveCharacterTextSplitter(
         chunk_size=_PARENT_CHUNK_SIZE,
         chunk_overlap=_PARENT_CHUNK_OVERLAP,
@@ -184,40 +273,13 @@ def chunk_text_hierarchical(pages: list[dict]) -> tuple[list[dict], list[dict]]:
     # Pola boundary entri SOP: "**No. 1**", "**No.1**", "**No 1**", dll
     entry_pattern = re.compile(r"(?=\*\*No\.?\s*\d+\*\*)")
 
-    # ── Deteksi daftar besar secara GENERIK (bukan cuma format dokumen ini) ──
-    # Mengenali: nomor "1." / "1)", huruf "a." / "a)", romawi "i." / "I.",
-    # atau bullet "- • *" — supaya berlaku untuk berbagai jenis dokumen yang
-    # nanti diupload lewat platform, bukan cuma SOP Diktum KEDUA.
-    _list_item_boundary = re.compile(
-        r"(?=^\s*(?:\d{1,3}[.\)]|[a-zA-Z]{1,3}[.\)]|[ivxlcdmIVXLCDM]{1,7}[.\)]|[-•*])\s+)",
-        re.MULTILINE,
-    )
-    _LIST_ITEM_THRESHOLD = 8      # min. item beruntun agar dianggap "daftar besar"
-    _LIST_BLOCK_HARD_CAP = 6000   # di atas ini tetap dipecah, demi keamanan num_ctx LLM
-
-    def _split_list_preserving_items(list_text: str, max_size: int) -> list[str]:
-        """Pecah daftar per BATAS ITEM (bukan per karakter). Item individual
-        tidak pernah terpotong di tengah, walau daftar keseluruhan harus
-        dipecah karena melebihi _LIST_BLOCK_HARD_CAP."""
-        raw_items = _list_item_boundary.split(list_text)
-        raw_items = [i.strip() for i in raw_items if i.strip()]
-        out, current = [], ""
-        for item in raw_items:
-            if current and len(current) + len(item) + 1 > max_size:
-                out.append(current)
-                current = item
-            else:
-                current = f"{current}\n{item}" if current else item
-        if current:
-            out.append(current)
-        return out
-
-    # Pola item daftar berhuruf, mis. Diktum KEDUA: "a.", "b.", ... "aa.", "vvv."
-    # Dipakai untuk MENDETEKSI (bukan memecah) halaman yang berisi daftar
-    # enumerasi panjang, supaya daftar tsb TIDAK dipecah di tengah oleh
-    # parent_splitter berbasis jumlah karakter.
-    _letter_list_item = re.compile(r"^\s*[a-z]{1,3}\.\s", re.MULTILINE)
-    _LIST_ITEM_THRESHOLD = 10  # min. jumlah item huruf berurutan agar dianggap "daftar besar"
+    # Konstanta & helper pemecah daftar kini ada di level modul (lihat
+    # _split_list_preserving_items) supaya bisa dipakai untuk child juga.
+    #
+    # Catatan: sebelumnya _LIST_ITEM_THRESHOLD didefinisikan dua kali di sini
+    # (8 lalu ditimpa 10), sehingga nilai yang benar-benar berlaku adalah 10.
+    # Nilai 10 dipertahankan agar perilaku chunking tidak berubah. Pola
+    # _letter_list_item yang lama dihapus karena tidak pernah dipakai.
 
     # Tracker Nama SOP — mendeteksi berbagai variasi format:
     # - NAMA SOP: ... (kapital semua, dari OCR plain text)
@@ -283,7 +345,13 @@ def chunk_text_hierarchical(pages: list[dict]) -> tuple[list[dict], list[dict]]:
                         parent_texts.extend(parent_splitter.split_text(part))
 
         for parent_text in parent_texts:
+            # Suntikan konteks global, supaya halaman yang isinya hanya daftar panjang
+            # tetap terhubung ke dokumen induknya. Judul diturunkan dari dokumen itu
+            # sendiri (lihat derive_document_title), BUKAN dipatok di kode — kalau
+            # dipatok, dokumen instansi lain ikut terlabeli keliru.
             prefix = f"[Halaman {page_number}]"
+            if document_title:
+                prefix += f"\n[Topik Utama: {document_title}]"
             if current_sop_name:
                 prefix += f"\n[Konteks: SOP {current_sop_name}]"
 
@@ -294,8 +362,15 @@ def chunk_text_hierarchical(pages: list[dict]) -> tuple[list[dict], list[dict]]:
                 "chunk_index": parent_index,
             })
 
-            # Pecah parent menjadi child chunks yang lebih kecil
-            child_texts = child_splitter.split_text(parent_text)
+            # Pecah parent menjadi child chunks yang lebih kecil.
+            # Pada halaman berisi daftar, pemecahan dilakukan di BATAS ITEM —
+            # splitter berbasis karakter bisa membelah satu item ke dua child,
+            # dan item yang terbelah membuat vektornya tidak lagi mewakili item
+            # itu secara utuh sehingga pencarian meleset.
+            if is_large_list:
+                child_texts = _split_list_preserving_items(parent_text, _CHILD_CHUNK_SIZE)
+            else:
+                child_texts = child_splitter.split_text(parent_text)
             for ct in child_texts:
                 child_text_with_meta = f"{prefix}\n{ct}"
                 child_chunks.append({
@@ -313,6 +388,21 @@ def chunk_text_hierarchical(pages: list[dict]) -> tuple[list[dict], list[dict]]:
         len(parent_chunks), len(child_chunks), len(pages),
     )
     return parent_chunks, child_chunks
+
+
+def _invalidate_search_index() -> None:
+    """
+    Memberi tahu rag_service bahwa korpus berubah, supaya indeks BM25 yang di-cache
+    dibangun ulang pada query berikutnya.
+
+    Import sengaja dilakukan di dalam fungsi (bukan di level modul) karena
+    rag_service sudah mengimpor modul ini — import di level modul akan melingkar.
+    """
+    try:
+        from app.services.rag_service import invalidate_bm25_cache
+        invalidate_bm25_cache()
+    except Exception as e:  # jangan sampai ingest gagal hanya karena invalidasi
+        logger.warning("Gagal invalidasi cache BM25: %s", e)
 
 
 def delete_document_vectors(document_id: int) -> int:
@@ -338,6 +428,7 @@ def delete_document_vectors(document_id: int) -> int:
 
         if count > 0:
             collection.delete(ids=existing_ids)
+            _invalidate_search_index()
             logger.info(
                 "Berhasil menghapus %d vektor untuk dokumen %d",
                 count,
@@ -411,6 +502,8 @@ def embed_and_store(document_id: int, chunks: list[dict]) -> int:
                 documents=texts[i:batch_end],
                 metadatas=metadatas[i:batch_end],
             )
+
+        _invalidate_search_index()
 
         logger.info(
             "Berhasil menyimpan %d vektor ke ChromaDB (dokumen %d)",
@@ -525,6 +618,8 @@ def embed_and_store_hierarchical(
             )
 
         logger.info("Disimpan %d child chunks (dokumen %d)", len(child_ids), document_id)
+
+        _invalidate_search_index()
 
         total = len(parent_ids) + len(child_ids)
         logger.info(

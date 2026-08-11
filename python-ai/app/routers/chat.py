@@ -59,7 +59,11 @@ async def verify_webhook_token(authorization: str = Header(...)) -> str:
 # ── POST /api/chat/stream — Chat streaming via SSE ──────────────
 
 
-async def _stream_response(query: str, session_id: str) -> AsyncGenerator[str, None]:
+async def _stream_response(
+    query: str,
+    session_id: str,
+    document_ids: list[int] | None = None,
+) -> AsyncGenerator[str, None]:
     """
     Async generator yang membungkus generator sinkron dari rag_service.
     Menghasilkan data SSE dalam format JSON untuk setiap chunk respons.
@@ -67,6 +71,7 @@ async def _stream_response(query: str, session_id: str) -> AsyncGenerator[str, N
     Args:
         query: Pertanyaan dari pengguna.
         session_id: ID sesi chat.
+        document_ids: Bila diisi, pencarian dibatasi hanya pada dokumen tersebut.
 
     Yields:
         String JSON berisi chunk respons atau metadata sumber.
@@ -76,6 +81,7 @@ async def _stream_response(query: str, session_id: str) -> AsyncGenerator[str, N
         for chunk in rag_service.generate_response(
             query=query,
             session_id=session_id,
+            document_ids=document_ids,
         ):
             # Kirim setiap chunk sebagai event SSE
             yield json.dumps({"type": "chunk", "content": chunk}, ensure_ascii=False)
@@ -120,7 +126,11 @@ async def chat_stream(request: ChatRequest) -> EventSourceResponse:
     )
 
     return EventSourceResponse(
-        _stream_response(query=request.query, session_id=request.session_id),
+        _stream_response(
+            query=request.query,
+            session_id=request.session_id,
+            document_ids=request.document_ids,
+        ),
         media_type="text/event-stream",
     )
 
@@ -175,6 +185,7 @@ async def chat_message(
         for chunk in rag_service.generate_response(
             query=request.message,
             session_id=session_id,
+            document_ids=request.document_ids,
         ):
             # Pisahkan bagian sumber referensi dari jawaban utama
             if chunk.startswith("\n\n📚 **Sumber Referensi:**"):

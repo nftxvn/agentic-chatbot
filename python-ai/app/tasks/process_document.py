@@ -115,10 +115,19 @@ def process_document_task(
                 "total_chunks": 0,
             }
 
-        # ── Langkah 5: Pecah teks menjadi chunk ──
-        chunks = embedding_service.chunk_text(pages)
-        total_chunks = len(chunks)
-        logger.info("[5/7] Teks dipecah menjadi %d chunk", total_chunks)
+        # ── Langkah 5: Pecah teks menjadi parent & child chunk ──
+        # Memakai chunking hierarchical, SAMA seperti jalur retrieval yang
+        # mencari di child lalu mengirim parent ke LLM (rag_service._retrieve_context).
+        # Sebelumnya di sini dipakai chunk_text() yang flat, sehingga dokumen yang
+        # masuk lewat platform tidak punya metadata chunk_type — dan karena
+        # retrieval menyaring chunk_type="child", dokumen tersebut TIDAK PERNAH
+        # ditemukan pencarian selama koleksi juga berisi data hierarchical.
+        parent_chunks, child_chunks = embedding_service.chunk_text_hierarchical(pages)
+        total_chunks = len(parent_chunks)
+        logger.info(
+            "[5/7] Teks dipecah menjadi %d parent chunk dan %d child chunk",
+            len(parent_chunks), len(child_chunks),
+        )
 
         # ── Langkah 6: Hapus vektor lama jika overwrite ──
         if action == "overwrite":
@@ -130,7 +139,9 @@ def process_document_task(
             logger.info("[6/7] Mode '%s': melewati penghapusan vektor lama", action)
 
         # ── Langkah 7: Embed dan simpan vektor baru ──
-        stored_count = embedding_service.embed_and_store(document_id, chunks)
+        stored_count = embedding_service.embed_and_store_hierarchical(
+            document_id, parent_chunks, child_chunks
+        )
         logger.info("[7/7] Berhasil menyimpan %d vektor ke ChromaDB", stored_count)
 
         # ── Selesai: Update status ke 'completed' ──

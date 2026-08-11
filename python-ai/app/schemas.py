@@ -28,6 +28,13 @@ class ChatRequest(BaseModel):
 
     session_id: str = Field(..., description="ID sesi chat pengguna")
     query: str = Field(..., description="Pertanyaan pengguna")
+    document_ids: list[int] | None = Field(
+        default=None,
+        description=(
+            "Batasi pencarian hanya pada dokumen tertentu. "
+            "Kosongkan untuk mencari ke seluruh dokumen."
+        ),
+    )
 
 
 class ChatMessageRequest(BaseModel):
@@ -35,6 +42,13 @@ class ChatMessageRequest(BaseModel):
 
     phone_number: str = Field(..., description="Nomor telepon pengguna WhatsApp")
     message: str = Field(..., description="Pesan/pertanyaan dari pengguna")
+    document_ids: list[int] | None = Field(
+        default=None,
+        description=(
+            "Batasi pencarian hanya pada dokumen tertentu. "
+            "Kosongkan untuk mencari ke seluruh dokumen."
+        ),
+    )
 
 
 # ── Response Schemas ─────────────────────────────────────────────
