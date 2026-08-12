@@ -63,6 +63,8 @@ Konteks Dokumen:
 
 Instruksi:
 
+jawab hanya dalam bahasa Indonesia, dan bila konteks memuat nilai yang bertentangan
+
 Jawab pertanyaan HANYA berdasarkan informasi yang ada di Konteks Dokumen di atas.
 
 JANGAN menggunakan pengetahuan di luar dokumen tersebut.

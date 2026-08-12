@@ -1,0 +1,114 @@
+# =============================================================================
+#  agentic-chatbot / python-ai  -  Dependensi Python
+# =============================================================================
+#
+#  Butuh Python 3.10 atau lebih baru.
+#  Kode memakai sintaks `list[int] | None` yang baru ada sejak 3.10.
+#  Seluruh versi di bawah adalah versi yang TERBUKTI berjalan pada
+#  Python 3.10.6 saat evaluasi RAGAS 12 Agustus 2026.
+#
+#  Cara pasang:
+#      python -m venv .venv
+#      .venv\Scripts\activate            (Windows)
+#      source .venv/bin/activate         (Linux/WSL)
+#      pip install -r requirements.txt
+#
+#  AWAS - folder .venv yang ADA SEKARANG bukan environment yang dipakai:
+#  itu venv WSL lama (Python 3.12, chromadb 1.5.9) yang sudah terbengkalai dan
+#  TIDAK berisi ragas/litellm. Hapus atau ganti namanya lebih dulu sebelum
+#  menjalankan perintah di atas, kalau tidak `python -m venv .venv` akan
+#  menimpanya setengah jalan dan menyisakan environment campuran.
+#
+#  Butuh reproduksi persis termasuk seluruh dependensi turunan?
+#  Pakai requirements.lock.txt (172 paket, dibuat otomatis).
+#
+#  Di luar pip - harus dipasang terpisah:
+#      - Ollama          https://ollama.com  (server LLM lokal)
+#        lalu: ollama pull qwen2.5:7b && ollama pull qwen2.5vl:7b
+#      - MySQL           dipakai bersama laravel-admin
+#      - Redis           broker Celery
+#
+# =============================================================================
+
+
+# --- Web / API ---------------------------------------------------------------
+fastapi==0.112.2
+uvicorn==0.30.6              # server ASGI; tidak di-import, dipakai lewat CLI
+sse-starlette==3.4.5         # streaming jawaban di /api/chat/stream
+pydantic==2.13.4
+
+
+# --- Basis data & antrean tugas ----------------------------------------------
+SQLAlchemy==2.0.35
+PyMySQL==1.1.1               # driver di balik URL mysql+pymysql:// (config.py)
+celery==5.4.0
+redis==5.0.8                 # broker & result backend Celery
+
+
+# --- Pemrosesan dokumen ------------------------------------------------------
+pymupdf==1.28.0              # di-import sebagai `fitz` di pdf_processor.py
+python-docx==1.1.2
+pandas==2.3.3
+
+
+# --- RAG: embedding, penyimpanan vektor, pencarian ---------------------------
+# chromadb WAJIB tetap di 0.5.x. Isi data/chromadb ditulis oleh 0.5.5, dan
+# chromadb 1.x memakai format penyimpanan yang berbeda - menaikkannya berarti
+# harus ingest ulang seluruh dokumen.
+chromadb==0.5.5
+sentence-transformers==3.1.1  # menarik torch; lihat CATATAN di bawah
+rank-bm25==0.2.2              # komponen kata kunci pada retrieval hybrid
+numpy==1.26.4                 # tetap di 1.x; 2.x belum diuji dengan tumpukan ini
+
+
+# --- LLM lokal via Ollama ----------------------------------------------------
+langchain-core==1.5.3
+langchain-ollama==1.1.0
+langchain-text-splitters==1.1.2
+
+
+# --- Utilitas ----------------------------------------------------------------
+python-dotenv==1.0.1
+requests==2.34.2
+
+
+# =============================================================================
+#  EVALUASI (RAGAS)  -  hanya untuk test_ragas_official.py
+#  Blok ini boleh dilewati di server produksi; layanan tetap jalan tanpanya.
+# =============================================================================
+#
+#  PERINGATAN KOMPATIBILITAS - jangan hapus keduanya:
+#  ragas 0.4.3 mengimpor `langchain_community.chat_models.vertexai`, modul yang
+#  sudah dibuang dari langchain-community 0.4.x. Tanpa penanganan khusus,
+#  `import ragas` gagal dengan ModuleNotFoundError. Penambalnya sudah ada di
+#  test_ragas_official.py (fungsi _patch_langchain_community_vertexai, baris
+#  139) dan berjalan sebelum ragas di-import. Skrip evaluasi baru yang memakai
+#  ragas HARUS memanggil penambal yang sama.
+#
+ragas==0.4.3
+langchain-community==0.4.2   # dibutuhkan ragas, bukan oleh app/
+litellm==1.96.0              # jalur ke juri Gemini
+instructor==1.15.4
+
+
+# =============================================================================
+#  CATATAN
+# =============================================================================
+#
+#  torch
+#      sentence-transformers menarik torch (unduhan besar). Untuk server tanpa
+#      GPU, pasang varian CPU lebih dulu supaya tidak ikut mengunduh paket CUDA:
+#          pip install torch --index-url https://download.pytorch.org/whl/cpu
+#          pip install -r requirements.txt
+#
+#  opencv-python
+#      SENGAJA tidak dicantumkan. Satu-satunya pemakainya adalah
+#      app/services/cv_parser.py yang sudah tidak dipakai modul mana pun -
+#      test_pdf_processor.py bahkan menegaskan file itu tidak boleh dipakai
+#      lagi. Tambahkan `opencv-python==5.0.0.93` bila file itu dihidupkan.
+#
+#  Membuat ulang berkas ini
+#      requirements.lock.txt dibuat otomatis oleh analisa_dependensi.py
+#      (memindai import dengan AST lalu menelusuri dependensi turunan):
+#          python analisa_dependensi.py
+#      requirements.txt ini ditulis tangan - suntinglah langsung.

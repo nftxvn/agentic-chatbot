@@ -16,6 +16,7 @@ Metrik yang dijalankan (empat terakhir butuh ground truth):
 Semua berjalan lokal lewat Ollama — tidak ada data yang dikirim ke layanan luar.
 
 Cara pakai:
+    python test_ragas_official.py --deepseek --limit 3 # juri DeepSeek (tanpa jatah harian)
     python test_ragas_official.py --gemini --limit 3  # juri Gemini (cepat)
     python test_ragas_official.py --limit 2 --fast    # juri lokal, paling ringan
     python test_ragas_official.py --limit 3           # 3 pertanyaan, 5 metrik
@@ -25,10 +26,13 @@ Cara pakai:
 
 Pemilihan juri:
     --gemini   juri di server Google (butuh GEMINI_API_KEY di .env)
+    --deepseek juri di server DeepSeek (butuh DEEPSEEK_API_KEY di .env).
+               Berbayar per token, TAPI tidak berjatah harian — jadi tidak
+               ada lagi metrik yang pulang nan gara-gara 429 di tengah run.
     --ollama   juri lokal (bawaan)
-    Keduanya menang atas env var RAGAS_JUDGE_PROVIDER.
+    Ketiganya menang atas env var RAGAS_JUDGE_PROVIDER.
 
-    --judge-model=<nama>  ganti model Gemini (mis. gemini-3.5-flash-lite)
+    --judge-model=<nama>  ganti model juri aktif (Gemini atau DeepSeek)
     --list-models         daftar model yang boleh dipakai API key ini
     --reuse               pakai jawaban RAG dari run sebelumnya (lewati fase 1)
     --verbose             tampilkan seluruh log (retrieval, embedding, HTTP)
@@ -115,13 +119,22 @@ logger = logging.getLogger(__name__)
 # makan waktu menit, tanpa itu layar terlihat menggantung tanpa kabar.
 _QUIET_LOGGERS = (
     "LiteLLM", "litellm", "httpx", "httpcore", "urllib3",   # klien HTTP juri
-    "chromadb", "chromadb.telemetry", "posthog",            # telemetri vector DB
     "sentence_transformers", "transformers", "datasets",    # pemuatan model
     "app.services.rag_service", "app.services.embedding_service",
     "tensorflow", "absl", "h5py", "numexpr",
 )
 for _noisy in _QUIET_LOGGERS:
     logging.getLogger(_noisy).setLevel(logging.ERROR if not VERBOSE else logging.INFO)
+
+# Telemetri ChromaDB perlu CRITICAL, bukan ERROR. Kegagalannya dicatat dengan
+# logger.error(), jadi ambang ERROR justru MELOLOSKANNYA — ambang menyaring
+# yang di BAWAHnya, bukan yang setara. Sumber masalahnya sendiri sudah dimatikan
+# di embedding_service (anonymized_telemetry=False); ini hanya jaring pengaman
+# untuk jalur ChromaDB lain yang mungkin membuat client sendiri.
+for _telemetry in ("chromadb", "chromadb.telemetry", "posthog", "backoff"):
+    logging.getLogger(_telemetry).setLevel(
+        logging.CRITICAL if not VERBOSE else logging.INFO
+    )
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -207,6 +220,8 @@ JUDGE_PROVIDER = os.getenv("RAGAS_JUDGE_PROVIDER", "ollama").lower()
 # diketik — akibatnya evaluasi diam-diam memakai juri lokal yang lambat.
 if "--gemini" in sys.argv:
     JUDGE_PROVIDER = "gemini"
+elif "--deepseek" in sys.argv:
+    JUDGE_PROVIDER = "deepseek"
 elif "--ollama" in sys.argv:
     JUDGE_PROVIDER = "ollama"
 
@@ -230,12 +245,62 @@ elif "--ollama" in sys.argv:
 # sebanding.
 GEMINI_MODEL = os.getenv("RAGAS_GEMINI_MODEL", "gemini/gemini-3.1-flash-lite")
 
+# Juri DeepSeek. Penamaan mengikuti konvensi litellm: "deepseek/<nama-model>".
+#
+# Berbayar per token, tapi TIDAK berjatah harian — itu keunggulan utamanya di
+# sini, karena penyebab tersering skor nan pada juri gratis adalah 429 di
+# tengah run (lihat catatan jatah Gemini di atas).
+#
+# PENTING — pilih model kelas chat, bukan kelas reasoner. Seluruh metrik RAGAS
+# menuntut keluaran terstruktur yang lolos validasi Pydantic (mis.
+# NLIStatementOutput). Model yang menyisipkan jejak penalaran panjang gampang
+# membuat JSON-nya terpotong, dan kegagalan parsing itu TIDAK muncul sebagai
+# error: ragas/executor.py menelannya jadi np.nan, yang di laporan mudah salah
+# dibaca sebagai "skornya nol".
+DEEPSEEK_MODEL = os.getenv("RAGAS_DEEPSEEK_MODEL", "deepseek/deepseek-v4-flash")
+
+# Argumen tambahan yang IKUT di setiap panggilan juri DeepSeek.
+#
+# deepseek-v4-flash berjalan dengan thinking AKTIF secara bawaan, dan mode itu
+# menolak tool_choice — mekanisme yang dipakai instructor untuk memaksa keluaran
+# terstruktur. Gejalanya:
+#     DeepseekException - "Thinking mode does not support this tool_choice"
+#
+# Hasil pengujian langsung ke API pada model ini:
+#     Mode.TOOLS (bawaan)                   -> ditolak, tool_choice
+#     Mode.JSON_SCHEMA                      -> ditolak, "response_format unavailable"
+#     Mode.JSON                             -> "output incomplete due to max_tokens"
+#     Mode.MD_JSON                          -> BERHASIL (thinking tetap menyala)
+#     Mode.TOOLS + reasoning_effort="none"  -> BERHASIL (thinking mati)
+#     Mode.TOOLS + thinking={"disabled"}    -> BERHASIL (thinking mati)
+#
+# Dipilih yang mematikan thinking, bukan MD_JSON, karena dua alasan terukur:
+#
+#   1. Anggaran token. Kegagalan Mode.JSON di atas ("output incomplete") adalah
+#      persis mode gagal yang bikin faithfulness q01 pulang nan: jejak penalaran
+#      menghabiskan jatah keluaran sebelum JSON-nya selesai. Prompt NLI ragas
+#      wajib mengulang SETIAP statement kata per kata plus alasannya, jadi pada
+#      jawaban panjang keluarannya memang besar — tidak perlu disaingi thinking.
+#   2. Menilai bukan tugas penalaran panjang. Prompt ragas sudah meminta field
+#      `reason` per statement, dan skor juri justru harus deterministik (lihat
+#      alasan suhu 0.0 di judge_temperature).
+#
+# Kalau suatu saat model menuntut thinking menyala, alternatif yang sudah
+# terbukti jalan adalah instructor.Mode.MD_JSON di build_judge().
+DEEPSEEK_EXTRA_ARGS: dict[str, object] = {"reasoning_effort": "none"}
+
 # --judge-model=<nama> menang atas env var. Dipakai saat satu model kehabisan
 # jatah harian dan evaluasi perlu dilanjutkan memakai model lain.
+#
+# Prefiks provider ditambahkan otomatis mengikuti juri yang sedang aktif, jadi
+# "--judge-model=deepseek-chat" cukup ditulis tanpa "deepseek/".
 for _arg in sys.argv[1:]:
     if _arg.startswith("--judge-model"):
         _val = _arg.split("=", 1)[1] if "=" in _arg else sys.argv[sys.argv.index(_arg) + 1]
-        GEMINI_MODEL = _val if "/" in _val else f"gemini/{_val}"
+        if JUDGE_PROVIDER == "deepseek":
+            DEEPSEEK_MODEL = _val if "/" in _val else f"deepseek/{_val}"
+        else:
+            GEMINI_MODEL = _val if "/" in _val else f"gemini/{_val}"
         break
 
 # ── Penyetelan RunConfig agar cocok dengan Ollama lokal ───────────
@@ -337,9 +402,11 @@ _ALL_METRICS = {
 _FAST_PRESET = ["answer_relevancy", "factual_correctness"]
 
 
-def gemini_temperature(model: str) -> float:
+def judge_temperature() -> float:
     """
-    Suhu untuk model juri Gemini. Bawaan 0.0 demi skor yang bisa diulang.
+    Suhu untuk model juri (Gemini maupun DeepSeek). Bawaan 0.0 demi skor yang
+    bisa diulang. Bukti di bawah diukur pada gemini-3.1-flash-lite, tapi
+    alasannya berlaku untuk juri mana pun: penilaian harus deterministik.
 
     Saat dipanggil, Gemini 3+ memunculkan peringatan bahwa suhu < 1.0 dapat
     menyebabkan "infinite loops, degraded reasoning performance, and failure on
@@ -380,7 +447,7 @@ def _preflight_gemini(api_key: str) -> None:
             model=GEMINI_MODEL,
             messages=[{"role": "user", "content": "Balas satu kata: OK"}],
             max_tokens=10,
-            temperature=gemini_temperature(GEMINI_MODEL),
+            temperature=judge_temperature(),
         )
     except Exception as e:
         detail = str(e).replace(api_key, "<KEY-DISENSOR>") if api_key else str(e)
@@ -420,6 +487,90 @@ def _preflight_gemini(api_key: str) -> None:
         )
 
     print(f"         Uji koneksi Gemini: OK ({GEMINI_MODEL})")
+
+
+def _preflight_deepseek(api_key: str) -> None:
+    """
+    Pastikan DeepSeek bisa dipakai — DAN benar-benar sanggup mengembalikan
+    keluaran terstruktur.
+
+    Sengaja lebih ketat daripada preflight Gemini yang hanya menguji koneksi:
+    di sini skema Pydantic ikut diuji. Alasannya, kegagalan structured output
+    adalah mode gagal yang PALING menyesatkan pada evaluasi ini — ia tidak
+    muncul sebagai error, melainkan ditelan ragas/executor.py menjadi np.nan,
+    sehingga laporan terlihat seolah metriknya bernilai buruk padahal metriknya
+    tidak pernah selesai dihitung. Lebih baik ketahuan di detik pertama.
+    """
+    import litellm
+    from pydantic import BaseModel
+
+    litellm.suppress_debug_info = True
+
+    class _Ping(BaseModel):
+        ok: bool
+
+    try:
+        import instructor
+
+        # Konfigurasinya HARUS sama persis dengan yang dipakai build_judge() —
+        # termasuk DEEPSEEK_EXTRA_ARGS. Preflight yang menguji konfigurasi
+        # berbeda dari yang sesungguhnya dipakai hanya memberi rasa aman palsu.
+        client = instructor.from_litellm(litellm.completion)
+        client.chat.completions.create(
+            model=DEEPSEEK_MODEL,
+            messages=[{"role": "user", "content": 'Balas JSON persis: {"ok": true}'}],
+            response_model=_Ping,
+            max_retries=1,
+            temperature=judge_temperature(),
+            **DEEPSEEK_EXTRA_ARGS,
+        )
+    except Exception as e:
+        detail = str(e).replace(api_key, "<KEY-DISENSOR>") if api_key else str(e)
+
+        hint = ""
+        low = detail.lower()
+        if "401" in detail or "authentication" in low or "invalid api key" in low:
+            fmt = "berformat sk-" if api_key.startswith("sk-") else (
+                f"BUKAN berformat sk- (diawali '{api_key[:4]}...')"
+            )
+            hint = (
+                f"\nKey ditolak DeepSeek. Key yang dipakai {fmt} — key DeepSeek\n"
+                "diawali 'sk-'. Buat/periksa di https://platform.deepseek.com/api_keys\n"
+            )
+        elif "402" in detail or "insufficient balance" in low:
+            hint = (
+                "\nSaldo akun DeepSeek habis. Berbeda dari Gemini, ini TIDAK pulih\n"
+                "sendiri besok — akun perlu diisi ulang. Alternatif sementara:\n"
+                "    python test_ragas_official.py --gemini --limit 3\n"
+            )
+        elif "404" in detail or "model not exist" in low or "not found" in low:
+            hint = (
+                f"\nModel '{DEEPSEEK_MODEL}' tidak dikenali DeepSeek.\n"
+                "Periksa nama modelnya di https://api-docs.deepseek.com/quick_start/pricing\n"
+                "lalu ganti tanpa mengubah kode:\n"
+                "    --judge-model=<nama>            (prefiks 'deepseek/' otomatis)\n"
+                "    atau RAGAS_DEEPSEEK_MODEL=... di .env\n"
+            )
+        elif "429" in detail or "rate limit" in low:
+            hint = (
+                "\nKena rate limit DeepSeek (batas laju, bukan jatah harian).\n"
+                "Coba lagi sebentar lagi, atau turunkan RAGAS_MAX_WORKERS.\n"
+            )
+        elif "validation" in low or "response_model" in low or "parse" in low:
+            hint = (
+                f"\nModel '{DEEPSEEK_MODEL}' terhubung, tapi gagal mengembalikan JSON\n"
+                "sesuai skema. Model kelas 'reasoner' memang kerap begini karena\n"
+                "menyisipkan jejak penalaran. Pakai model kelas chat:\n"
+                "    --judge-model=deepseek-chat\n"
+            )
+
+        raise SystemExit(
+            f"Uji koneksi DeepSeek GAGAL — evaluasi dihentikan sebelum dimulai.\n{hint}"
+            f"\nPesan asli:\n  {detail[:400]}\n"
+            "\nAlternatif: pakai --gemini, atau --ollama untuk juri lokal."
+        )
+
+    print(f"         Uji koneksi DeepSeek: OK ({DEEPSEEK_MODEL}, JSON terstruktur)")
 
 
 def build_judge():
@@ -462,7 +613,7 @@ def build_judge():
         # dijalankan asinkron, dan adapter memeriksa AsyncInstructor lebih dulu.
         client = instructor.from_litellm(litellm.acompletion)
 
-        temp = gemini_temperature(GEMINI_MODEL)
+        temp = judge_temperature()
         if temp > 0:
             print(f"         Suhu juri: {temp} — skor TIDAK bisa diulang persis "
                   "(bawaan 0.0 dipilih agar hasil konsisten)")
@@ -475,10 +626,55 @@ def build_judge():
             temperature=temp,
         )
 
+    if JUDGE_PROVIDER == "deepseek":
+        api_key = os.getenv("DEEPSEEK_API_KEY")
+        if not api_key:
+            raise SystemExit(
+                "RAGAS_JUDGE_PROVIDER=deepseek tetapi API key tidak ditemukan.\n"
+                "Buat key di https://platform.deepseek.com/api_keys, lalu tambahkan\n"
+                "ke file .env:\n\n"
+                "    DEEPSEEK_API_KEY=isi-key-anda-di-sini\n"
+            )
+
+        _preflight_deepseek(api_key)
+
+        import instructor
+        import litellm
+        from ragas.llms import llm_factory
+
+        litellm.suppress_debug_info = True
+
+        # Pola yang sama dengan cabang Gemini: adapter litellm milik ragas
+        # memanggil client lewat `client.chat.completions.create(...)`, jadi
+        # modul litellm tidak bisa dipakai langsung sebagai client.
+        client = instructor.from_litellm(litellm.acompletion)
+
+        temp = judge_temperature()
+        if temp > 0:
+            print(f"         Suhu juri: {temp} — skor TIDAK bisa diulang persis "
+                  "(bawaan 0.0 dipilih agar hasil konsisten)")
+
+        # provider="deepseek" tidak divalidasi ragas (llms/base.py:667-682) —
+        # nilainya hanya diteruskan ke adapter, dan dengan adapter="litellm"
+        # perutean ditentukan oleh PREFIKS NAMA MODEL ("deepseek/..."), bukan
+        # oleh argumen ini. Ditulis eksplisit supaya pesan error ragas menyebut
+        # provider yang benar bila inisialisasi gagal.
+        # kwargs tambahan disimpan adapter sebagai model_args dan ikut di SETIAP
+        # panggilan juri (ragas/llms/litellm_llm.py:48 dan :205) — jadi di sinilah
+        # thinking dimatikan untuk seluruh metrik, bukan hanya di preflight.
+        return llm_factory(
+            DEEPSEEK_MODEL,
+            provider="deepseek",
+            client=client,
+            adapter="litellm",
+            temperature=temp,
+            **DEEPSEEK_EXTRA_ARGS,
+        )
+
     if JUDGE_PROVIDER != "ollama":
         raise SystemExit(
             f"RAGAS_JUDGE_PROVIDER tidak dikenal: '{JUDGE_PROVIDER}' "
-            "(pilihan: ollama, gemini)"
+            "(pilihan: ollama, gemini, deepseek)"
         )
 
     return LangchainLLMWrapper(
@@ -496,7 +692,11 @@ def build_judge():
 
 def judge_label() -> str:
     """Nama juri untuk ditampilkan dan dicatat di laporan."""
-    return GEMINI_MODEL if JUDGE_PROVIDER == "gemini" else JUDGE_MODEL
+    if JUDGE_PROVIDER == "gemini":
+        return GEMINI_MODEL
+    if JUDGE_PROVIDER == "deepseek":
+        return DEEPSEEK_MODEL
+    return JUDGE_MODEL
 
 
 def select_metrics(argv: list[str]):
@@ -692,8 +892,9 @@ if __name__ == "__main__":
     print(f"  Embedding      : {settings.EMBEDDING_MODEL_NAME}")
     print("=" * 62)
 
-    if JUDGE_PROVIDER == "gemini":
-        print("\n  [CATATAN] Juri berjalan di server Google — pertanyaan, jawaban,")
+    if JUDGE_PROVIDER in ("gemini", "deepseek"):
+        _host = "Google" if JUDGE_PROVIDER == "gemini" else "DeepSeek"
+        print(f"\n  [CATATAN] Juri berjalan di server {_host} — pertanyaan, jawaban,")
         print("  dan seluruh isi konteks dokumen dikirim keluar dari mesin ini.\n")
 
     if JUDGE_PROVIDER == "ollama" and JUDGE_MODEL == gen_model:
@@ -805,8 +1006,21 @@ if __name__ == "__main__":
     if failed:
         print(f"\n  [PERHATIAN] {len(failed)} metrik bernilai nan: {', '.join(failed)}")
         print("  nan BUKAN nilai nol — metriknya gagal dihitung, bukan dinilai jelek.")
-        print("  Penyebab tersering pada juri Gemini gratis: jatah harian habis (429).")
-        print("  Gulir ke atas dan cari 'RESOURCE_EXHAUSTED' untuk memastikan.")
-        print("\n  Cara melanjutkan:")
-        print("    python test_ragas_official.py --gemini --limit 3 --judge-model=gemini-3.5-flash-lite")
-        print("    python test_ragas_official.py --gemini --limit 3 --fast   # paling hemat")
+        if JUDGE_PROVIDER == "deepseek":
+            # DeepSeek tidak berjatah harian, jadi 429 hampir pasti BUKAN
+            # penyebabnya di sini. Yang tersisa: keluaran model gagal divalidasi
+            # jadi skema Pydantic — biasanya pada jawaban RAG yang sangat panjang
+            # karena JSON-nya terpotong batas token keluaran.
+            print("  DeepSeek tidak berjatah harian, jadi penyebabnya bukan kuota.")
+            print("  Tersangka utama: JSON juri gagal divalidasi (jawaban terlalu panjang,")
+            print("  atau model kelas reasoner yang menyisipkan jejak penalaran).")
+            print("  Gulir ke atas dan cari 'Exception raised in Job[' untuk melihat sebabnya.")
+            print("\n  Cara melanjutkan:")
+            print("    python test_ragas_official.py --deepseek --reuse --judge-model=deepseek-chat")
+            print("    python test_ragas_official.py --deepseek --reuse --fast   # lewati metrik berat")
+        else:
+            print("  Penyebab tersering pada juri Gemini gratis: jatah harian habis (429).")
+            print("  Gulir ke atas dan cari 'RESOURCE_EXHAUSTED' untuk memastikan.")
+            print("\n  Cara melanjutkan:")
+            print("    python test_ragas_official.py --gemini --limit 3 --judge-model=gemini-3.5-flash-lite")
+            print("    python test_ragas_official.py --gemini --limit 3 --fast   # paling hemat")

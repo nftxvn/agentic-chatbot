@@ -9,6 +9,9 @@ from typing import Any
 
 import chromadb
 from chromadb.api.models.Collection import Collection
+# Diberi alias: nama aslinya "Settings" bentrok dengan settings konfigurasi
+# aplikasi yang diimpor di bawah.
+from chromadb.config import Settings as ChromaSettings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 
@@ -60,8 +63,19 @@ def get_chroma_collection() -> Collection:
         logger.info(
             "Menginisialisasi ChromaDB di: %s", settings.CHROMA_PERSIST_DIR
         )
+        # Matikan telemetri anonim ChromaDB: tidak ada data pemakaian yang
+        # dikirim keluar dari mesin ini. Efeknya, chromadb menyetel
+        # posthog.disabled = True (chromadb/telemetry/product/posthog.py:17).
+        #
+        # CATATAN — ini TIDAK menghilangkan baris error di log. chromadb 0.5.5
+        # memanggil posthog.capture() dengan 3 argumen posisional, sedangkan
+        # posthog 7.x hanya menerima 1, sehingga TypeError terjadi saat
+        # pemanggilan — sebelum pengecekan `disabled` di dalam fungsi sempat
+        # dijalankan. Kebisingan "Failed to send telemetry event ..." karena
+        # itu diredam di level logging (lihat app/main.py), bukan di sini.
         _chroma_client = chromadb.PersistentClient(
-            path=settings.CHROMA_PERSIST_DIR
+            path=settings.CHROMA_PERSIST_DIR,
+            settings=ChromaSettings(anonymized_telemetry=False),
         )
         _chroma_collection = _chroma_client.get_or_create_collection(
             name=_COLLECTION_NAME,

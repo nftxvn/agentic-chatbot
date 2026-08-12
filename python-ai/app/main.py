@@ -21,6 +21,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Redam kegagalan telemetri ChromaDB. Dependensinya tidak sepadan: chromadb
+# 0.5.5 memanggil posthog.capture() dengan 3 argumen posisional, sedangkan
+# posthog 7.x hanya menerima 1. Akibatnya SETIAP operasi ChromaDB — termasuk
+# tiap pertanyaan pengguna — menuliskan "Failed to send telemetry event ...:
+# capture() takes 1 positional argument but 3 were given" ke log server.
+#
+# Tidak ada dampak fungsional: yang gagal hanya pengiriman statistik anonim,
+# dan pengirimannya memang sudah dimatikan lewat Settings di
+# embedding_service. Yang tersisa murni kebisingan log.
+#
+# CRITICAL, bukan ERROR: pesan ini dicatat dengan logger.error(), dan ambang
+# menyaring level di BAWAHnya — menyetel ERROR justru meloloskannya.
+for _telemetry_logger in ("chromadb.telemetry", "posthog", "backoff"):
+    logging.getLogger(_telemetry_logger).setLevel(logging.CRITICAL)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
