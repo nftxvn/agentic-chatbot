@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────
 
 # Jumlah dokumen konteks yang diambil per query oleh vector store
-_TOP_K = 20
+_TOP_K = 8
 
 # Jumlah chunk maksimum yang dikirim ke LLM setelah multi-query aggregation.
 _MAX_CONTEXT_CHUNKS = 10

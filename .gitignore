@@ -80,6 +80,11 @@ python-ai/.claude/
 #   compare_result_*.json            data mentah pendukung laporan di atas
 #   alur-sistem.html                 dokumentasi alur sistem
 #   *.py                             seluruh skrip evaluasi
+#   requirements.txt                 daftar dependensi terkurasi, ditulis tangan
+#   requirements.lock.txt            penutupan dependensi lengkap. DIBUAT OTOMATIS
+#                                    oleh analisa_dependensi.py, tapi WAJIB
+#                                    di-commit — justru itulah guna lock file:
+#                                    menyamakan environment antar mesin.
 
 # =========================
 # LARAVEL (laravel-admin/)
