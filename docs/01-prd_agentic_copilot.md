@@ -28,11 +28,12 @@ Membangun sistem _chatbot_ berbasis AI lokal yang memungkinkan Admin Diskominfot
 | AI Microservice       | Python + FastAPI                      |
 | Chat Widget (Testing) | React.js (dev/demo only)              |
 | Channel Produksi      | WhatsApp Business API (webhook)       |
-| LLM Engine            | Ollama + Qwen2.5-Instruct             |
-| Embedding Model       | paraphrase-multilingual-MiniLM-L12-v2 |
+| LLM Engine            | Ollama + `qwen2.5:7b` (teks)           |
+| Vision / OCR Engine   | Ollama + `qwen2.5vl` (multimodal)      |
+| Embedding Model       | `BAAI/bge-m3`                          |
 | Vector Database       | ChromaDB                              |
+| Pencarian Kata        | `rank_bm25` (hybrid + RRF)             |
 | AI Orchestration      | LangChain                             |
-| OCR Engine            | Tesseract OCR                         |
 | Queue System          | Celery + Redis                        |
 | Database Relasional   | MySQL                                 |
 | Containerization      | Docker Compose                        |

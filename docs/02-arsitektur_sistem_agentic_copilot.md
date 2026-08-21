@@ -20,11 +20,11 @@ graph TB
         API_Doc["POST /api/docs/process"]
         API_Chat["POST /api/chat/stream"]
         Queue["Celery Worker<br/>(Background Task)"]
-        OCR["Tesseract OCR"]
-        Chunker["Text Chunker<br/>(LangChain Splitter)"]
-        Embedder["Embedding Model<br/>(MiniLM-L12-v2)"]
-        RAGChain["RAG Chain<br/>(LangChain)"]
-        ToolRouter["Semantic Router<br/>(Tool Calling)"]
+        OCR["Deskew + OCR Vision<br/>(qwen2.5vl)"]
+        Chunker["Chunker Parent-Child<br/>(sadar batas item)"]
+        Embedder["Embedding Model<br/>(BAAI/bge-m3)"]
+        RAGChain["RAG Hybrid<br/>(Vektor + BM25 → RRF)"]
+        Guards["Penjaga Jawaban<br/>(premis palsu, label, daftar)"]
     end
 
     subgraph Storage["💾 Storage Layer"]
@@ -35,7 +35,8 @@ graph TB
 
     subgraph AI["🤖 AI Engine"]
         Ollama["Ollama Server<br/>(localhost:11434)"]
-        Qwen["Qwen2.5-3B/7B<br/>Instruct"]
+        Qwen["qwen2.5:7b<br/>(teks — jawaban)"]
+        QwenVL["qwen2.5vl<br/>(vision — OCR)"]
     end
 
     %% Admin Flow
@@ -44,6 +45,8 @@ graph TB
     DocManager -->|"POST /api/docs/process"| API_Doc
     API_Doc -->|"Dispatch Task"| Queue
     Queue --> OCR
+    OCR -.->|"halaman pindai"| Ollama
+    Ollama --- QwenVL
     OCR --> Chunker
     Chunker --> Embedder
     Embedder -->|"Upsert Vectors"| ChromaDB
@@ -54,10 +57,11 @@ graph TB
     Widget -->|"POST /api/chat/stream"| API_Chat
     %% Chat Flow (Produksi - WhatsApp)
     WAWebhook -->|"POST /api/chat/message"| API_Chat
-    API_Chat --> ToolRouter
-    ToolRouter -->|"Intent: Tanya SOP"| RAGChain
-    RAGChain -->|"Similarity Search"| ChromaDB
-    RAGChain -->|"Generate Answer"| Ollama
+    API_Chat --> RAGChain
+    RAGChain -->|"Vektor + BM25"| ChromaDB
+    RAGChain --> Guards
+    Guards -->|"lolos: susun jawaban"| Ollama
+    Guards -.->|"tertahan: jawab tanpa LLM"| API_Chat
     Ollama --- Qwen
     API_Chat -->|"SSE Stream"| Widget
     API_Chat -->|"JSON Response"| WAWebhook
@@ -87,7 +91,7 @@ sequenceDiagram
     participant FastAPI as Python (FastAPI)
     participant Redis
     participant Celery as Celery Worker
-    participant OCR as Tesseract OCR
+    participant OCR as Deskew + OCR Vision (qwen2.5vl)
     participant ChromaDB
 
     Admin->>Laravel: Upload PDF baru (replace)
@@ -129,30 +133,33 @@ sequenceDiagram
     participant User as End-User (Browser)
     participant Widget as React Chat Widget
     participant FastAPI as Python (FastAPI)
-    participant Router as Semantic Router
+    participant RAG as RAG Service
     participant ChromaDB
-    participant Ollama as Ollama (Qwen2.5)
+    participant Ollama as Ollama (qwen2.5:7b)
 
     User->>Widget: Ketik pertanyaan
     Widget->>FastAPI: POST /api/chat/stream
+    FastAPI->>RAG: query + session_id + document_ids?
 
-    FastAPI->>Router: Analisis intent pengguna
+    RAG->>Ollama: Betulkan ketik, tarik kata kunci
+    Ollama-->>RAG: Kata kunci
+    RAG->>ChromaDB: Vektor + BM25 (top-k 20, atau 80 utk daftar)
+    ChromaDB-->>RAG: Child chunk → ditelusuri ke parent
 
-    alt Intent: Tanya SOP/Aturan
-        Router->>ChromaDB: Similarity search (top-k=5)
-        ChromaDB-->>Router: Chunk dokumen relevan
-        Router->>Ollama: Prompt = System + Context + Query
-        Ollama-->>FastAPI: Token stream (SSE)
-    else Intent: Cek Tiket (Fase Selanjutnya)
-        Router->>Router: Call fungsi cek_tiket()
-        Note over Router: (Belum diimplementasi - MVP)
+    alt Penjaga tertahan (konteks kosong / premis palsu / minta daftar utuh)
+        RAG-->>FastAPI: Jawaban disusun terprogram, LLM tidak dipanggil
+    else Lolos penjaga
+        RAG->>Ollama: System prompt (konteks) + pertanyaan
+        Ollama-->>RAG: Token stream
     end
 
-    loop Setiap Token
-        FastAPI-->>Widget: data: {"chunk": "..."}
+    loop Setiap potongan
+        FastAPI-->>Widget: data: {"type":"chunk","content":"..."}
     end
-    FastAPI-->>Widget: data: {"sources": [...]}
+    FastAPI-->>Widget: data: {"type":"done","content":""}
     Widget-->>User: Jawaban + sumber dokumen
+
+    Note over FastAPI,Widget: Kegagalan dikirim sebagai {"type":"error"},<br/>bukan kode status — koneksi SSE sudah telanjur terbuka
 ```
 
 ### C. Alur Chat — Produksi (WhatsApp)
@@ -162,21 +169,23 @@ sequenceDiagram
     participant User as End-User (HP)
     participant WA as WhatsApp Business API
     participant FastAPI as Python (FastAPI)
-    participant Router as Semantic Router
+    participant RAG as RAG Service
     participant ChromaDB
-    participant Ollama as Ollama (Qwen2.5)
+    participant Ollama as Ollama (qwen2.5:7b)
 
     User->>WA: Kirim pesan WhatsApp
     WA->>FastAPI: POST /api/chat/message (webhook)
 
-    FastAPI->>Router: Analisis intent pengguna
-    Router->>ChromaDB: Similarity search (top-k=5)
-    ChromaDB-->>Router: Chunk dokumen relevan
-    Router->>Ollama: Prompt = System + Context + Query
-    Ollama-->>FastAPI: Full response
+    FastAPI->>RAG: query + session_id
+    RAG->>ChromaDB: Vektor + BM25 (top-k 20, atau 80 utk daftar)
+    ChromaDB-->>RAG: Child chunk → ditelusuri ke parent
+    RAG->>Ollama: System prompt (konteks) + pertanyaan
+    Ollama-->>RAG: Jawaban utuh
 
-    FastAPI-->>WA: JSON {reply, sources}
+    FastAPI-->>WA: JSON {reply, sources[]}
     WA-->>User: Pesan balasan otomatis di WhatsApp
+
+    Note over FastAPI,WA: Mesin RAG-nya sama dengan jalur widget;<br/>bedanya hanya jawaban dikirim utuh, bukan dialirkan
 ```
 
 ---
@@ -308,13 +317,18 @@ erDiagram
 
 ```env
 # === LLM Configuration ===
-# Fase 1 (Testing Lokal): qwen2.5:3b
-# Fase 2 (Produksi Server): qwen2.5:7b
-LLM_MODEL_NAME=qwen2.5:3b
+# Dua model dipakai TERPISAH dan itu disengaja:
+#   LLM_MODEL_NAME    -> model teks, menyusun jawaban chat
+#   VISION_MODEL_NAME -> model multimodal, membaca halaman pindai (OCR)
+# Memakai satu model multimodal untuk keduanya membuat chat jauh lebih lambat.
+LLM_MODEL_NAME=qwen2.5:7b
+VISION_MODEL_NAME=qwen2.5vl
 OLLAMA_BASE_URL=http://localhost:11434
 
 # === Embedding ===
-EMBEDDING_MODEL_NAME=paraphrase-multilingual-MiniLM-L12-v2
+# Mengganti model ini menuntut ingest ulang seluruh dokumen —
+# vektor lama tidak sebanding dengan vektor model baru.
+EMBEDDING_MODEL_NAME=BAAI/bge-m3
 
 # === Vector DB ===
 CHROMA_PERSIST_DIR=./data/chromadb
@@ -365,11 +379,14 @@ AI_SERVICE_TOKEN=your-secure-internal-token-here
 | **Chat Widget (Testing)** | React.js + Vite                       | v18+ — dev/demo only             |
 | **Channel Produksi**      | WhatsApp Business API                 | Webhook → POST /api/chat/message |
 | **LLM Runtime**           | Ollama                                | Latest                           |
-| **LLM Model**             | Qwen2.5-Instruct                      | 3B (test) → 7B (prod)            |
-| **Embedding**             | paraphrase-multilingual-MiniLM-L12-v2 | via SentenceTransformers         |
-| **Vector DB**             | ChromaDB                              | Persistent mode                  |
-| **OCR**                   | Tesseract OCR                         | v5.x + pytesseract               |
-| **PDF Parsing**           | PyMuPDF (fitz)                        | Deteksi teks vs scan             |
+| **LLM Model (teks)**      | `qwen2.5:7b`                          | menyusun jawaban, `temperature=0` |
+| **LLM Model (vision)**    | `qwen2.5vl`                           | OCR halaman pindai via `/api/generate` |
+| **Embedding**             | `BAAI/bge-m3`                         | via SentenceTransformers         |
+| **Vector DB**             | ChromaDB                              | Persistent mode, jarak cosine    |
+| **Pencarian kata**        | `rank_bm25`                           | digabung dengan vektor lewat RRF |
+| **OCR**                   | Model vision (bukan Tesseract)        | perlu pelurusan halaman 0,25° lebih dulu |
+| **PDF Parsing**           | PyMuPDF (fitz)                        | Deteksi teks vs scan, render, pelurusan |
+| **Penilai evaluasi**      | DeepSeek (RAGAS) + penilai deterministik | model penjawab tidak menilai dirinya sendiri |
 | **AI Orchestration**      | LangChain                             | Latest                           |
 | **Task Queue**            | Celery + Redis                        | Async background jobs            |
 | **Database**              | MySQL                                 | v8.x                             |
