@@ -5,9 +5,9 @@ Digunakan untuk mengupdate status dokumen di database yang di-share dengan Larav
 
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, Iterable
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import bindparam, create_engine, text
 from sqlalchemy.engine import Engine
 
 from app.config import settings
@@ -128,6 +128,44 @@ def get_all_documents() -> list[dict[str, Any]]:
 
     except Exception as e:
         logger.error("Gagal mengambil daftar dokumen: %s", str(e))
+        raise
+
+
+def get_document_names(document_ids: Iterable[int]) -> dict[int, str]:
+    """
+    Mengambil nama berkas asli untuk sekumpulan dokumen sekaligus.
+
+    Dipakai untuk mengisi `doc_name` pada rujukan sumber di jawaban chat —
+    pengguna melihat nama berkas, bukan sekadar nomor dokumen. Satu query untuk
+    seluruh ID, bukan satu query per rujukan.
+
+    Args:
+        document_ids: Kumpulan ID dokumen. Duplikat diabaikan.
+
+    Returns:
+        Dict {document_id: original_name}. ID yang tidak ada di basis data
+        tidak muncul di hasil.
+    """
+    ids = sorted({int(document_id) for document_id in document_ids})
+    if not ids:
+        return {}
+
+    engine = get_engine()
+
+    # expanding=True: SQLAlchemy yang menyusun daftar parameter untuk klausa IN,
+    # sehingga nilainya tetap lewat jalur parameter dan tidak pernah dirangkai
+    # ke dalam string SQL.
+    query = text(
+        "SELECT id, original_name FROM documents WHERE id IN :document_ids"
+    ).bindparams(bindparam("document_ids", expanding=True))
+
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(query, {"document_ids": ids}).mappings().all()
+            return {row["id"]: row["original_name"] for row in rows}
+
+    except Exception as e:
+        logger.error("Gagal mengambil nama untuk dokumen %s: %s", ids, str(e))
         raise
 
 

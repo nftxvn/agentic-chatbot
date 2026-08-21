@@ -5,6 +5,10 @@ dan ChromaDB sebagai vector store persisten.
 """
 
 import logging
+import os
+import sys
+import time
+from pathlib import Path
 from typing import Any
 
 import chromadb
@@ -13,9 +17,14 @@ from chromadb.api.models.Collection import Collection
 # aplikasi yang diimpor di bawah.
 from chromadb.config import Settings as ChromaSettings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from sentence_transformers import SentenceTransformer
 
-from app.config import settings
+# Diimpor SEBELUM sentence_transformers dengan sengaja, melanggar urutan
+# abjad yang biasa. app.config-lah yang memuat .env, dan huggingface_hub
+# membaca HF_HUB_OFFLINE sekali saja saat diimpor — kalau urutannya dibalik,
+# setelan itu tidak akan pernah terbaca.
+from app.config import settings  # noqa: I001
+
+from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
 
@@ -37,16 +46,38 @@ def get_embedding_model() -> SentenceTransformer:
     Mendapatkan model SentenceTransformer (lazy loading).
     Model hanya dimuat sekali saat pertama kali dipanggil.
 
+    Bila HF_HUB_OFFLINE dinyalakan tetapi pemuatannya justru gagal karena itu,
+    mode luring dimatikan lalu pemuatan diulang sekali. Alasannya: transformers
+    memanggil model_info() tanpa syarat saat memeriksa jenis tokenizer, dan
+    dalam mode luring panggilan itu MELEMPAR, bukan dilewati — sehingga setelan
+    yang dimaksudkan mempercepat malah menghentikan pekerjaan sama sekali.
+    Lebih baik lambat sesaat daripada gagal.
+
     Returns:
         Instance SentenceTransformer yang sudah dimuat.
     """
     global _embedding_model
-    if _embedding_model is None:
-        logger.info(
-            "Memuat model embedding: %s ...", settings.EMBEDDING_MODEL_NAME
-        )
+    if _embedding_model is not None:
+        return _embedding_model
+
+    logger.info("Memuat model embedding: %s ...", settings.EMBEDDING_MODEL_NAME)
+    try:
         _embedding_model = SentenceTransformer(settings.EMBEDDING_MODEL_NAME)
-        logger.info("Model embedding berhasil dimuat ✅")
+    except Exception as e:                                      # noqa: BLE001
+        if type(e).__name__ != "OfflineModeIsEnabled":
+            raise
+        logger.warning(
+            "Mode luring HuggingFace menggagalkan pemuatan model — dimatikan "
+            "lalu dicoba ulang. Setel HF_HUB_OFFLINE=0 di .env untuk "
+            "menghilangkan peringatan ini."
+        )
+        os.environ.pop("HF_HUB_OFFLINE", None)
+        konstanta = sys.modules.get("huggingface_hub.constants")
+        if konstanta is not None:
+            konstanta.HF_HUB_OFFLINE = False
+        _embedding_model = SentenceTransformer(settings.EMBEDDING_MODEL_NAME)
+
+    logger.info("Model embedding berhasil dimuat ✅")
     return _embedding_model
 
 
@@ -238,6 +269,111 @@ def _split_list_preserving_items(list_text: str, max_size: int) -> list[str]:
     return out
 
 
+_POLA_NAMA_SOP = re.compile(
+    r"(?:(?:-\s*\*\*)?NAMA\s+SOP(?:\*\*)?\s*[:|]\s*)(.+)",
+    re.IGNORECASE,
+)
+
+# Penanda bagian yang generik — TIDAK mengandaikan dokumen SOP.
+#
+# Bentuk 1: "LABEL :" di awal baris. Menangkap 'MEMUTUSKAN :', 'Menetapkan :',
+#           'KESATU :', 'KEDUA :', dan pada dokumen lain 'Ringkasan :',
+#           'Dasar Hukum :', 'Pasal 3 :'.
+# Bentuk 2: baris yang seluruhnya huruf besar — judul sampul dan kepala surat.
+_POLA_PENANDA_BAGIAN = re.compile(r"^[ \t]*([A-Z][^\n:]{2,58}?)[ \t]*:(?:[ \t]|$)", re.MULTILINE)
+_POLA_BARIS_KAPITAL = re.compile(r"^[ \t]*([A-Z][A-Z0-9 ,\.\-()/]{4,58})[ \t]*$", re.MULTILINE)
+
+# Baris kapital hanya dihitung bila muncul di kepala halaman. Tanpa syarat ini,
+# blok tanda tangan di kaki halaman ('WALI KOTA BANDA ACEH,') merebut label
+# halaman daftar yang seharusnya mewarisi bagian induknya.
+_MAKS_BARIS_KEPALA = 3
+_MAKS_KATA_PENANDA = 4
+# Porsi minimal halaman yang harus dikuasai sebuah penanda agar ia layak
+# menamai halaman itu. Setengah, bukan sepertiga: 'mewakili halaman' wajarnya
+# berarti menguasai mayoritasnya. Pada sepertiga, klausul penutup 'KETIGA' di
+# kaki halaman 6 lolos dengan 32% — dan 32% itu sendiri sebagian besar blok
+# tanda tangan, bukan isi klausulnya.
+_MIN_PORSI_PENANDA = 0.50
+
+
+def derive_page_context(
+    text: str,
+    sebelumnya: str | None = None,
+    judul_dokumen: str | None = None,
+) -> tuple[str | None, str | None]:
+    """
+    Label konteks untuk SATU halaman, diturunkan dari isi halaman itu sendiri.
+
+    Halaman yang tidak punya penanda apa pun MEWARISI label halaman sebelumnya.
+    Pewarisan itu bukan kemewahan: daftar 74 item pada korpus ini terbentang di
+    empat halaman, dan tiga di antaranya tidak memuat satu pun baris judul.
+    Tanpa warisan, tiga halaman itu masuk korpus tanpa label dan hanya bisa
+    ditemukan lewat kemiripan kata — persis halaman yang paling butuh konteks.
+
+    Urutan keputusannya, dari yang paling spesifik:
+
+    1. Baris 'Nama SOP' — bila ada, ia judul prosedurnya dan mengalahkan yang lain.
+    2. Penanda bagian TERAKHIR pada halaman. Sengaja yang terakhir, bukan yang
+       pertama: halaman yang berpindah bagian di tengah diperintah oleh bagian
+       yang terakhir dibuka, dan bagian itu pula yang diwariskan ke halaman
+       berikutnya. Pada korpus ini halaman 3 berakhir di 'KEDUA :' yang membuka
+       daftar 74 SOP, sehingga halaman 4-6 mewarisi 'KEDUA' dan bukan 'Mengingat'.
+    3. Baris kapital di kepala halaman — sampul dan kepala surat.
+    4. Warisan dari halaman sebelumnya.
+    5. Judul dokumen, dipendekkan. Jaring terakhir supaya tidak ada halaman
+       yang sama sekali tanpa konteks.
+    """
+    m = _POLA_NAMA_SOP.search(text)
+    if m:
+        nama = re.sub(r"\*+", "", m.group(1)).strip()
+        if nama:
+            return f"SOP {nama}", f"SOP {nama}"
+
+    # Label penanda dibatasi 4 kata. Tanpa batas itu baris kop surat
+    # 'Telepon (0651) 21855 Faximile (0651) 31980 E-mail :' ikut terjaring dan
+    # merebut label halaman sampul — judul bagian yang sah praktis selalu
+    # pendek ('MEMUTUSKAN', 'KEDUA', 'Dasar Hukum').
+    penanda = [
+        (m.group(1).strip(), m.end())
+        for m in _POLA_PENANDA_BAGIAN.finditer(text)
+    ]
+    penanda = [
+        (p, akhir) for p, akhir in penanda
+        if p and not p.isdigit() and len(p.split()) <= _MAKS_KATA_PENANDA
+    ]
+
+    warisan = penanda[-1][0] if penanda else sebelumnya
+
+    if penanda:
+        label, mulai = penanda[-1]
+        # Penanda yang cuma menempel di ekor halaman tidak mewakili isinya.
+        # Halaman 6 korpus ini berisi 15 item daftar milik 'KEDUA' lalu ditutup
+        # satu klausul 'KETIGA'; melabelinya KETIGA salah untuk 90% isinya.
+        # Penanda itu tetap DIWARISKAN ke halaman berikutnya — yang membuka
+        # bagian tetaplah ia — tapi bukan ia yang menamai halaman ini.
+        if len(text) - mulai >= len(text) * _MIN_PORSI_PENANDA:
+            return label, warisan
+
+    if sebelumnya:
+        return sebelumnya, warisan
+
+    if penanda:
+        return penanda[-1][0], warisan
+
+    kepala = [b for b in text.split("\n") if b.strip()][:_MAKS_BARIS_KEPALA]
+    for baris in kepala:
+        k = _POLA_BARIS_KAPITAL.match(baris)
+        if k:
+            kepala_label = k.group(1).strip().rstrip(",")
+            return kepala_label, (warisan or kepala_label)
+
+    if judul_dokumen:
+        judul_pendek = judul_dokumen[:60].strip()
+        return judul_pendek, (warisan or judul_pendek)
+
+    return None, warisan
+
+
 def chunk_text_hierarchical(
     pages: list[dict],
     document_title: str | None = None,
@@ -299,23 +435,24 @@ def chunk_text_hierarchical(
     # - NAMA SOP: ... (kapital semua, dari OCR plain text)
     # - - **Nama SOP**: ... (format markdown bold dari OCR lain)
     # Menggunakan IGNORECASE agar tidak terpengaruh kapitalisasi
-    sop_name_pattern = re.compile(
-        r"(?:(?:-\s*\*\*)?NAMA\s+SOP(?:\*\*)?\s*:\s*)(.+)",
-        re.IGNORECASE,
-    )
-    current_sop_name: str | None = None
+    # Konteks halaman diwariskan antar halaman: halaman lanjutan tanpa judul
+    # memakai label halaman sebelumnya. Lihat derive_page_context.
+    konteks_halaman: str | None = None
+    warisan_konteks: str | None = None
 
     for page in pages:
         page_number = page["page_number"]
         text = page["text"]
 
         # Cek apakah ada Nama SOP di halaman ini — update jika ditemukan
-        match = sop_name_pattern.search(text)
-        if match:
-            current_sop_name = match.group(1).strip()
-            # Bersihkan sisa markdown bold jika masih ada (mis: "Renja **")
-            current_sop_name = re.sub(r"\*+", "", current_sop_name).strip()
-            logger.info("SOP tracker updated: '%s' (halaman %d)", current_sop_name, page_number)
+        sebelum = konteks_halaman
+        konteks_halaman, warisan_konteks = derive_page_context(
+            text, warisan_konteks, document_title
+        )
+        if konteks_halaman != sebelum:
+            logger.info(
+                "Konteks halaman %d: '%s'", page_number, konteks_halaman
+            )
 
         # Deteksi dulu: apakah halaman ini berisi daftar enumerasi panjang,
         # format apa pun (nomor, huruf, romawi, atau bullet)?
@@ -366,8 +503,8 @@ def chunk_text_hierarchical(
             prefix = f"[Halaman {page_number}]"
             if document_title:
                 prefix += f"\n[Topik Utama: {document_title}]"
-            if current_sop_name:
-                prefix += f"\n[Konteks: SOP {current_sop_name}]"
+            if konteks_halaman:
+                prefix += f"\n[Konteks: {konteks_halaman}]"
 
             parent_text_with_meta = f"{prefix}\n{parent_text}"
             parent_chunks.append({
@@ -404,14 +541,80 @@ def chunk_text_hierarchical(
     return parent_chunks, child_chunks
 
 
+# ── Penanda versi korpus (dibaca lintas proses) ──────────────────
+#
+# Ingest berjalan di proses pekerja Celery, sedangkan cache BM25 hidup di proses
+# server FastAPI. Memanggil invalidate_bm25_cache() dari Celery hanya
+# membersihkan cache milik proses Celery: variabel level modul tidak menyeberangi
+# batas proses, jadi cache di server API sama sekali tidak tersentuh.
+#
+# Satu-satunya penanda yang selama ini menyelamatkan adalah collection.count(),
+# dan itu tidak cukup — menimpa dokumen dengan jumlah potongan yang kebetulan
+# sama membuat count tidak berubah, sehingga server API terus menyajikan teks
+# dokumen versi lama sampai di-restart.
+#
+# Penanda ditulis sebagai berkas di dalam direktori ChromaDB, satu-satunya
+# tempat yang sudah pasti dipakai bersama oleh kedua proses.
+_CORPUS_VERSION_FILE = "corpus_version.txt"
+
+
+def _corpus_version_path() -> Path:
+    """Lokasi berkas penanda, di dalam direktori persist ChromaDB."""
+    return Path(settings.CHROMA_PERSIST_DIR) / _CORPUS_VERSION_FILE
+
+
+def read_corpus_version() -> str:
+    """
+    Membaca penanda versi korpus.
+
+    Mengembalikan string kosong bila penandanya belum pernah ditulis atau tidak
+    terbaca. Keduanya diperlakukan sama — "tidak diketahui" — sehingga pemanggil
+    tetap jatuh kembali ke collection.count() seperti perilaku sebelumnya.
+    """
+    try:
+        return _corpus_version_path().read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def bump_corpus_version() -> str:
+    """
+    Menaikkan penanda versi korpus supaya proses lain tahu isinya sudah berubah.
+
+    Memakai time.time_ns() sebagai nilai: cukup untuk membedakan dua ingest yang
+    berdekatan tanpa perlu menyimpan hitungan di mana pun.
+    """
+    version = str(time.time_ns())
+
+    try:
+        path = _corpus_version_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(version, encoding="utf-8")
+    except OSError as e:
+        # Ingest tidak boleh gagal hanya karena penanda tidak bisa ditulis.
+        logger.warning("Gagal menulis penanda versi korpus: %s", e)
+        return ""
+
+    return version
+
+
 def _invalidate_search_index() -> None:
     """
-    Memberi tahu rag_service bahwa korpus berubah, supaya indeks BM25 yang di-cache
-    dibangun ulang pada query berikutnya.
+    Memberi tahu bahwa korpus berubah, supaya indeks BM25 yang di-cache dibangun
+    ulang pada query berikutnya.
 
-    Import sengaja dilakukan di dalam fungsi (bukan di level modul) karena
-    rag_service sudah mengimpor modul ini — import di level modul akan melingkar.
+    Dua langkah, karena masing-masing menjangkau sasaran yang berbeda:
+
+    1. bump_corpus_version() menulis penanda ke disk — inilah yang terbaca oleh
+       proses LAIN, yaitu server FastAPI saat ingest berjalan di pekerja Celery.
+    2. invalidate_bm25_cache() membersihkan cache di proses ini sendiri, untuk
+       kasus ingest dan chat kebetulan berjalan dalam satu proses (skrip uji).
+
+    Import pada langkah 2 sengaja di dalam fungsi: rag_service sudah mengimpor
+    modul ini, jadi import di level modul akan melingkar.
     """
+    bump_corpus_version()
+
     try:
         from app.services.rag_service import invalidate_bm25_cache
         invalidate_bm25_cache()

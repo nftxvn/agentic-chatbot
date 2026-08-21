@@ -5,6 +5,7 @@ menggunakan LLM Ollama secara streaming.
 """
 
 import logging
+import math
 import re as _re
 from typing import Generator
 
@@ -12,7 +13,11 @@ from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.config import settings
-from app.services.embedding_service import get_chroma_collection, get_embedding_model
+from app.services.embedding_service import (
+    get_chroma_collection,
+    get_embedding_model,
+    read_corpus_version,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,16 +26,33 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────
 
 # Jumlah dokumen konteks yang diambil per query oleh vector store
-_TOP_K = 10
+_TOP_K = 20
 
 # Jumlah chunk maksimum yang dikirim ke LLM setelah multi-query aggregation.
-_MAX_CONTEXT_CHUNKS = 7
+_MAX_CONTEXT_CHUNKS = 10
 
 # Limit lebih longgar khusus untuk query bertipe daftar/list lengkap
 _MAX_CONTEXT_CHUNKS_LIST_QUERY = 20
 
-# Konteks LLM yang lebih besar khusus untuk pertanyaan yang menghasilkan daftar panjang
-_NUM_CTX_LIST_QUERY = 16384
+# ── Jendela konteks LLM ──────────────────────────────────────
+#
+# Ukurannya DIHITUNG dari panjang konteks yang benar-benar terkumpul, bukan
+# dipatok. Nilai tetap 16384 untuk setiap pertanyaan daftar membuat Ollama
+# mengalokasikan KV cache besar walau konteksnya pendek — dan pada mesin
+# ber-RAM terbatas alokasi itu gagal dengan "failed to allocate buffer",
+# menjatuhkan seluruh permintaan. Kegagalannya bergantung pada apa yang
+# kebetulan sedang berjalan di mesin, jadi gejalanya adalah pertanyaan yang
+# kadang berhasil kadang gagal tanpa pola yang jelas.
+
+# Perkiraan kasar karakter per token untuk teks bahasa Indonesia. Sengaja
+# konservatif (kecil) supaya taksirannya melebihkan, bukan mengurangi.
+_CHARS_PER_TOKEN = 3.0
+
+# Ruang yang disisakan untuk jawaban model.
+_NUM_CTX_RESPONSE_HEADROOM = 2048
+
+# Batas bawah — di bawah ini konteks apa pun akan terpotong.
+_NUM_CTX_MIN = 4096
 
 # Konstanta k untuk Reciprocal Rank Fusion (RRF).
 # Nilai standar di literatur information retrieval adalah 60.
@@ -40,6 +62,12 @@ _RRF_K = 60
 _BM25_MIN_SCORE = 0.1
 
 # Timeout (detik) untuk request ke Ollama. Dinaikkan karena inferensi di CPU bisa lambat.
+# Diteruskan lewat client_kwargs, BUKAN parameter timeout= milik ChatOllama:
+# langchain_ollama 1.1.0 tidak punya field bernama `timeout` sama sekali,
+# sehingga menuliskannya di sana diabaikan tanpa peringatan apa pun. Akibatnya
+# nyata: satu permintaan yang menggantung pernah menahan evaluasi 27 menit
+# tanpa pernah diputus. client_kwargs diteruskan ke httpx, yang benar-benar
+# memberlakukannya.
 _OLLAMA_TIMEOUT = 300
 
 # Berapa lama model tetap "warm" (di-load) di memori Ollama antar-request.
@@ -63,7 +91,17 @@ Konteks Dokumen:
 
 Instruksi:
 
-jawab hanya dalam bahasa Indonesia, dan bila konteks memuat nilai yang bertentangan
+Jawab hanya dalam bahasa Indonesia.
+
+Bila konteks memuat dua nilai yang BERTENTANGAN untuk hal yang sama, sebutkan keduanya beserta letaknya; jangan diam-diam memilih salah satu.
+
+Bila pertanyaan menyebut nomor, nama, atau bagian yang TIDAK ada di konteks, katakan bahwa hal itu tidak ada. JANGAN menggantinya dengan bagian lain yang mirip.
+
+Bila yang ditanyakan tidak ada namun konteks memuat padanannya, sebutkan apa yang ADA di tempatnya; jangan berhenti pada penolakan saja.
+
+JANGAN menjumlahkan atau menghitung angka yang tidak tertulis di dokumen. Bila dokumen tidak memuat totalnya, sampaikan rinciannya apa adanya.
+
+Salin nama, jabatan, dan angka PERSIS seperti tertulis, sekalipun tampak keliru.
 
 Jawab pertanyaan HANYA berdasarkan informasi yang ada di Konteks Dokumen di atas.
 
@@ -137,10 +175,14 @@ def _get_bm25_index(collection) -> dict:
     """
     Mengembalikan indeks BM25 beserta korpusnya, dibangun sekali lalu dipakai ulang.
 
-    Invalidasi memakai `collection.count()`: kalau jumlah vektor sama seperti saat
-    indeks dibangun, korpus dianggap tidak berubah dan indeks lama dipakai kembali.
-    Untuk perubahan yang tidak mengubah jumlah (mis. re-ingest dokumen yang sama
-    dengan isi berbeda), panggil invalidate_bm25_cache() secara eksplisit.
+    Dua penanda dipakai untuk memutuskan apakah indeks lama masih sahih:
+
+    1. `collection.count()` — menangkap penambahan atau penghapusan vektor.
+    2. Penanda versi korpus di disk (`read_corpus_version`) — menangkap
+       perubahan yang TIDAK mengubah jumlah vektor, misalnya menimpa dokumen
+       dengan jumlah potongan yang kebetulan sama. Penanda ini juga satu-satunya
+       jalan bagi proses ini untuk mengetahui ingest yang terjadi di proses
+       pekerja Celery, karena cache di sini tidak terjangkau dari sana.
 
     Returns:
         Dict berisi bm25, docs, ids, metas, dan flag hierarchical.
@@ -152,11 +194,18 @@ def _get_bm25_index(collection) -> dict:
     except Exception:
         current_count = -1
 
-    if _bm25_cache is not None and _bm25_cache["count"] == current_count:
+    current_version = read_corpus_version()
+
+    if (
+        _bm25_cache is not None
+        and _bm25_cache["count"] == current_count
+        and _bm25_cache["version"] == current_version
+    ):
         return _bm25_cache
 
     empty = {"bm25": None, "docs": [], "ids": [], "metas": [],
-             "hierarchical": True, "count": current_count}
+             "hierarchical": True, "count": current_count,
+             "version": current_version}
 
     try:
         from rank_bm25 import BM25Okapi
@@ -180,6 +229,7 @@ def _get_bm25_index(collection) -> dict:
             "metas": metas,
             "hierarchical": hierarchical,
             "count": current_count,
+            "version": current_version,
         }
         logger.info(
             "Indeks BM25 dibangun: %d chunk (%s) — akan dipakai ulang sampai korpus berubah",
@@ -255,7 +305,19 @@ def _retrieve_context(
         logger.info("Query terdeteksi sebagai list-query, max_chunks dinaikkan ke %d, top_k ke %d", max_chunks, top_k)
 
     try:
+        # Pertanyaan asli ikut dicari, tidak digantikan.
+        #
+        # `query` di sini adalah versi kata kunci hasil ekstraksi LLM. Ekstraksi
+        # itu memang membuang kalimat pengantar yang mengaburkan pencarian, tapi
+        # kadang ikut membuang kata pembatas yang justru menentukan — misalnya
+        # "tetap" pada "cuti pegawai tetap". Bila hanya kata kunci yang dicari,
+        # pembatas itu hilang dan dua daftar berbeda dalam satu dokumen
+        # tercampur. Dengan keduanya dicari, RRF yang memutuskan mana yang lebih
+        # relevan, bukan hasil ekstraksi kata kunci.
         queries = [query]
+
+        if original_query and original_query.strip() != query.strip():
+            queries.append(original_query)
 
         if is_list:
             # Anchor query membantu menemukan halaman yang memuat daftar/enumerasi.
@@ -446,19 +508,51 @@ def _retrieve_context(
             len(combined),
         )
 
-        with open("debug_context.txt", "w", encoding="utf-8") as f:
-            f.write(context_text)
+        # Hanya ditulis bila DEBUG_DUMP_CONTEXT aktif.
+        #
+        # Sebelumnya berkas ini ditulis pada SETIAP pertanyaan. Karena
+        # penulisannya berada di dalam blok try yang sama, satu kegagalan tulis
+        # — direktori kerja read-only, berkas terkunci proses lain — tertelan
+        # oleh except di bawah dan membuat SELURUH retrieval mengembalikan hasil
+        # kosong. Bagi pengguna, gejalanya adalah setiap pertanyaan dijawab
+        # "informasi tidak ditemukan", tanpa petunjuk apa pun soal sebabnya.
+        if settings.DEBUG_DUMP_CONTEXT:
+            try:
+                with open("debug_context.txt", "w", encoding="utf-8") as f:
+                    f.write(context_text)
+            except OSError as e:
+                logger.warning("Gagal menulis debug_context.txt: %s", e)
 
         return context_text, sources_text
 
-    except Exception as e:
-        logger.error("Gagal melakukan pencarian konteks: %s", str(e))
+    except Exception:
+        # exc_info=True: tanpa jejak lengkapnya, kegagalan retrieval tidak bisa
+        # dibedakan dari "memang tidak ada dokumen yang relevan".
+        logger.error("Gagal melakukan pencarian konteks", exc_info=True)
         return "", ""
 
 
 # ─────────────────────────────────────────────────────────────
 # DETEKSI: KONTEKS HANYA BERISI NAMA SOP (BUKAN RINCIAN PROSEDUR)
 # ─────────────────────────────────────────────────────────────
+
+# Penanda bahwa konteks memang berasal dari dokumen berformat formulir SOP
+# pemerintah. Dipakai untuk membatasi ruang berlaku penjaga di bawah.
+_SOP_FORMAT_MARKERS = ["[Konteks: SOP", "Nomor SOP", "NOMOR SOP", "Nama SOP", "NAMA SOP"]
+
+
+def _context_is_sop_document(context_text: str) -> bool:
+    """
+    Apakah konteks ini berasal dari dokumen berformat formulir SOP.
+
+    Penting untuk platform multi-dokumen: penjaga "prosedur tanpa rincian" di
+    bawah mengenali rincian lewat nama-nama kolom formulir SOP pemerintah.
+    Dokumen di luar format itu — panduan, peraturan, manual — tidak punya kolom
+    tersebut, sehingga tanpa pemeriksaan ini SETIAP pertanyaan "bagaimana cara"
+    padanya akan ditolak walau jawabannya jelas ada di konteks.
+    """
+    return any(marker in context_text for marker in _SOP_FORMAT_MARKERS)
+
 
 def _context_has_full_procedure(context_text: str) -> bool:
     """
@@ -469,10 +563,520 @@ def _context_has_full_procedure(context_text: str) -> bool:
     return any(marker in context_text for marker in _SOP_DETAIL_MARKERS)
 
 
+# ─────────────────────────────────────────────────────────────
+# PENJAGA PREMIS PALSU (entitas bernomor yang tidak ada di dokumen)
+# ─────────────────────────────────────────────────────────────
+
+# Pertanyaan berpremis palsu adalah kegagalan yang paling berbahaya: jawabannya
+# terdengar meyakinkan justru karena modelnya patuh. Ditanya "Diktum KEEMPAT"
+# pada keputusan yang hanya punya tiga diktum, model menyodorkan isi Diktum
+# KEDUA; ditanya "langkah ke-11" pada prosedur bersepuluh langkah, ia menyalin
+# output langkah ke-10. Keduanya bisa dipastikan salah TANPA model, jadi
+# diperiksa lebih dulu — pola yang sama dengan penjaga prosedur dan penjaga
+# daftar di generate_response.
+_URUTAN_DIKTUM = (
+    "kesatu", "pertama", "kedua", "ketiga", "keempat", "kelima",
+    "keenam", "ketujuh", "kedelapan", "kesembilan", "kesepuluh",
+)
+_POLA_TANYA_DIKTUM = _re.compile(
+    r"\bdiktum\s+(" + "|".join(_URUTAN_DIKTUM) + r")\b", _re.IGNORECASE
+)
+_POLA_TANYA_LANGKAH = _re.compile(
+    r"\b(?:langkah|tahap|tahapan)\s+(?:ke\s*-?\s*)?(\d{1,3})\b", _re.IGNORECASE
+)
+_POLA_ITEM_BERNOMOR = _re.compile(r"(?m)^\s*(\d{1,3})[.)]\s+\S")
+
+# Di bawah ambang ini konteksnya tidak cukup terstruktur untuk menyimpulkan
+# "langkah sebanyak itu tidak ada" — lebih baik diam daripada menolak keliru.
+_MIN_ITEM_UNTUK_SIMPULAN = 3
+
+
+def _nomor_item_tertinggi(context_text: str) -> int:
+    """Nomor urut terbesar yang benar-benar ada di konteks, 0 bila tak ada."""
+    nomor = [int(m.group(1)) for m in _POLA_ITEM_BERNOMOR.finditer(context_text)]
+    return max(nomor) if nomor else 0
+
+
+def _entitas_tak_ada_di_konteks(query: str, context_text: str) -> str | None:
+    """
+    Kembalikan nama entitas yang ditanyakan tetapi tidak ada di konteks.
+
+    Hanya menjawab untuk hal yang bisa dipastikan dari teks: nama diktum, dan
+    nomor langkah yang melampaui item bernomor tertinggi. Bila konteksnya tidak
+    cukup terstruktur, fungsi ini memilih diam — menolak menjawab secara keliru
+    jauh lebih merugikan daripada melewatkan satu premis palsu.
+
+    Returns:
+        Nama entitas yang tidak ada, atau None bila tidak ada yang bisa
+        dipastikan.
+    """
+    rendah = context_text.lower()
+
+    for m in _POLA_TANYA_DIKTUM.finditer(query):
+        nama = m.group(1).lower()
+        if "diktum " + nama not in rendah and nama.upper() not in context_text:
+            return "Diktum " + nama.upper()
+
+    tertinggi = _nomor_item_tertinggi(context_text)
+    if tertinggi >= _MIN_ITEM_UNTUK_SIMPULAN:
+        for m in _POLA_TANYA_LANGKAH.finditer(query):
+            if int(m.group(1)) > tertinggi:
+                return "langkah ke-" + m.group(1)
+
+    return None
+
+
 def _is_procedure_question(query: str) -> bool:
     """Mendeteksi apakah pertanyaan meminta prosedur/langkah-langkah suatu SOP."""
     query_lower = query.lower()
     return any(k in query_lower for k in _PROCEDURE_QUESTION_KEYWORDS)
+
+
+# ─────────────────────────────────────────────────────────────
+# DAFTAR PANJANG DIEKSTRAK TERPROGRAM (bukan disalin LLM)
+# ─────────────────────────────────────────────────────────────
+#
+# Terukur pada qwen2.5:7b: diminta menyalin daftar 74 item yang SELURUHNYA ada
+# di konteks, model berhenti di item ke-46 — tiga kali berturut-turut, di item
+# yang persis sama, pada temperature 0. Bukan soal retrieval (74/74 hadir),
+# bukan jendela konteks (9.216 dialokasikan, ~6.300 terpakai), bukan batas
+# keluaran (num_predict=8192 memberi hasil identik). Menambah instruksi
+# "salin seluruhnya" justru MEMPERBURUK: 46 turun jadi 20, karena instruksi
+# tambahan ikut berebut perhatian dengan tugas menyalin.
+#
+# Jadi daftarnya diambil secara terprogram lalu disodorkan ke model — pola yang
+# sama seperti _build_comparison_hint di bawah.
+
+# Item daftar: huruf (a. / a) / (a)) atau angka (1. / 1)).
+#
+# Judul boleh MENYATU di baris yang sama, seperti "Mengingat : 1. Undang-Undang...".
+# Bentuk itu lazim pada dokumen resmi dan sempat membuat item pertama tidak
+# terdeteksi sama sekali — runtun lalu dimulai dari item KEDUA, dan kata pembeda
+# di judulnya ("Mengingat") tertinggal di luar jangkauan penilaian relevansi.
+_ENUM_ITEM = _re.compile(
+    r"^[ \t]*(?:[^:\n]{0,60}:[ \t]*)?"          # judul opsional di baris yang sama
+    r"\(?(?P<tanda>[a-zA-Z]{1,3}|\d{1,3})[.)][ \t]+"
+    r"(?P<isi>\S.*?)[ \t]*;?[ \t]*$",
+    _re.MULTILINE,
+)
+
+# Baris rincian di bawah sebuah item daftar ("- Pelaksana:", "- Waktu: 1 Hari").
+# Kehadirannya menandakan daftar BERTINGKAT, yang tidak boleh disajikan sebagai
+# daftar datar karena rinciannya justru sering yang ditanyakan.
+_ENUM_SUBITEM = _re.compile(r"^[ \t]+[-*•]\s+\S", _re.MULTILINE)
+
+# Batas minimum item agar daftar dijawab terprogram.
+#
+# Bukan sekadar soal panjang. Model gagal pada dua keadaan: daftar yang terlalu
+# panjang untuk disalin utuh, DAN dokumen yang memuat beberapa daftar mirip
+# sehingga ia memilih yang keliru — persis yang terjadi pada pertanyaan tentang
+# dasar hukum, di mana satu dokumen memuat tiga daftar peraturan sekaligus
+# (milik Keputusan, milik SOP Renstra, milik SOP Renja).
+#
+# Ambang 10 memasukkan keduanya sambil tetap menyisakan daftar sangat pendek
+# (mis. "2 SOP yang berkaitan") untuk dijawab model secara wajar.
+_ENUM_MIN_ITEMS_FOR_HINT = 10
+
+# Panjang teks pengantar sebelum daftar yang ikut dinilai relevansinya. Di situ
+# biasanya tertulis penanda seperti "Dasar Hukum:" atau "KEDUA : ... terdiri dari:"
+# yang membedakan satu daftar dari daftar lain di dokumen yang sama.
+_ENUM_LEAD_IN = 220
+
+# Kata yang terlalu umum untuk membedakan daftar mana yang dimaksud.
+_ENUM_STOPWORDS = {
+    "berapa", "total", "yang", "dalam", "dan", "ini", "apa", "saja", "pada",
+    "dari", "untuk", "sebutkan", "seluruhnya", "semua", "jumlah", "adalah",
+    "dengan", "atau", "itu", "ada", "seluruh", "tercantum", "dibutuhkan",
+}
+
+
+# Kata yang menandakan pengguna meminta daftar UTUH, bukan sekadar beberapa
+# contoh. "Sebutkan 5 contoh" tidak butuh daftar 74 item disodorkan.
+#
+# Dicocokkan di AWAL kata (\b di depan, bebas di belakang): imbuhan akhiran
+# harus tetap cocok — "seluruhnya", "semuanya", "lengkapnya" — sementara awalan
+# TIDAK boleh, karena "perlengkapan" dan "kelengkapan" memuat "lengkap" tanpa
+# ada hubungannya dengan permintaan daftar utuh. Pencocokan substring polos
+# membuat pertanyaan "peralatan/perlengkapan apa saja" ikut terjaring.
+_COMPLETE_LIST_PATTERN = _re.compile(
+    r"\b(?:seluruh|semua|keseluruhan|lengkap)"
+    r"|\bberapa\s+(?:total|jumlah|banyak)\b",
+    _re.IGNORECASE,
+)
+
+
+# Pertanyaan bisa MENYODORKAN jumlah alih-alih memintanya ("benarkah hanya 46
+# SOP?"). Bentuk ini tidak tertangkap pola daftar-utuh, sehingga jawabannya
+# dulu hanya "lebih dari 46" — premis palsunya memang ditolak, tetapi angka
+# sebenarnya tidak pernah disebut. Padahal jumlahnya bisa dihitung pasti.
+_POLA_JUMLAH_DISODORKAN = _re.compile(
+    r"\b(?:benarkah|betulkah|apakah|benar)\b.{0,90}?\bhanya\b.{0,40}?\b(\d{1,3})\b"
+    r"|\bhanya\s+(?:memuat|berisi|ada|terdiri\s+dari)\s+(\d{1,3})\b",
+    _re.IGNORECASE | _re.DOTALL,
+)
+
+
+def _jumlah_yang_disodorkan(query: str) -> int | None:
+    """Angka yang diklaim pertanyaan sebagai jumlah suatu daftar, bila ada."""
+    m = _POLA_JUMLAH_DISODORKAN.search(query)
+    if not m:
+        return None
+    return int(m.group(1) or m.group(2))
+
+def _asks_for_complete_list(query: str) -> bool:
+    """Apakah pertanyaan meminta daftar utuh beserta jumlahnya."""
+    return bool(_COMPLETE_LIST_PATTERN.search(query))
+
+
+def _enum_sort_key(marker: str) -> tuple:
+    """
+    Kunci pengurutan penanda item, supaya "urutan maju" bisa diperiksa.
+
+    Angka memakai nilainya. Huruf memakai (berapa kali diulang, hurufnya):
+    a < b < ... < z < aa < bb < ... < zz < aaa. Skema "huruf diulang" itulah
+    yang dipakai dokumen resmi Indonesia untuk daftar melebihi 26 item.
+    """
+    if marker.isdigit():
+        return (0, int(marker), "")
+    huruf = marker.lower()
+    return (1, len(huruf), huruf[0])
+
+
+def _penanda_huruf_sah(marker: str) -> bool:
+    """
+    Benar bila penanda huruf memakai skema huruf-diulang (a, aa, aaa, ...).
+
+    Daftar resmi Indonesia yang melebihi 26 item memakai huruf yang diulang,
+    bukan gabungan huruf berbeda. Tanpa syarat ini, kata pendek berhuruf besar
+    yang kebetulan diikuti titik ikut terbaca sebagai item — nyata terjadi:
+    "NIP.196911172001121002" di halaman pengesahan tercatut sebagai item ke-75
+    pada daftar yang seharusnya berhenti di 74.
+
+    Konsekuensi yang diterima: angka Romawi (i, ii, iii, iv, v) tidak lagi
+    dikenali mulai dari "iv". Skema pengurutan yang ada memang sudah tidak
+    menanganinya dengan benar, jadi tidak ada yang hilang.
+    """
+    return len(set(marker.lower())) == 1
+
+def _penanda_maju(sekarang: str, sebelumnya: str) -> bool:
+    """
+    Benar bila penanda `sekarang` melanjutkan `sebelumnya`.
+
+    Aturan pokoknya urutan biasa (lihat _enum_sort_key). Yang ditambahkan di
+    sini adalah toleransi terhadap kerusakan OCR yang nyata terjadi pada korpus
+    ini: halaman hasil pindai kerap kehilangan huruf berulang, sehingga "hhh."
+    terbaca "h." dan "jjj." terbaca "jj.".
+
+    Tanpa toleransi itu, penanda yang memendek terbaca sebagai MUNDUR, runtunnya
+    terputus di batas halaman, dan daftar 74 item terpecah menjadi 59 + 15 —
+    lalu yang 59 menang karena lebih panjang. Kegagalan itu tidak menampakkan
+    diri sebagai galat; jawabannya hanya berhenti lebih awal dengan yakin.
+
+    Toleransinya sengaja sempit: hanya bila hurufnya maju TEPAT SATU langkah
+    (g -> h). Dua daftar berbeda yang kebetulan bersambung huruf tetap bisa
+    salah gabung, tetapi itu jauh lebih jarang daripada OCR yang merontokkan
+    huruf pada dokumen pindai.
+    """
+    kunci_kini, kunci_lalu = _enum_sort_key(sekarang), _enum_sort_key(sebelumnya)
+    if kunci_kini > kunci_lalu:
+        return True
+
+    # Hanya berlaku antar-penanda huruf.
+    if kunci_kini[0] != 1 or kunci_lalu[0] != 1:
+        return False
+
+    return ord(kunci_kini[2]) - ord(kunci_lalu[2]) == 1
+
+
+def _extract_enumeration_runs(
+    context_text: str,
+) -> list[tuple[list[tuple[str, str]], int, int]]:
+    """
+    Pecah seluruh item berpenanda menjadi runtun-runtun yang penandanya maju terus.
+
+    Kesinambungan urutan, BUKAN gaya penanda, yang menentukan batas antar daftar.
+    Satu konteks kerap memuat beberapa daftar angka yang tak berhubungan — dasar
+    hukum, langkah prosedur, peralatan — dan mengelompokkannya berdasarkan gaya
+    akan menggabungkan ketiganya menjadi satu daftar palsu.
+
+    Perbandingan memakai "lebih besar", bukan "penerus persis", supaya satu item
+    yang terlewat saat OCR tidak memutus runtun.
+
+    Returns:
+        List of (daftar item [(penanda, isi)], posisi awal, posisi akhir) dalam
+        karakter. Rentang awal–akhir dipakai untuk menilai relevansi: baris
+        rincian DI ANTARA item (mis. "- Pelaksana:", "- Waktu:") berada di
+        rentang itu, dan kerap justru di situlah kata pembeda pertanyaan berada.
+    """
+    runs: list[tuple[list[tuple[str, str]], int, int]] = []
+    current: list[tuple[str, str]] = []
+    previous_key = None
+    previous_marker = ""
+    start = end = 0
+
+    for match in _ENUM_ITEM.finditer(context_text):
+        marker, isi = match.group("tanda"), match.group("isi")
+        if not marker.isdigit() and not _penanda_huruf_sah(marker):
+            continue
+        key = _enum_sort_key(marker)
+
+        # Gaya berganti atau penanda tidak maju -> daftar baru dimulai.
+        if previous_key is not None and (
+            key[0] != previous_key[0] or not _penanda_maju(marker, previous_marker)
+        ):
+            runs.append((current, start, end))
+            current = []
+        if not current:
+            # Dijangkar pada PENANDA, bukan awal baris: bila judulnya menyatu
+            # ("Mengingat : 1. ..."), judul itu ikut terbaca sebagai teks
+            # pengantar saat menilai daftar mana yang dimaksud pertanyaan.
+            start = match.start("tanda")
+
+        current.append((marker, isi))
+        end = match.end()
+        previous_key = key
+        previous_marker = marker
+
+    if current:
+        runs.append((current, start, end))
+
+    return runs
+
+
+# Dokumen bisa memuat beberapa bagian berlabel yang isinya nyaris kembar.
+# Pada korpus SOP ini, dua SOP berbeda punya daftar peralatan yang sama persis
+# di enam butir pertama, dan bagian Kualifikasi yang identik kata per kata
+# akibat salin-tempel di dokumen aslinya. Kata pertanyaan tidak membedakan
+# keduanya, sehingga pemilihan jatuh ke pemutus terakhir — daftar terpanjang —
+# dan pertanyaan tentang yang satu dijawab dengan daftar milik yang lain.
+#
+# Pembedanya DITURUNKAN dari label yang benar-benar ada di korpus, bukan dari
+# daftar nama yang dipatok di kode. Mematoknya berarti layanan ini hanya
+# bekerja untuk satu dokumen tertentu, padahal kode yang sama melayani seluruh
+# dokumen yang di-ingest.
+_POLA_LABEL_KONTEKS = _re.compile(r"\[Konteks:\s*([^\]]+)\]")
+
+# Kata sependek tiga huruf terlalu sering muncul kebetulan untuk dipercaya
+# sebagai pembeda; empat huruf menyaringnya tanpa membuang nama yang berarti.
+_MIN_HURUF_PEMBEDA = 4
+
+
+def _label_di_konteks(context_text: str) -> list[str]:
+    """Seluruh label [Konteks: ...] yang ada di konteks, unik dan terurut."""
+    return sorted({m.group(1).strip() for m in _POLA_LABEL_KONTEKS.finditer(context_text)})
+
+
+def _kata_pembeda_label(labels: list[str]) -> dict:
+    """
+    Kata yang HANYA dimiliki satu label di antara label-label yang ada.
+
+    Inilah yang menggantikan daftar nama yang dulu dipatok di kode. Kata yang
+    dipakai bersama semua label ("sop", "penyusunan", "rencana") tidak
+    membedakan apa pun dan otomatis gugur; yang tersisa justru kata penentu
+    seperti nama khas tiap bagian. Berlaku untuk dokumen apa pun, karena
+    daftarnya lahir dari isi korpus itu sendiri.
+
+    Returns:
+        Peta label -> himpunan kata pembedanya. Bisa kosong bila dua label
+        kebetulan memakai kata yang sama semua.
+    """
+    kata = {
+        label: set(_re.findall(rf"[a-z0-9]{{{_MIN_HURUF_PEMBEDA},}}", label.lower()))
+        for label in labels
+    }
+    return {
+        label: milik - set().union(*(lain for l, lain in kata.items() if l != label))
+        if len(kata) > 1 else milik
+        for label, milik in kata.items()
+    }
+
+
+def _label_yang_ditanya(query: str, labels: list[str]) -> list[str]:
+    """Label mana yang disebut pertanyaan, dilihat dari kata pembedanya."""
+    rendah = query.lower()
+    pembeda = _kata_pembeda_label(labels)
+    return [l for l in labels if any(k in rendah for k in pembeda[l])]
+
+def _label_yang_menaungi(context_text: str, posisi: int) -> str:
+    """Label [Konteks: ...] terdekat SEBELUM posisi, atau string kosong."""
+    terakhir = ""
+    for m in _POLA_LABEL_KONTEKS.finditer(context_text, 0, posisi):
+        terakhir = m.group(1)
+    return terakhir
+
+
+def _saring_menurut_label(kandidat, context_text, query):
+    """
+    Buang runtun yang berada di bawah label yang jelas bukan yang ditanya.
+
+    Hanya aktif bila pertanyaan menyebut TEPAT SATU label. Pertanyaan
+    pembanding menyebut lebih dari satu dan justru MEMBUTUHKAN semuanya tetap
+    ada; menyaringnya akan merusak jawaban yang selama ini sudah benar. Runtun
+    tanpa label di atasnya tidak pernah dibuang, sebab ketiadaan label bukan
+    bukti ketidakcocokan.
+    """
+    labels = _label_di_konteks(context_text)
+    if len(labels) < 2:
+        return kandidat            # tak ada yang bisa tertukar
+
+    diminta = _label_yang_ditanya(query, labels)
+    if len(diminta) != 1:
+        return kandidat
+    sasaran = diminta[0]
+
+    tersisa = []
+    for run, awal, akhir in kandidat:
+        naungan = _label_yang_menaungi(context_text, awal).strip()
+        if not naungan or naungan == sasaran:
+            tersisa.append((run, awal, akhir))
+
+    # Bila penyaringan menghabiskan semua calon, penyaringannya yang keliru.
+    if not tersisa:
+        return kandidat
+    if len(tersisa) < len(kandidat):
+        logger.info(
+            "Saring label: %d dari %d runtun dibuang (pertanyaan tentang %s)",
+            len(kandidat) - len(tersisa), len(kandidat), sasaran[:60],
+        )
+    return tersisa
+
+def _select_relevant_run(
+    runs: list[tuple[list[tuple[str, str]], int, int]],
+    context_text: str,
+    query: str,
+) -> list[tuple[str, str]] | None:
+    """
+    Pilih runtun yang paling cocok dengan pertanyaan.
+
+    Runtun terpanjang bukan jawabannya: satu dokumen bisa memuat daftar SOP 74
+    item DAN daftar dasar hukum 13 item, dan pertanyaan tentang dasar hukum
+    harus mendapat yang kedua. Penilaian memakai kata dari pertanyaan yang
+    ditemukan di teks pengantar daftar plus beberapa item pertamanya.
+    """
+    # Seluruh runtun ikut dinilai, TERMASUK yang pendek. Menyaring yang panjang
+    # lebih dulu adalah kesalahan: daftar terpanjang lalu menang tanpa lawan,
+    # sehingga pertanyaan tentang dasar hukum (13 item) pun mendapat daftar SOP
+    # 74 item hanya karena daftar pendeknya sudah tersingkir dari pencalonan.
+    kandidat = [(r, a, b) for r, a, b in runs if len(r) >= 5]
+    if not kandidat:
+        return None
+
+    kandidat = _saring_menurut_label(kandidat, context_text, query)
+
+    kata = {
+        w for w in _re.findall(r"\w+", query.lower())
+        if len(w) > 2 and w not in _ENUM_STOPWORDS
+    }
+    if not kata:
+        return None
+
+    # Dinilai atas teks pengantar DAN seluruh rentang daftarnya. Membatasi
+    # penilaian pada judul item saja membuat pertanyaan tentang rincian
+    # ("siapa pelaksananya", "berapa waktunya") kehilangan kata pembedanya,
+    # karena kata itu ada di baris rincian di antara item.
+    ladang = [
+        (context_text[max(0, awal - _ENUM_LEAD_IN):akhir]).lower()
+        for _, awal, akhir in kandidat
+    ]
+
+    # Kata dibobot menurut KELANGKAAN di antara kandidat. Menghitung tiap kata
+    # sama berat membuat kata umum menenggelamkan kata penentu: "sop", "dasar",
+    # dan "hukum" muncul di hampir semua daftar sehingga tidak membedakan apa
+    # pun, sedangkan "Mengingat" — yang hanya ada di satu daftar — justru
+    # kalah suara meski ialah satu-satunya pembeda yang sesungguhnya.
+    bobot = {}
+    for w in kata:
+        muncul = sum(1 for l in ladang if w in l)
+        bobot[w] = 1.0 / muncul if muncul else 0.0
+
+    skor = [
+        (sum(bobot[w] for w in kata if w in l), len(run), run)
+        for l, (run, _, _) in zip(ladang, kandidat)
+    ]
+
+    skor.sort(key=lambda x: (-x[0], -x[1]))
+    terbaik = skor[0]
+
+    # Tanpa satu pun kata pertanyaan yang cocok, tidak ada dasar untuk memilih.
+    if terbaik[0] <= 0:
+        return None
+    # Daftar pendek disalin model dengan andal — membantu di situ hanya menambah
+    # panjang konteks tanpa manfaat, dan berisiko mengganggu jawaban yang sudah benar.
+    if terbaik[1] < _ENUM_MIN_ITEMS_FOR_HINT:
+        return None
+
+    return terbaik[2]
+
+
+def _build_enumeration_answer(context_text: str, query: str) -> str | None:
+    """
+    Susun jawaban daftar lengkap secara terprogram, tanpa melibatkan LLM sama sekali.
+
+    Menyisipkan daftar ke dalam konteks lalu meminta model menyalinnya sudah
+    dicoba dan GAGAL: jawaban justru memburuk dari 46 item menjadi 31, dan
+    jumlah yang disebut dari 46 menjadi 26. Menambah teks ke konteks membuat
+    model makin buruk, bukan makin baik — sama seperti menambah instruksi.
+
+    Jadi untuk kasus sempit ini — pertanyaan meminta daftar utuh, dan dokumen
+    memuat daftar panjang yang relevan — daftarnya dikirim apa adanya. Pola yang
+    sama sudah dipakai dua penjaga lain di generate_response: bila jawabannya
+    bisa dipastikan tanpa model, jangan libatkan model.
+
+    Returns:
+        Teks jawaban siap kirim, atau None bila kasusnya tidak berlaku.
+    """
+    disodorkan = _jumlah_yang_disodorkan(query)
+    minta_daftar_utuh = _is_list_query(query) and _asks_for_complete_list(query)
+    if not minta_daftar_utuh and disodorkan is None:
+        return None
+
+    runs = _extract_enumeration_runs(context_text)
+    run = _select_relevant_run(runs, context_text, query)
+    if run is None:
+        return None
+
+    awal, akhir = next(((a, b) for r, a, b in runs if r is run), (0, 0))
+
+    # Daftar yang tiap itemnya punya baris rincian sendiri — "- Pelaksana:",
+    # "- Waktu:", "- Output:" — TIDAK boleh dijawab sebagai daftar datar:
+    # jawabannya akan kehilangan justru bagian yang ditanyakan. Serahkan ke LLM.
+    if _ENUM_SUBITEM.search(context_text[awal:akhir]):
+        logger.info("Daftar terpilih memuat rincian bertingkat — diserahkan ke LLM")
+        return None
+
+    # Kalimat pengantar diambil dari dokumen (teks tepat sebelum daftarnya),
+    # bukan dikarang — di situ biasanya tertulis daftar apa ini.
+    pengantar = context_text[max(0, awal - _ENUM_LEAD_IN):awal]
+    pengantar = _re.sub(r"\[[^\]]*\]", " ", pengantar)          # buang penanda [Halaman N] dsb
+    pengantar = " ".join(pengantar.split())[-160:].strip()
+    # Mulai dari batas kalimat supaya tidak terpotong di tengah kata.
+    potong = _re.search(r"[.:;]\s+(\S.*)$", pengantar)
+    if potong:
+        pengantar = potong.group(1)
+
+    # Sebutkan daftar ini milik SOP yang mana. Jawaban terprogram tidak melalui
+    # LLM, jadi tidak ada tahap yang bisa menyadari salah ambil; menyebut
+    # sumbernya membuat kekeliruan semacam itu langsung kelihatan oleh pembaca.
+    label = _label_yang_menaungi(context_text, awal)
+    asal = f" ({label})" if label else ""
+
+    baris = [f"Terdapat **{len(run)}** item{asal}. Berikut daftar lengkapnya:"]
+    if len(pengantar) > 20:
+        baris = [f"{pengantar}", "", f"Terdapat **{len(run)}** item{asal} selengkapnya:"]
+
+    # Bantahan didahulukan supaya pembaca tidak perlu menghitung sendiri untuk
+    # tahu bahwa angka di pertanyaannya keliru. Disisipkan SESUDAH pengantar
+    # dirakit, sebab perakitan itu menimpa seluruh isi baris.
+    if disodorkan is not None and disodorkan != len(run):
+        baris[:0] = [f"Tidak benar. Jumlah yang tercantum bukan {disodorkan}.", ""]
+    baris.append("")
+    baris += [f"{n}. {isi}" for n, (_, isi) in enumerate(run, 1)]
+
+    logger.info(
+        "Daftar %d item dijawab terprogram tanpa LLM (pertanyaan meminta daftar utuh)",
+        len(run),
+    )
+    return "\n".join(baris)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -573,6 +1177,40 @@ def _build_comparison_hint(context_text: str, query: str) -> str:
 # KEYWORD EXTRACTION & DETEKSI TIPE QUERY
 # ─────────────────────────────────────────────────────────────
 
+def _petunjuk_fokus_label(query: str, context_text: str) -> str:
+    """
+    Susun peringatan singkat bila konteks memuat lebih dari satu bagian berlabel.
+
+    Konteks yang dikirim ke LLM kerap memuat dua bagian sekaligus yang isinya
+    nyaris kembar. Model diberi kesempatan mencampur, lalu memang mencampur:
+    pernah menjawab bahwa satu SOP berkaitan dengan SOP lain — padahal itu
+    milik tetangganya — sambil mengarang rujukan halaman.
+
+    Menyaring konteksnya sengaja TIDAK dilakukan: pertanyaan pembanding
+    membutuhkan seluruh bagian tetap ada, dan empat pertanyaan semacam itu
+    sudah terjawab benar. Yang ditambahkan hanya petunjuk, sehingga kasus
+    terburuk dari salah deteksi cuma satu kalimat mubazir.
+
+    Returns:
+        Kalimat petunjuk, atau string kosong bila tidak berlaku.
+    """
+    labels = _label_di_konteks(context_text)
+    if len(labels) < 2:
+        return ""
+
+    diminta = _label_yang_ditanya(query, labels)
+    if len(diminta) != 1:
+        return ""
+
+    sasaran = diminta[0]
+    lain = [l for l in labels if l != sasaran]
+    return (
+        "\n\nPENTING: Pertanyaan ini HANYA tentang " + sasaran + ". "
+        "Konteks di atas juga memuat " + ", ".join(lain) + " yang isinya "
+        "nyaris sama. Ambil jawaban HANYA dari bagian yang berlabel "
+        + sasaran + "; jangan memakai data dari bagian yang lain."
+    )
+
 def _correct_query_typos(query: str) -> str:
     """
     Menggunakan LLM secara singkat untuk mengekstrak KATA KUNCI UTAMA (keyword)
@@ -586,7 +1224,7 @@ def _correct_query_typos(query: str) -> str:
             temperature=0.0,
             reasoning=False,
             keep_alive=_OLLAMA_KEEP_ALIVE,
-            timeout=_OLLAMA_TIMEOUT,
+            client_kwargs={"timeout": _OLLAMA_TIMEOUT},
         )
         prompt = (
             "Tugas Anda adalah mengekstrak SATU frasa kata kunci paling penting (subject matter) dari pertanyaan pengguna untuk sistem pencarian dokumen.\n"
@@ -628,6 +1266,95 @@ def _is_list_query(query: str) -> bool:
     query_lower = query.lower()
     keywords = ["apa saja", "sebutkan", "daftar", "macam-macam", "jenis-jenis", "semua"]
     return any(k in query_lower for k in keywords)
+
+
+# ─────────────────────────────────────────────────────────────
+# JENDELA KONTEKS & KETAHANAN TERHADAP KEGAGALAN ALOKASI
+# ─────────────────────────────────────────────────────────────
+
+def _hitung_num_ctx(context_text: str) -> int:
+    """
+    Menghitung jendela konteks seperlunya, bukan memakai angka yang dipatok.
+
+    Taksiran tokennya sengaja dibuat melebihkan (pembagi kecil): konteks yang
+    terpotong jauh lebih merugikan daripada jendela yang sedikit kebesaran.
+    Hasilnya dibulatkan ke kelipatan 1024 dan dibatasi LLM_MAX_NUM_CTX.
+    """
+    perlu = int(len(context_text) / _CHARS_PER_TOKEN) + _NUM_CTX_RESPONSE_HEADROOM
+    perlu = math.ceil(perlu / 1024) * 1024
+    return max(_NUM_CTX_MIN, min(perlu, settings.LLM_MAX_NUM_CTX))
+
+
+# Penanda bahwa kegagalan berasal dari memori, bukan sebab lain. Dicocokkan
+# pada teks pesan karena Ollama meneruskannya sebagai ResponseError biasa —
+# tidak ada tipe exception khusus yang bisa dibedakan.
+_PENANDA_GAGAL_ALOKASI = (
+    "failed to allocate",
+    "out-of-memory",
+    "out of memory",
+    "cannot allocate",
+    "llama-server process has terminated",
+)
+
+
+def _gagal_alokasi(e: Exception) -> bool:
+    """Apakah kegagalan ini soal memori."""
+    pesan = str(e).lower()
+    return any(p in pesan for p in _PENANDA_GAGAL_ALOKASI)
+
+
+def _stream_jawaban(
+    system_prompt: str,
+    query: str,
+    num_ctx: int,
+) -> Generator[str, None, None]:
+    """
+    Alirkan jawaban LLM, menurunkan jendela konteks bila Ollama kehabisan memori.
+
+    Tanpa ini, satu kegagalan alokasi menjatuhkan seluruh permintaan — dan pada
+    mesin ber-RAM terbatas kegagalan itu datang dan pergi mengikuti beban mesin,
+    sehingga pertanyaan yang sama kadang berhasil kadang tidak.
+
+    Percobaan ulang HANYA dilakukan bila kegagalan terjadi sebelum satu potong
+    pun terkirim. Mengulang di tengah aliran akan menduplikasi teks yang sudah
+    terbaca pengguna — lebih buruk daripada galat yang jujur.
+    """
+    tangga: list[int] = []
+    n = num_ctx
+    while n > _NUM_CTX_MIN:
+        tangga.append(n)
+        n //= 2
+    tangga.append(_NUM_CTX_MIN)
+
+    messages = [SystemMessage(content=system_prompt), HumanMessage(content=query)]
+
+    for i, jendela in enumerate(tangga):
+        sudah_terkirim = False
+        try:
+            llm = ChatOllama(
+                model=settings.LLM_MODEL_NAME,
+                base_url=settings.OLLAMA_BASE_URL,
+                temperature=0.0,
+                num_ctx=jendela,
+                # Matikan mode thinking — lihat catatan di _correct_query_typos().
+                # Tanpa ini, model thinking (qwen3.5) mengembalikan konten kosong.
+                reasoning=False,
+                keep_alive=_OLLAMA_KEEP_ALIVE,
+                client_kwargs={"timeout": _OLLAMA_TIMEOUT},
+            )
+            for chunk in llm.stream(messages):
+                if chunk.content:
+                    sudah_terkirim = True
+                    yield chunk.content
+            return
+
+        except Exception as e:
+            if sudah_terkirim or i == len(tangga) - 1 or not _gagal_alokasi(e):
+                raise
+            logger.warning(
+                "Ollama gagal mengalokasikan memori pada num_ctx=%d — dicoba ulang dengan %d",
+                jendela, tangga[i + 1],
+            )
 
 
 # ─────────────────────────────────────────────────────────────
@@ -676,50 +1403,75 @@ def generate_response(
             yield "Maaf, saya tidak menemukan informasi tersebut di dokumen yang tersedia."
             return
 
+        # Guard: pertanyaan menyebut entitas bernomor yang tidak ada di dokumen
+        # (Diktum KEEMPAT, langkah ke-11). Dipasang PALING AWAL karena jalur
+        # daftar terprogram di bawah menjawab tanpa melibatkan LLM sama sekali,
+        # sehingga tidak ada tahap lain yang berkesempatan menyadari premisnya
+        # palsu — ditanya Diktum KEEMPAT, ia pernah memuntahkan 74 SOP milik
+        # Diktum KEDUA dengan penuh percaya diri.
+        entitas = _entitas_tak_ada_di_konteks(query, context_text)
+        if entitas is not None:
+            logger.info("Premis palsu: %s tidak ada di konteks", entitas)
+            yield (
+                f"Maaf, {entitas} tidak ditemukan di dalam dokumen. "
+                "Pastikan penomorannya sesuai dengan isi dokumen."
+            )
+            if sources_text:
+                yield f"\n\n📚 **Sumber Referensi:**\n{sources_text}"
+            return
+
         # Guard: pertanyaan minta prosedur, tapi konteks yang ditemukan cuma
         # daftar nama SOP (tanpa rincian) → jangan biarkan LLM mengarang.
-        if _is_procedure_question(query) and not _context_has_full_procedure(context_text):
+        if (
+            _is_procedure_question(query)
+            and _context_is_sop_document(context_text)
+            and not _context_has_full_procedure(context_text)
+        ):
             logger.info("Konteks hanya berisi daftar nama SOP, bukan rincian prosedur — jawab langsung tanpa LLM.")
             yield "Dokumen hanya menyebutkan SOP ini sebagai salah satu item dalam daftar, namun tidak memuat rincian prosedurnya."
             if sources_text:
                 yield f"\n\n📚 **Sumber Referensi:**\n{sources_text}"
             return
 
+        # Guard: pertanyaan meminta daftar UTUH dan dokumen memuat daftar panjang
+        # yang relevan → kirim daftarnya apa adanya. Model lokal terbukti
+        # memotong daftar 74 item di sekitar item ke-46, dan tidak ada cara dari
+        # sisi prompt maupun konteks yang memperbaikinya (lihat
+        # _build_enumeration_answer).
+        jawaban_daftar = _build_enumeration_answer(context_text, query)
+        if jawaban_daftar is not None:
+            yield jawaban_daftar
+            if sources_text:
+                yield f"\n\n📚 **Sumber Referensi:**\n{sources_text}"
+            return
+
         context_text = _build_comparison_hint(context_text, query)
+        context_text += _petunjuk_fokus_label(query, context_text)
 
         system_prompt = _SYSTEM_PROMPT.format(context=context_text)
 
-        num_ctx = _NUM_CTX_LIST_QUERY if _is_list_query(query) else 8192
-        llm = ChatOllama(
-            model=settings.LLM_MODEL_NAME,
-            base_url=settings.OLLAMA_BASE_URL,
-            temperature=0.0,
-            num_ctx=num_ctx,
-            # Matikan mode thinking — lihat catatan di _correct_query_typos().
-            # Tanpa ini, model thinking (qwen3.5) mengembalikan konten kosong.
-            reasoning=False,
-            keep_alive=_OLLAMA_KEEP_ALIVE,
-            timeout=_OLLAMA_TIMEOUT,
+        num_ctx = _hitung_num_ctx(system_prompt)
+        logger.info(
+            "Jendela konteks: %d token (konteks %d karakter, batas atas %d)",
+            num_ctx, len(system_prompt), settings.LLM_MAX_NUM_CTX,
         )
 
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=query),
-        ]
-
-        for chunk in llm.stream(messages):
-            if chunk.content:
-                yield chunk.content
+        yield from _stream_jawaban(system_prompt, query, num_ctx)
 
         if sources_text:
             yield f"\n\n📚 **Sumber Referensi:**\n{sources_text}"
 
         logger.info("Respons berhasil di-generate untuk session %s", session_id)
 
-    except Exception as e:
+    except Exception:
+        # Rincian exception ditahan di log, tidak dikirim ke pengguna: pesan
+        # mentah dari Ollama/ChromaDB kerap memuat URL internal dan path berkas.
         logger.error(
-            "Gagal generate respons (session=%s): %s",
+            "Gagal generate respons (session=%s)",
             session_id,
-            str(e),
+            exc_info=True,
         )
-        yield f"\n\n⚠️ Terjadi kesalahan saat memproses pertanyaan Anda: {str(e)}"
+        yield (
+            "\n\n⚠️ Terjadi kesalahan saat memproses pertanyaan Anda. "
+            "Silakan coba lagi; bila berulang, hubungi administrator."
+        )
