@@ -28,6 +28,21 @@
 | 13  | Buat `.env.example` lengkap                                | 🟢 Rendah |
 | 14  | Tulis dokumentasi API (otomatis via FastAPI /docs)         | 🟢 Rendah |
 
+> **Catatan realisasi.** Tabel di atas adalah penugasan awal dan sengaja
+> dibiarkan apa adanya sebagai catatan rencana. Empat butir dikerjakan berbeda
+> dari rumusan aslinya, seluruhnya keputusan sadar:
+>
+> | # | Rencana | Realisasi | Alasan |
+> |---|---|---|---|
+> | 2 | `POST /api/chat` | `/api/chat/message` + `/api/chat/stream` | dipisah non-streaming (WhatsApp) dan streaming (widget) |
+> | 3 | `POST /api/documents/upload` | Laravel menyimpan berkas, Python dipicu lewat `POST /api/docs/process` | Python tidak perlu mengurus penyimpanan berkas |
+> | 8 | `paraphrase-multilingual-MiniLM-L12-v2` | `BAAI/bge-m3` | retrieval lebih baik pada dokumen resmi berbahasa Indonesia |
+> | 10 | Tesseract OCR | model vision `qwen2.5vl` | hasil Tesseract jauh lebih kotor pada dokumen padat tabel |
+>
+> Perhatikan juga prefiksnya: kode dan [`04`](04-api_spec_agentic_copilot.md)
+> memakai **`/api/docs`**, bukan `/api/documents` seperti tertulis di butir 4 dan 5.
+> Rincian teknis seluruhnya di [`07-arsitektur-rag-python-ai.md`](07-arsitektur-rag-python-ai.md).
+
 ### 📌 Tanggung Jawab
 
 - Menjaga API tetap **running & accessible** selama development

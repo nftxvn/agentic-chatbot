@@ -29,6 +29,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app.services import embedding_service as es  # noqa: E402
 
+# HASIL ekstraksi, bukan PDF-nya. Berkas ini BUKAN alat ekstraksi — ia
+# membaca keluaran OCR yang sudah jadi supaya bisa jalan dalam hitungan
+# detik tanpa Ollama. Yang menjalankan OCR adalah ingest_dokumen.py.
 BERKAS_EKSTRAKSI = Path("data/ekstraksi_1.json")
 
 # Dicetak hanya saat dijalankan langsung, supaya `python -m unittest` tetap ringkas.
@@ -62,7 +65,18 @@ def setUpModule() -> None:
             '    python ingest_dokumen.py --file "test_files/SOP-diskominfotik 2025-1-10.pdf" --id 1 --pratinjau'
         )
 
-    Alur.halaman = json.loads(BERKAS_EKSTRAKSI.read_text(encoding="utf-8"))
+    try:
+        Alur.halaman = json.loads(BERKAS_EKSTRAKSI.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+        # Kekeliruan yang wajar: mengarahkan berkas ini ke PDF, mengira ia yang
+        # mengekstrak. Pesan bawaannya bicara soal bita — tidak menolong sama
+        # sekali bagi yang sedang mencari cara mengekstrak dokumennya.
+        raise SystemExit(
+            f"\n  {BERKAS_EKSTRAKSI} bukan JSON hasil ekstraksi ({type(e).__name__}).\n\n"
+            "  Berkas ini menguji hasil ekstraksi, ia TIDAK menjalankan OCR.\n"
+            "  Untuk mengekstrak PDF-nya, jalankan dulu:\n\n"
+            '      python ingest_dokumen.py --file "test_files/NAMA.pdf" --id 1 --pratinjau --tuang\n'
+        ) from e
     Alur.judul = es.derive_document_title(Alur.halaman)
     Alur.induk, Alur.anak = es.chunk_text_hierarchical(
         Alur.halaman, document_title=Alur.judul

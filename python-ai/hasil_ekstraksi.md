@@ -1,4 +1,4 @@
-# Hasil ekstraksi dokumen #1 — 2026-08-20 15:22
+# Hasil ekstraksi dokumen #1 — 2026-08-21 12:11
 
 ## Cara mengoreksi
 
@@ -12,9 +12,9 @@
 
 | | Nilai |
 |---|---|
-| Berkas sumber | `data\ekstraksi_1.json (ekstraksi tersimpan, tanpa OCR ulang)` |
+| Berkas sumber | `test_files/SOP-diskominfotik 2025-1-10.pdf` |
 | Halaman | **10** |
-| Total karakter | 16.413 |
+| Total karakter | 16.472 |
 | Status | **belum masuk korpus** — masih bisa dikoreksi |
 
 
@@ -23,15 +23,15 @@
 | Hal | Karakter | Item | Jalur chunking | Konteks |
 |---:|---:|---:|---|---|
 | 1 | 193 | 0 | entri prosedur / splitter | KEPUTUSAN WALIKOTA BANDA ACEH |
-| 2 | 1371 | 5 | entri prosedur / splitter | Mengingat |
+| 2 | 1371 | 0 | entri prosedur / splitter | Mengingat |
 | 3 | 1524 | 10 | daftar utuh | Mengingat |
 | 4 | 1387 | 28 | daftar utuh | KEDUA |
-| 5 | 1443 | 28 | daftar utuh | KEDUA |
+| 5 | 1444 | 28 | daftar utuh | KEDUA |
 | 6 | 944 | 15 | daftar utuh | KEDUA |
 | 7 | 2425 | 24 | daftar utuh | SOP PENYUSUNAN RENCANA STRATEGIS (RENSTRA) DISKOMINFO |
 | 8 | 2505 | 59 | daftar utuh | SOP PENYUSUNAN RENCANA STRATEGIS (RENSTRA) DISKOMINFO |
-| 9 | 2295 | 25 | daftar utuh | SOP PENYUSUNAN RENCANA KERJA (RENJA) DISKOMINFOTIK |
-| 10 | 2326 | 59 | daftar utuh | SOP PENYUSUNAN RENCANA KERJA (RENJA) DISKOMINFOTIK |
+| 9 | 2355 | 26 | daftar utuh | SOP PENYUSUNAN RENCANA KERJA (RENJA) DISKOMINFOTIK |
+| 10 | 2324 | 59 | daftar utuh | SOP PENYUSUNAN RENCANA KERJA (RENJA) DISKOMINFOTIK |
 
 
 ---
@@ -97,12 +97,7 @@ WALIKOTA BANDA ACEH,
 
 Menimbang : bahwa untuk melaksanakan ketentuan Pasal 13 Peraturan Menteri Dalam Negeri Nomor 52 Tahun 2011 tentang Standar Operasional Prosedur di Lingkungan Pemerintah Provinsi dan Kabupaten/Kota, perlu menetapkan Keputusan Walikota tentang Standar Operasional Prosedur pada Dinas Komunikasi, Informatika dan Statistik Kota Banda Aceh;
 
-Mengingat : 1. Undang-Undang Nomor 11 Tahun 2006 tentang Pemerintahan Aceh
-2. Undang-Undang Nomor 14 Tahun 2008 tentang Keterbukaan Informasi Publik;
-3. Undang-Undang Nomor 25 Tahun 2009 tentang Pelayanan Publik;
-4. Undang-Undang Nomor 23 Tahun 2014 tentang Pemerintahan Daerah sebagaimana telah beberapa kali diubah terakhir dengan Undang-Undang Nomor 6 Tahun 2023 tentang Penetapan Peraturan Pemerintah Pengganti Undang-Undang Nomor 2 Tahun 2022 tentang Cipta Kerja menjadi Undang-undang;
-5. Undang-Undang Nomor 5 Tahun 2024 tentang Kota Banda Aceh di Aceh;
-6. Peraturan Pemerintah Nomor 5 Tahun 1983 tentang Perubahan Batas Wilayah Kotamadya Daerah Tingkat II Banda Aceh;
+Mengingat : 1. Undang-Undang Nomor 11 Tahun 2006 tentang Pemerintahan Aceh 2. Undang-Undang Nomor 14 Tahun 2008 tentang Keterbukaan Informasi Publik; 3. Undang-Undang Nomor 25 Tahun 2009 tentang Pelayanan Publik; 4. Undang-Undang Nomor 23 Tahun 2014 tentang Pemerintahan Daerah sebagaimana telah beberapa kali diubah terakhir dengan Undang-Undang Nomor 6 Tahun 2023 tentang Penetapan Peraturan Pemerintah Pengganti Undang-Undang Nomor 2 Tahun 2022 tentang Cipta Kerja menjadi Undang-undang; 5. Undang-Undang Nomor 5 Tahun 2024 tentang Kota Banda Aceh di Aceh; 6. Peraturan Pemerintah Nomor 5 Tahun 1983 tentang Perubahan Batas Wilayah Kotamadya Daerah Tingkat II Banda Aceh;
 
 Jalan. Tgk. Abu Lam U, Nomor 7 Banda Aceh
 Telepon (0651) 21855 Faximile (0651) 31980 E-mail : - Website : bandaacehkota.go.id
@@ -114,7 +109,7 @@ Telepon (0651) 21855 Faximile (0651) 31980 E-mail : - Website : bandaacehkota.go
 ```text
 WALI KOTA BANDA ACEH
 KEPUTUSAN WALIKOTA BANDA ACEH
-NOMOR 305 TAHUN 2025
+NOMOR 395 TAHUN 2025
 TENTANG
 STANDAR OPERASIONAL PROSEDUR
 PADA DINAS KOMUNIKASI, INFORMATIKA DAN STATISTIK KOTA BANDA ACEH
@@ -123,12 +118,7 @@ WALIKOTA BANDA ACEH,
 
 Menimbang : bahwa untuk melaksanakan ketentuan Pasal 13 Peraturan Menteri Dalam Negeri Nomor 52 Tahun 2011 tentang Standar Operasional Prosedur di Lingkungan Pemerintah Provinsi dan Kabupaten/Kota, perlu menetapkan Keputusan Walikota tentang Standar Operasional Prosedur pada Dinas Komunikasi, Informatika dan Statistik Kota Banda Aceh;
 
-Mengingat : 1. Undang-Undang Nomor 11 Tahun 2006 tentang Pemerintahan Aceh
-2. Undang-Undang Nomor 14 Tahun 2008 tentang Keterbukaan Informasi Publik;
-3. Undang-Undang Nomor 25 Tahun 2009 tentang Pelayanan Publik;
-4. Undang-Undang Nomor 23 Tahun 2014 tentang Pemerintahan Daerah sebagaimana telah beberapa kali diubah terakhir dengan Undang-Undang Nomor 6 Tahun 2023 tentang Penetapan Peraturan Pemerintah Pengganti Undang-Undang Nomor 2 Tahun 2022 tentang Cipta Kerja menjadi Undang-undang;
-5. Undang-Undang Nomor 5 Tahun 2024 tentang Kota Banda Aceh di Aceh;
-6. Peraturan Pemerintah Nomor 5 Tahun 1983 tentang Perubahan Batas Wilayah Kotamadya Daerah Tingkat II Banda Aceh;
+Mengingat : 1. Undang-Undang Nomor 11 Tahun 2006 tentang Pemerintahan Aceh 2. Undang-Undang Nomor 14 Tahun 2008 tentang Keterbukaan Informasi Publik; 3. Undang-Undang Nomor 25 Tahun 2009 tentang Pelayanan Publik; 4. Undang-Undang Nomor 23 Tahun 2014 tentang Pemerintahan Daerah sebagaimana telah beberapa kali diubah terakhir dengan Undang-Undang Nomor 6 Tahun 2023 tentang Penetapan Peraturan Pemerintah Pengganti Undang-Undang Nomor 2 Tahun 2022 tentang Cipta Kerja menjadi Undang-undang; 5. Undang-Undang Nomor 5 Tahun 2024 tentang Kota Banda Aceh di Aceh; 6. Peraturan Pemerintah Nomor 5 Tahun 1983 tentang Perubahan Batas Wilayah Kotamadya Daerah Tingkat II Banda Aceh;
 
 Jalan. Tgk. Abu Lam U, Nomor 7 Banda Aceh
 Telepon (0651) 21855 Faximile (0651) 31980 E-mail : - Website : bandaacehkota.go.id
@@ -265,7 +255,7 @@ ee. Pengajuan Usulan Kenaikan Gaji Berkala;
 ## Halaman 5
 
 - Konteks: **KEDUA**
-- 1443 karakter
+- 1444 karakter
 
 <details>
 <summary>OCR asli — rujukan, jangan diubah</summary>
@@ -289,7 +279,7 @@ tt. Layanan Pembangunan/Pengembangan API (application programming interface);
 uu. Layanan Cloud Storage;
 vv. Layanan Aset TIK (teknologi informasi dan komunikasi);
 ww. Layanan VPN (virtual private network);
-xx. Layanan Integrasi API (aplication programming interface);
+xx. Layanan Integrasi API (application programming interface);
 yy. Layanan Publikasi Aplikasi ke Playstore;
 zz. Layanan Pembuatan Tandatangan Elektronik;
 aaa. Layanan Penghapusan Tanda tangan Elektronik;
@@ -323,7 +313,7 @@ tt. Layanan Pembangunan/Pengembangan API (application programming interface);
 uu. Layanan Cloud Storage;
 vv. Layanan Aset TIK (teknologi informasi dan komunikasi);
 ww. Layanan VPN (virtual private network);
-xx. Layanan Integrasi API (aplication programming interface);
+xx. Layanan Integrasi API (application programming interface);
 yy. Layanan Publikasi Aplikasi ke Playstore;
 zz. Layanan Pembuatan Tandatangan Elektronik;
 aaa. Layanan Penghapusan Tanda tangan Elektronik;
@@ -395,7 +385,7 @@ KETIGA : Keputusan Walikota ini berlaku pada tanggal ditetapkan, apabila di kemu
 
 Ditetapkan di Banda Aceh
 pada tanggal 26 Agustus 2025 M
-2 Rabuul Awal 1447 H
+2 Rabiul Awal 1447 H
 WALI KOTA BANDA ACEH,
 ILLIZA SA'ADUDDIN DJAMAL
 ```
@@ -475,7 +465,7 @@ Jika tidak dilaksanakan tidak ada sinkronisasi dalam perencanaan pembangunan dae
 Lampiran: Keputusan Wali Kota Banda Aceh
 Nomor: 395
 Tanggal: 26 Agustus 2025 M
-2 Rabuul Awal 1447 H
+2 Rabiul Awal 1447 H
 
 NOMOR SOP: 9 / DISKOMINFOTIK / 2025
 TANGGAL PEMBUATAN: 5 FEBRUARI 2025
@@ -671,7 +661,7 @@ Jika tidak dilaksanakan tidak ada sinkronisasi dalam perencanaan pembangunan dae
 ## Halaman 9
 
 - Konteks: **SOP PENYUSUNAN RENCANA KERJA (RENJA) DISKOMINFOTIK**
-- 2295 karakter
+- 2355 karakter
 
 <details>
 <summary>OCR asli — rujukan, jangan diubah</summary>
@@ -682,6 +672,9 @@ Tanggal Pembuatan: 5 Februari 2025
 Tanggal Revisi: -
 Tanggal Pengesahan: 26 Agustus 2025
 Disahkan Oleh: KEPALA DINAS KOMUNIKASI, INFORMATIKA DAN STATISTIK KOTA BANDA ACEH
+ALIZAR, S.Ag.Hum
+PEMBINA UTAMA MUDA
+NIP. 196911172001121002
 Nama SOP: PENYUSUNAN RENCANA KERJA (RENJA) DISKOMINFOTIK
 Dasar Hukum:
 1. Undang-Undang Nomor 17 Tahun 2003 tentang Keuangan Negara;
@@ -725,6 +718,9 @@ Tanggal Pembuatan: 5 Februari 2025
 Tanggal Revisi: -
 Tanggal Pengesahan: 26 Agustus 2025
 Disahkan Oleh: KEPALA DINAS KOMUNIKASI, INFORMATIKA DAN STATISTIK KOTA BANDA ACEH
+ALIZAR, S.Ag.Hum
+PEMBINA UTAMA MUDA
+NIP. 196911172001121002
 Nama SOP: PENYUSUNAN RENCANA KERJA (RENJA) DISKOMINFOTIK
 Dasar Hukum:
 1. Undang-Undang Nomor 17 Tahun 2003 tentang Keuangan Negara;
@@ -764,7 +760,7 @@ Jika tidak dilaksanakan tidak ada sinkronisasi dalam perencanaan pembangunan dae
 ## Halaman 10
 
 - Konteks: **SOP PENYUSUNAN RENCANA KERJA (RENJA) DISKOMINFOTIK**
-- 2326 karakter
+- 2324 karakter
 
 <details>
 <summary>OCR asli — rujukan, jangan diubah</summary>
@@ -794,7 +790,7 @@ Jika tidak dilaksanakan tidak ada sinkronisasi dalam perencanaan pembangunan dae
   - Waktu: 5 Hari
   - Output: Rencana Kerja 1 (satu) tahun
 
-5. Memerintahkan Penelaah Teknis Kebijakan untuk menghimpun dan menganalisis bahan penyusunan Renja dari Bidang dan Sekretariat.
+5. Memerintahkan Penelaah Teknis Kebijakan untuk menghimpun dan menganalisis bahan penyusunan Renja dari Bidang dan Sekretariat
   - Pelaksana: Penelaah Teknis Kebijakan
   - Kelengkapan: Rencana Kerja 1 (satu) tahun
   - Waktu: 60 Menit
@@ -812,7 +808,7 @@ Jika tidak dilaksanakan tidak ada sinkronisasi dalam perencanaan pembangunan dae
   - Waktu: 1 Hari
   - Output: Berita Acara/Notulen Rapat
 
-8. Menyusun Renja dan SK penyusunan Renja sesuai hasil rapat Tim Penyusunan Renstra dan menyerahkan kepada Sekretaris.
+8. Menyusun Renja dan SK penyusunan Renja sesuai hasil rapat Tim Penyusunan Renstra dan menyerahkan kepada Sekretaris
   - Pelaksana: Tim Penyusunan Renstra
   - Kelengkapan: Draf Renja, Notulen rapat
   - Waktu: 6 hari
@@ -859,7 +855,7 @@ Jika tidak dilaksanakan tidak ada sinkronisasi dalam perencanaan pembangunan dae
   - Waktu: 5 Hari
   - Output: Rencana Kerja 1 (satu) tahun
 
-5. Memerintahkan Penelaah Teknis Kebijakan untuk menghimpun dan menganalisis bahan penyusunan Renja dari Bidang dan Sekretariat.
+5. Memerintahkan Penelaah Teknis Kebijakan untuk menghimpun dan menganalisis bahan penyusunan Renja dari Bidang dan Sekretariat
   - Pelaksana: Penelaah Teknis Kebijakan
   - Kelengkapan: Rencana Kerja 1 (satu) tahun
   - Waktu: 60 Menit
@@ -877,7 +873,7 @@ Jika tidak dilaksanakan tidak ada sinkronisasi dalam perencanaan pembangunan dae
   - Waktu: 1 Hari
   - Output: Berita Acara/Notulen Rapat
 
-8. Menyusun Renja dan SK penyusunan Renja sesuai hasil rapat Tim Penyusunan Renstra dan menyerahkan kepada Sekretaris.
+8. Menyusun Renja dan SK penyusunan Renja sesuai hasil rapat Tim Penyusunan Renstra dan menyerahkan kepada Sekretaris
   - Pelaksana: Tim Penyusunan Renstra
   - Kelengkapan: Draf Renja, Notulen rapat
   - Waktu: 6 hari
