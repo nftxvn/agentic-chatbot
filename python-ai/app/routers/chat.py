@@ -6,12 +6,14 @@ berdasarkan dokumen yang sudah diproses.
 
 import json
 import logging
+import secrets
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sse_starlette.sse import EventSourceResponse
 
 from app.config import settings
+from app.database import get_document_names
 from app.schemas import (
     ChatMessageRequest,
     ChatMessageResponse,
@@ -27,19 +29,27 @@ router = APIRouter(
     tags=["Chat"],
 )
 
+# Pesan yang dikirim ke klien saat terjadi kesalahan tak terduga. Rinciannya
+# sengaja ditahan di log server: pesan exception mentah kerap memuat path
+# berkas, host basis data, atau potongan kredensial.
+_ERROR_MESSAGE = (
+    "Terjadi kesalahan saat memproses permintaan Anda. "
+    "Silakan coba lagi; bila berulang, hubungi administrator."
+)
 
-# ── Dependency untuk autentikasi WhatsApp webhook ────────────────
+
+# ── Dependency untuk autentikasi ─────────────────────────────────
 
 
-async def verify_webhook_token(authorization: str = Header(...)) -> str:
+def _assert_valid_bearer(authorization: str | None) -> str:
     """
-    Dependency untuk memverifikasi token webhook dari header Authorization.
-    Format yang diharapkan: 'Bearer <token>'
+    Memvalidasi header Authorization berformat 'Bearer <token>'.
 
     Raises:
-        HTTPException: 401 jika token tidak valid.
+        HTTPException: 401 bila header tidak ada, formatnya salah, atau
+            tokennya tidak cocok.
     """
-    if not authorization.startswith("Bearer "):
+    if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Format Authorization header tidak valid. Gunakan 'Bearer <token>'.",
@@ -47,7 +57,11 @@ async def verify_webhook_token(authorization: str = Header(...)) -> str:
 
     token = authorization.removeprefix("Bearer ").strip()
 
-    if token != settings.INTERNAL_API_TOKEN:
+    # compare_digest, bukan '==': lama pembandingannya tidak bergantung pada
+    # berapa karakter awal yang cocok, sehingga token tidak bisa ditebak
+    # karakter demi karakter lewat pengukuran waktu respons.
+    if not secrets.compare_digest(token, settings.INTERNAL_API_TOKEN):
+        logger.warning("Token tidak valid — akses ditolak")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token tidak valid. Akses ditolak.",
@@ -56,10 +70,36 @@ async def verify_webhook_token(authorization: str = Header(...)) -> str:
     return token
 
 
+async def verify_webhook_token(authorization: str | None = Header(default=None)) -> str:
+    """Dependency autentikasi untuk endpoint WhatsApp webhook."""
+    return _assert_valid_bearer(authorization)
+
+
+async def verify_chat_stream_token(
+    authorization: str | None = Header(default=None),
+) -> str | None:
+    """
+    Dependency autentikasi untuk /api/chat/stream.
+
+    Bisa dimatikan lewat CHAT_STREAM_REQUIRE_AUTH=false untuk pengembangan
+    lokal, karena React widget memanggil endpoint ini langsung dari browser.
+    Di jaringan instansi penjagaan ini WAJIB aktif: tanpanya, siapa pun yang
+    menjangkau port ini dapat menanyai seluruh isi dokumen yang sudah di-ingest.
+    """
+    if not settings.CHAT_STREAM_REQUIRE_AUTH:
+        return None
+
+    return _assert_valid_bearer(authorization)
+
+
 # ── POST /api/chat/stream — Chat streaming via SSE ──────────────
 
 
-async def _stream_response(query: str, session_id: str) -> AsyncGenerator[str, None]:
+async def _stream_response(
+    query: str,
+    session_id: str,
+    document_ids: list[int] | None = None,
+) -> AsyncGenerator[str, None]:
     """
     Async generator yang membungkus generator sinkron dari rag_service.
     Menghasilkan data SSE dalam format JSON untuk setiap chunk respons.
@@ -67,6 +107,7 @@ async def _stream_response(query: str, session_id: str) -> AsyncGenerator[str, N
     Args:
         query: Pertanyaan dari pengguna.
         session_id: ID sesi chat.
+        document_ids: Bila diisi, pencarian dibatasi hanya pada dokumen tersebut.
 
     Yields:
         String JSON berisi chunk respons atau metadata sumber.
@@ -76,6 +117,7 @@ async def _stream_response(query: str, session_id: str) -> AsyncGenerator[str, N
         for chunk in rag_service.generate_response(
             query=query,
             session_id=session_id,
+            document_ids=document_ids,
         ):
             # Kirim setiap chunk sebagai event SSE
             yield json.dumps({"type": "chunk", "content": chunk}, ensure_ascii=False)
@@ -84,10 +126,13 @@ async def _stream_response(query: str, session_id: str) -> AsyncGenerator[str, N
         # Sinyal bahwa streaming selesai
         yield json.dumps({"type": "done", "content": ""}, ensure_ascii=False)
 
-    except Exception as e:
-        logger.error("Error saat streaming respons: %s", str(e))
+    except Exception:
+        # exc_info=True: jejak lengkapnya masuk ke log server, satu-satunya
+        # tempat yang tepat untuknya. Yang dikirim ke klien hanya pesan umum —
+        # pesan exception mentah bisa memuat path berkas, host, atau kredensial.
+        logger.error("Error saat streaming respons (session=%s)", session_id, exc_info=True)
         yield json.dumps(
-            {"type": "error", "content": f"Terjadi kesalahan: {str(e)}"},
+            {"type": "error", "content": _ERROR_MESSAGE},
             ensure_ascii=False,
         )
 
@@ -97,12 +142,18 @@ async def _stream_response(query: str, session_id: str) -> AsyncGenerator[str, N
     summary="Chat dengan streaming SSE",
     description="Mengirim pertanyaan dan menerima jawaban secara streaming melalui SSE.",
 )
-async def chat_stream(request: ChatRequest) -> EventSourceResponse:
+async def chat_stream(
+    request: ChatRequest,
+    _token: str | None = Depends(verify_chat_stream_token),
+) -> EventSourceResponse:
     """
     Endpoint chat dengan Server-Sent Events streaming.
 
     Menerima pertanyaan pengguna, melakukan pencarian di vector store,
     dan mengembalikan jawaban secara streaming menggunakan SSE.
+
+    Butuh header `Authorization: Bearer <INTERNAL_API_TOKEN>` kecuali
+    CHAT_STREAM_REQUIRE_AUTH=false disetel untuk pengembangan lokal.
 
     Returns:
         EventSourceResponse: Stream SSE berisi chunk-chunk jawaban.
@@ -120,12 +171,50 @@ async def chat_stream(request: ChatRequest) -> EventSourceResponse:
     )
 
     return EventSourceResponse(
-        _stream_response(query=request.query, session_id=request.session_id),
+        _stream_response(
+            query=request.query,
+            session_id=request.session_id,
+            document_ids=request.document_ids,
+        ),
         media_type="text/event-stream",
     )
 
 
 # ── POST /api/chat/message — Chat non-streaming (WhatsApp) ──────
+
+
+def _build_source_references(
+    parsed_sources: list[tuple[int, int | None]],
+) -> list[SourceReference]:
+    """
+    Melengkapi rujukan sumber dengan nama berkas aslinya.
+
+    Nama diambil dari kolom `original_name` di tabel documents lewat satu query
+    untuk seluruh dokumen yang dirujuk. Sebelumnya `doc_name` selalu null,
+    sehingga pengguna WhatsApp hanya melihat nomor dokumen.
+
+    Kegagalan basis data sengaja tidak dinaikkan: lebih baik pengguna menerima
+    jawaban dengan rujukan bernomor daripada tidak menerima jawaban sama sekali.
+    """
+    if not parsed_sources:
+        return []
+
+    names: dict[int, str] = {}
+    try:
+        names = get_document_names(doc_id for doc_id, _ in parsed_sources)
+    except Exception:
+        logger.warning(
+            "Gagal mengambil nama dokumen — doc_name dibiarkan kosong", exc_info=True
+        )
+
+    return [
+        SourceReference(
+            doc_name=names.get(doc_id),
+            document_id=doc_id,
+            page=page_num,
+        )
+        for doc_id, page_num in parsed_sources
+    ]
 
 
 @router.post(
@@ -170,11 +259,12 @@ async def chat_message(
 
         # Kumpulkan seluruh respons dari generator
         reply_parts: list[str] = []
-        sources: list[SourceReference] = []
+        parsed_sources: list[tuple[int, int | None]] = []
 
         for chunk in rag_service.generate_response(
             query=request.message,
             session_id=session_id,
+            document_ids=request.document_ids,
         ):
             # Pisahkan bagian sumber referensi dari jawaban utama
             if chunk.startswith("\n\n📚 **Sumber Referensi:**"):
@@ -188,16 +278,14 @@ async def chat_message(
                             parts = line.removeprefix("- Dokumen #").split(" — Halaman ")
                             doc_id = int(parts[0])
                             page_num = int(parts[1]) if len(parts) > 1 else None
-                            sources.append(SourceReference(
-                                document_id=doc_id,
-                                page=page_num,
-                            ))
+                            parsed_sources.append((doc_id, page_num))
                         except (ValueError, IndexError):
                             # Jika gagal parse, skip
                             pass
             else:
                 reply_parts.append(chunk)
 
+        sources = _build_source_references(parsed_sources)
         reply_text = "".join(reply_parts).strip()
 
         if not reply_text:
@@ -217,11 +305,11 @@ async def chat_message(
 
     except Exception as e:
         logger.error(
-            "Gagal memproses chat message (phone=%s): %s",
+            "Gagal memproses chat message (phone=%s)",
             request.phone_number,
-            str(e),
+            exc_info=True,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Gagal memproses pesan: {str(e)}",
+            detail=_ERROR_MESSAGE,
         ) from e

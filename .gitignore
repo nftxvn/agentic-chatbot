@@ -55,6 +55,35 @@ python-ai/logs/
 python-ai/*.log
 
 # =========================
+# KELUARAN KERJA (python-ai/)
+# =========================
+# Semua di bawah ini DIBUAT ULANG otomatis oleh skrip. Jangan di-commit:
+# isinya berubah tiap dijalankan sehingga hanya menghasilkan diff palsu,
+# dan tidak ada informasi yang hilang bila terhapus.
+
+# Cache jawaban RAG untuk --reuse (dibuat oleh test_ragas_official.py)
+python-ai/.ragas_cache_phase1.json
+
+# Dump konteks retrieval untuk penelusuran masalah (ditulis tiap query)
+python-ai/debug_context.txt
+
+# Dump isi vektor ChromaDB (dibuat oleh view_vectors.py)
+python-ai/hasil_vectors.txt
+
+# Konfigurasi Claude Code — preferensi perkakas perorangan, bukan kode proyek.
+# Rekan yang mengerjakan Laravel/React tidak memakainya.
+python-ai/.claude/
+
+# CATATAN — yang berikut SENGAJA TIDAK diabaikan, karena tidak bisa dibuat
+# ulang begitu saja dan menjadi bukti untuk laporan:
+#   reference_eval_dataset.json/.md  ground truth, ditulis tangan
+#   hasil_ragas_official.md          laporan evaluasi RAGAS
+#   hasil_perbandingan_model.md      perbandingan antar model LLM
+#   compare_result_*.json            data mentah pendukung laporan di atas
+#   alur-sistem.html                 dokumentasi alur sistem
+#   *.py                             seluruh skrip evaluasi
+
+# =========================
 # LARAVEL (laravel-admin/)
 # =========================
 

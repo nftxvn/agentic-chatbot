@@ -4,12 +4,53 @@ Memuat semua environment variables menggunakan python-dotenv.
 """
 
 import os
+import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
 # Muat file .env dari root project
 _env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(dotenv_path=_env_path)
+
+
+# ── Mode luring HuggingFace ──────────────────────────────────────
+# sentence_transformers memeriksa pembaruan model ke huggingface.co setiap kali
+# dimuat, walau modelnya sudah lengkap di cache lokal. Bila jaringan lambat atau
+# diblokir, pemeriksaan itu habis waktu lalu diulang lima kali dengan jeda
+# menaik — satu sampai dua menit terbuang setiap skrip mulai.
+#
+# HF_HUB_OFFLINE menghentikan itu, TETAPI harus dinyalakan sendiri dan tidak
+# pernah otomatis. Alasannya terbukti mahal: transformers memanggil
+# is_base_mistral() -> model_info() yang menghubungi jaringan tanpa syarat, dan
+# dalam mode luring panggilan itu MELEMPAR OfflineModeIsEnabled alih-alih
+# dilewati — pemuatan model gagal total, bukan sekadar lambat. Menyalakannya
+# otomatis berarti menukar keterlambatan yang menjengkelkan dengan kegagalan
+# yang menghentikan pekerjaan.
+#
+# Bila kamu memang menyalakannya di .env, get_embedding_model() akan menangkap
+# kegagalan itu dan mengulang sekali tanpa mode luring — lihat embedding_service.
+
+
+def _lokasi_cache_hf() -> Path:
+    """Folder cache HuggingFace, mengikuti urutan variabel env resminya."""
+    for var in ("HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE"):
+        if os.getenv(var):
+            return Path(os.getenv(var))
+    if os.getenv("HF_HOME"):
+        return Path(os.getenv("HF_HOME")) / "hub"
+    return Path.home() / ".cache" / "huggingface" / "hub"
+
+
+HF_LURING = os.getenv("HF_HUB_OFFLINE", "0") not in {"0", "false", "False", ""}
+
+def _env_bool(name: str, default: str) -> bool:
+    """Membaca variabel env bertipe boolean. Menerima 1/true/yes/on (tidak case-sensitive)."""
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_list(name: str, default: str) -> list[str]:
+    """Membaca variabel env berisi daftar yang dipisah koma, membuang entri kosong."""
+    return [item.strip() for item in os.getenv(name, default).split(",") if item.strip()]
 
 
 class Settings:
@@ -49,6 +90,43 @@ class Settings:
     INTERNAL_API_TOKEN: str = os.getenv(
         "INTERNAL_API_TOKEN", "your-secure-internal-token-here"
     )
+
+    # Autentikasi untuk POST /api/chat/stream.
+    #
+    # Default-nya AKTIF: tanpa penjaga, siapa pun yang bisa menjangkau port ini
+    # dapat menanyai seluruh isi dokumen yang sudah di-ingest.
+    #
+    # Boleh dimatikan HANYA saat pengembangan lokal — React widget memanggil
+    # endpoint ini langsung dari browser, sehingga menaruh INTERNAL_API_TOKEN di
+    # sana berarti membocorkannya ke siapa pun yang membuka devtools (token yang
+    # sama juga membuka /api/docs/*). Untuk produksi, biarkan aktif dan
+    # teruskan permintaan lewat Laravel yang memegang token di sisi server.
+    CHAT_STREAM_REQUIRE_AUTH: bool = _env_bool("CHAT_STREAM_REQUIRE_AUTH", "true")
+
+    # Origin yang boleh memanggil API dari browser (dipisah koma).
+    # Tidak boleh "*": dipasangkan dengan allow_credentials=True, Starlette
+    # memantulkan balik origin peminta, sehingga situs mana pun bisa memanggil
+    # API ini memakai kredensial pengunjungnya.
+    CORS_ALLOW_ORIGINS: list[str] = _env_list(
+        "CORS_ALLOW_ORIGINS",
+        "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173",
+    )
+
+    # Batas ATAS jendela konteks LLM (token). Bukan nilai yang selalu dipakai:
+    # rag_service menghitung kebutuhan dari panjang konteks yang sebenarnya, lalu
+    # membatasinya di sini.
+    #
+    # Turunkan bila Ollama gagal dengan "failed to allocate buffer". Jendela
+    # besar butuh KV cache besar, dan pada mesin ber-RAM terbatas kegagalannya
+    # bergantung pada apa yang kebetulan sedang berjalan — gejalanya pertanyaan
+    # yang kadang berhasil kadang gagal tanpa pola.
+    LLM_MAX_NUM_CTX: int = int(os.getenv("LLM_MAX_NUM_CTX", "16384"))
+
+    # --- Debug ---
+    # Menulis konteks retrieval terakhir ke debug_context.txt setiap ada
+    # pertanyaan. Berguna saat menyetel retrieval, tapi JANGAN diaktifkan di
+    # produksi: isinya potongan dokumen mentah dan file-nya ditimpa terus.
+    DEBUG_DUMP_CONTEXT: bool = _env_bool("DEBUG_DUMP_CONTEXT", "false")
 
     @property
     def MYSQL_DATABASE_URL(self) -> str:
