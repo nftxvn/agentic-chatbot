@@ -32,10 +32,10 @@
 
 
 # --- Web / API ---------------------------------------------------------------
-fastapi==0.112.2
-uvicorn==0.30.6              # server ASGI; tidak di-import, dipakai lewat CLI
-sse-starlette==3.4.5         # streaming jawaban di /api/chat/stream
-pydantic==2.13.4
+fastapi>=0.115.0
+uvicorn>=0.30.0              # server ASGI; tidak di-import, dipakai lewat CLI
+sse-starlette>=3.4.5         # streaming jawaban di /api/chat/stream
+pydantic>=2.8.0,<3.0.0
 
 
 # --- Basis data & antrean tugas ----------------------------------------------
