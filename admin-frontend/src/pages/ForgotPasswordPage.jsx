@@ -28,7 +28,7 @@ export default function ForgotPasswordPage() {
     <div className="min-h-screen flex items-center justify-center p-4 sm:p-6 bg-[var(--bg-main)]">
       <div className="w-full max-w-md bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-6 sm:p-8 shadow-xl">
         <div className="text-center mb-8">
-          <div className="w-14 h-14 bg-sky-500/10 text-sky-500 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-sky-500/20">
+          <div className="w-14 h-14 bg-[var(--bg-input)] text-sky-500 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-[var(--border-color)]">
             <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
             </svg>
@@ -38,12 +38,12 @@ export default function ForgotPasswordPage() {
         </div>
 
         {error && (
-          <div className="bg-red-500/10 border border-red-500/20 text-red-500 px-4 py-3 rounded-xl text-sm font-medium mb-6">
+          <div className="bg-[var(--bg-input)] border border-[var(--border-color)] text-red-500 px-4 py-3 rounded-xl text-sm font-medium mb-6">
             {error}
           </div>
         )}
         {message && (
-          <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 px-4 py-3 rounded-xl text-sm font-medium mb-6">
+          <div className="bg-[var(--bg-input)] border border-[var(--border-color)] text-emerald-500 px-4 py-3 rounded-xl text-sm font-medium mb-6">
             {message}
           </div>
         )}

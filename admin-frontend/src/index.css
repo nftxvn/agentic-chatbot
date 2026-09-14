@@ -2,13 +2,26 @@
 @import "tw-animate-css";
 @import "@fontsource-variable/geist";
 
+@theme {
+  --font-sans: 'Geist Variable', 'Geist', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 20px;
+  --radius-full: 9999px;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 /* =====================================================
-   Design System Tokens (Dark Mode First & Light Mode)
+   Design System Tokens (Light & Dark Mode)
    ===================================================== */
 :root {
-  /* Light Mode - White & Sky Blue theme */
+  /* Light Mode */
   --bg-main: #f8fafc;
   --bg-card: #ffffff;
   --bg-sidebar: #ffffff;
@@ -44,7 +57,9 @@
   --yellow-400: #f59e0b;
 
   --sidebar-width: 285px;
-  --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Tailwind OKLCH Sync Tokens */
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -63,24 +78,11 @@
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.375rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --radius: 0.625rem;
 }
 
-[data-theme="dark"] {
-  /* Dark Mode - Sky Blue / Blue / Cyan gradient theme */
+[data-theme="dark"], .dark {
+  /* Dark Mode */
   --bg-main: #0e0e0f;
   --bg-card: #202122;
   --bg-sidebar: #141415;
@@ -110,36 +112,80 @@
   --green-400: #34d399;
   --green-bg: rgba(52, 211, 153, 0.12);
   --green-border: rgba(52, 211, 153, 0.25);
+  --blue-400: #38bdf8;
   --orange-400: #fb923c;
   --red-400: #f87171;
   --yellow-400: #fbbf24;
+
+  /* Tailwind OKLCH Sync Tokens */
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
 }
 
 /* =====================================================
-   Base reset & Smooth transitions
+   Base Reset & Layer Configuration
    ===================================================== */
-*, *::before, *::after {
-  box-sizing: border-box;
-}
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
 
-/* Balanced modern rounded corners (10px - 12px) */
-.rounded-3xl, .rounded-2xl {
-  border-radius: 0.75rem !important;
-}
-.rounded-xl, .rounded-lg {
-  border-radius: 0.625rem !important;
-}
-.rounded-md {
-  border-radius: 0.5rem !important;
-}
+  html, body, #root {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100vh;
+    font-family: var(--font-sans, 'Geist Variable', 'Geist', sans-serif);
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+    transition: background-color var(--transition), color var(--transition);
+    -webkit-font-smoothing: antialiased;
+  }
 
-body {
-  font-family: 'Inter', sans-serif;
-  background-color: var(--bg-main);
-  color: var(--text-primary);
-  min-height: 100vh;
-  transition: background-color var(--transition), color var(--transition);
-  -webkit-font-smoothing: antialiased;
+  /* Default Form Inputs (Base Styles only — easily overridable by Tailwind utility classes) */
+  input[type="email"],
+  input[type="password"],
+  input[type="text"],
+  input[type="url"],
+  input[type="number"],
+  select,
+  textarea {
+    background-color: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.625rem;
+    padding: 0.625rem 1rem;
+    font-size: 0.875rem;
+    transition: border-color var(--transition), box-shadow var(--transition);
+    outline: none;
+  }
+
+  input[type="email"]:focus,
+  input[type="password"]:focus,
+  input[type="text"]:focus,
+  input[type="url"]:focus,
+  input[type="number"]:focus,
+  select:focus,
+  textarea:focus {
+    border-color: var(--brand-primary);
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
+  }
 }
 
 /* Custom scrollbars */
@@ -156,52 +202,6 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(148, 163, 184, 0.5);
-}
-
-/* Input reset styles */
-input[type="email"],
-input[type="password"],
-input[type="text"],
-input[type="url"],
-input[type="number"],
-select,
-textarea {
-  background-color: var(--bg-input);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 0.625rem;
-  padding: 0.625rem 1rem;
-  font-size: 0.875rem;
-  transition: all var(--transition);
-  outline: none;
-}
-
-input[type="email"]:focus,
-input[type="password"]:focus,
-input[type="text"]:focus,
-input[type="url"]:focus,
-input[type="number"]:focus,
-select:focus,
-textarea:focus {
-  border-color: var(--brand-primary);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
-}
-
-.input-login {
-  width: 100%;
-  background-color: var(--bg-input);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 0.625rem;
-  padding: 0.75rem 1rem;
-  font-size: 0.9375rem;
-  transition: all var(--transition);
-}
-
-.input-login:focus {
-  border-color: var(--brand-primary);
-  background-color: var(--bg-input);
-  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.25);
 }
 
 /* Prevent Browser Autofill from changing input background to white */
@@ -269,7 +269,6 @@ select:-webkit-autofill:active {
   background: linear-gradient(90deg, var(--bg-input) 25%, var(--border-color) 50%, var(--bg-input) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.8s infinite ease-in-out;
-  border-radius: 0.5rem;
 }
 
 @keyframes spin {
@@ -321,101 +320,210 @@ select:-webkit-autofill:active {
   animation: pulseRotate 20s ease-in-out infinite;
 }
 
-/* Upload indeterminate progress bar (processing stage) — gerak kiri ke kanan */
-@keyframes uploadBounce {
-  0%   { left: -40%; }
-  100% { left: 100%; }
-}
 .upload-bounce {
   animation: uploadBounce 1.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-@theme inline {
-  --font-heading: var(--font-sans);
-  --font-sans: 'Geist Variable', sans-serif;
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --color-foreground: var(--foreground);
-  --color-background: var(--background);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+/* =====================================================
+   Animated Gradient Shimmer Text (Continuous Left-to-Right Flow)
+   ===================================================== */
+@keyframes textShimmerFlow {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+.text-shimmer-process {
+  background: linear-gradient(
+    90deg,
+    #d97706 0%,
+    #f59e0b 25%,
+    #fef08a 50%,
+    #f59e0b 75%,
+    #d97706 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: textShimmerFlow 2.2s linear infinite;
+  display: inline-block;
 }
 
-@layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
-  html, body, #root {
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    min-height: 100vh;
-    @apply bg-background text-foreground font-sans;
-  }
+[data-theme="dark"] .text-shimmer-process,
+.dark .text-shimmer-process {
+  background: linear-gradient(
+    90deg,
+    #f59e0b 0%,
+    #fbbf24 25%,
+    #ffffff 50%,
+    #fbbf24 75%,
+    #f59e0b 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: textShimmerFlow 2.2s linear infinite;
+}
+
+/* =====================================================
+   Button & Interactive Elements Tactile Press Physics
+   (Fast initial impulse on click, smooth deceleration curve on release)
+   ===================================================== */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+.btn-interactive {
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+              background-color 0.15s ease,
+              border-color 0.15s ease,
+              box-shadow 0.15s ease,
+              color 0.15s ease,
+              opacity 0.15s ease;
+  will-change: transform;
+}
+
+button:not(:disabled):active,
+[role="button"]:not([aria-disabled="true"]):active,
+.btn-interactive:active {
+  transform: scale(0.95);
+  transition-duration: 0.05s;
+}
+
+/* =====================================================
+   Content Pure Fade-In Animation
+   ===================================================== */
+@keyframes contentFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: contentFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* =====================================================
+   Universal Range Slider UI/UX Styling
+   Consistent track, thumb physics, and theme support
+   ===================================================== */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 9999px;
+  outline: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  vertical-align: middle;
+}
+
+input[type="range"]:focus-visible {
+  border-color: #0ea5e9;
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.2);
+}
+
+/* Chrome / Safari / Edge / WebKit Track */
+input[type="range"]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 6px;
+  cursor: pointer;
+  background: transparent;
+  border-radius: 9999px;
+}
+
+/* Chrome / Safari / Edge / WebKit Thumb */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 16px;
+  width: 16px;
+  border-radius: 50%;
+  background: #0284c7;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(2, 132, 199, 0.2);
+  cursor: grab;
+  margin-top: -5px; /* Center thumb on 6px track */
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+[data-theme="dark"] input[type="range"]::-webkit-slider-thumb,
+.dark input[type="range"]::-webkit-slider-thumb {
+  background: #0ea5e9;
+  border: 2px solid #1e293b;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(14, 165, 233, 0.3);
+}
+
+input[type="range"]:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.25);
+}
+
+input[type="range"]:active::-webkit-slider-thumb {
+  cursor: grabbing;
+  transform: scale(1.25);
+  box-shadow: 0 0 0 6px rgba(14, 165, 233, 0.35);
+}
+
+/* Firefox Track */
+input[type="range"]::-moz-range-track {
+  width: 100%;
+  height: 6px;
+  cursor: pointer;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 9999px;
+}
+
+/* Firefox Thumb */
+input[type="range"]::-moz-range-thumb {
+  height: 16px;
+  width: 16px;
+  border-radius: 50%;
+  background: #0284c7;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(2, 132, 199, 0.2);
+  cursor: grab;
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+[data-theme="dark"] input[type="range"]::-moz-range-thumb,
+.dark input[type="range"]::-moz-range-thumb {
+  background: #0ea5e9;
+  border: 2px solid #1e293b;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(14, 165, 233, 0.3);
+}
+
+input[type="range"]:hover::-moz-range-thumb {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.25);
+}
+
+input[type="range"]:active::-moz-range-thumb {
+  cursor: grabbing;
+  transform: scale(1.25);
+  box-shadow: 0 0 0 6px rgba(14, 165, 233, 0.35);
+}
+
+/* Disabled Slider */
+input[type="range"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+input[type="range"]:disabled::-webkit-slider-thumb {
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+input[type="range"]:disabled::-moz-range-thumb {
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }

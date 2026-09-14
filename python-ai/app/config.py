@@ -70,8 +70,39 @@ class Settings:
         "EMBEDDING_MODEL_NAME", "paraphrase-multilingual-MiniLM-L12-v2"
     )
 
+    # Perangkat tempat model embedding dijalankan: "auto" | "cpu" | "cuda".
+    #
+    # DEFAULT "auto" berarti biarkan SentenceTransformer memilih — CUDA bila ada.
+    # Itu pilihan yang benar di mesin dengan VRAM lega.
+    #
+    # Setel "cpu" HANYA di mesin yang VRAM-nya diperebutkan dengan LLM. bge-m3
+    # memakan 2272 MiB VRAM (568 juta parameter, fp32), dan di kartu 6 GB itulah
+    # yang menghalangi qwen3:8b masuk seluruhnya. Ongkos pindah ke CPU kecil:
+    # yang di-embed hanya kalimat pertanyaan (~100 ms, dua kali per pertanyaan),
+    # karena embedding dokumen sudah tersimpan di ChromaDB sejak ingest.
+    # Jalur ingest Celery ikut ke CPU: ~69 ms/chunk, jauh di bawah OCR vision.
+    EMBEDDING_DEVICE: str = os.getenv("EMBEDDING_DEVICE", "auto")
+
+    # --- Reranker (Two-Stage RAG) ---
+    # Model CrossEncoder untuk re-ranking kandidat chunk hasil hybrid retrieval.
+    # Dijalankan di CPU (device='cpu') agar 100% VRAM GPU 6 GB tetap dialokasikan
+    # penuh untuk LLM (qwen3:8b) tanpa OOM.
+    RERANKER_MODEL_NAME: str = os.getenv(
+        "RERANKER_MODEL_NAME", "BAAI/bge-reranker-base"
+    )
+    RERANKER_DEVICE: str = os.getenv("RERANKER_DEVICE", "cpu")
+    RERANKER_ENABLED: bool = _env_bool("RERANKER_ENABLED", "true")
+    RERANKER_TOP_CANDIDATES: int = int(os.getenv("RERANKER_TOP_CANDIDATES", "25"))
+    # Ambang batas skor CrossEncoder (0.0 - 1.0). Potongan di bawah nilai ini disaring sebagai false-positive.
+    RERANKER_MIN_SCORE: float = float(os.getenv("RERANKER_MIN_SCORE", "0.01"))
+
     # --- Vector DB (ChromaDB) ---
-    CHROMA_PERSIST_DIR: str = os.getenv("CHROMA_PERSIST_DIR", "./data/chromadb")
+    _raw_chroma_dir: str = os.getenv("CHROMA_PERSIST_DIR", "./data/chromadb")
+    CHROMA_PERSIST_DIR: str = (
+        str((Path(__file__).resolve().parent.parent / _raw_chroma_dir).resolve())
+        if _raw_chroma_dir.startswith(".")
+        else _raw_chroma_dir
+    )
 
     # --- Database MySQL (Shared with Laravel) ---
     MYSQL_HOST: str = os.getenv("MYSQL_HOST", "localhost")
@@ -112,15 +143,45 @@ class Settings:
         "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173",
     )
 
-    # Batas ATAS jendela konteks LLM (token). Bukan nilai yang selalu dipakai:
-    # rag_service menghitung kebutuhan dari panjang konteks yang sebenarnya, lalu
-    # membatasinya di sini.
+    # Ukuran jendela konteks LLM (token) — DIPATOK ke satu nilai, tidak dihitung
+    # per pertanyaan.
     #
-    # Turunkan bila Ollama gagal dengan "failed to allocate buffer". Jendela
-    # besar butuh KV cache besar, dan pada mesin ber-RAM terbatas kegagalannya
-    # bergantung pada apa yang kebetulan sedang berjalan — gejalanya pertanyaan
-    # yang kadang berhasil kadang gagal tanpa pola.
-    LLM_MAX_NUM_CTX: int = int(os.getenv("LLM_MAX_NUM_CTX", "16384"))
+    # Alasannya soal performa, bukan kualitas. Di Ollama, setiap nilai num_ctx
+    # yang berbeda memaksa llama-server dimuat ulang dari nol (~23 detik di mesin
+    # ini). num_ctx dinamis berarti tiap pertanyaan dengan panjang konteks
+    # berbeda membayar reload itu — dan karena ekstraksi kata kunci memakai nilai
+    # lain lagi, satu pertanyaan bisa memicu dua reload.
+    #
+    # 8192 cukup untuk konteks ~24.000 karakter (±10 potongan induk @ 1.500).
+    # Pertanyaan daftar yang sangat panjang bisa terpotong — itu kompromi yang
+    # disengaja; jalur enumerasi terprogram sudah menangani sebagian besar kasus
+    # itu tanpa LLM.
+    #
+    # Naikkan HANYA setelah VRAM dibebaskan dan OLLAMA_KV_CACHE_TYPE=q8_0 aktif;
+    # tanpa itu jendela lebih besar gagal alokasi ("failed to allocate buffer").
+    LLM_NUM_CTX: int = int(os.getenv("LLM_NUM_CTX", "8192"))
+
+    # Jumlah layer model yang dipaksa masuk GPU. 0 = serahkan ke auto-fit Ollama.
+    #
+    # DEFAULT-NYA SENGAJA 0 — aman di mesin mana pun. Nilai selain 0 hanya boleh
+    # dipasang lewat .env, di mesin yang anggaran VRAM-nya SUDAH DIUKUR.
+    # Memaksa layer melebihi kapasitas kartu tidak menghasilkan galat: VRAM
+    # kelebihan muatan lalu melimpah diam-diam ke RAM host, dan throughput anjlok
+    # (terukur 12,9 -> 5,5 tok/dtk di laptop pengembangan).
+    #
+    # Kapan perlu diisi: auto-fit llama.cpp selalu menyisakan 1024 MiB VRAM
+    # sebagai cadangan. Di kartu besar cadangan itu tidak terasa; di kartu 6 GB
+    # ia memakan 17% anggaran dan memaksa model dipecah ke CPU padahal sebenarnya
+    # muat. Di situlah "99" (artinya "semua layer") menolong.
+    #
+    # PRASYARAT sebelum menaikkannya, keduanya wajib:
+    #   1. EMBEDDING_DEVICE=cpu, supaya bge-m3 tidak ikut memakan VRAM
+    #   2. Ollama dijalankan dengan OLLAMA_KV_CACHE_TYPE=q8_0
+    #      (/etc/systemd/system/ollama.service.d/override.conf) — memangkas KV
+    #      cache 8192 token dari 1152 MiB menjadi 612 MiB
+    #
+    # Prosedur pengukurannya ada di docs/ panduan deployment.
+    LLM_NUM_GPU: int = int(os.getenv("LLM_NUM_GPU", "0"))
 
     # --- Debug ---
     # Menulis konteks retrieval terakhir ke debug_context.txt setiap ada

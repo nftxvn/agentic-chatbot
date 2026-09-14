@@ -14,6 +14,10 @@
 
 use Illuminate\Support\Facades\Route;
 
+Route::get('/login', function () {
+    return response()->json(['message' => 'Unauthenticated.'], 401);
+})->name('login');
+
 // Reset password route — tetap di web karena link dikirim via email ke browser
 // React SPA akan menangani form-nya, tapi token dikirim ke API
 Route::get('/reset-password/{token}', function () {
@@ -23,3 +27,12 @@ Route::get('/reset-password/{token}', function () {
     $email = request()->query('email', '');
     return redirect("{$frontendUrl}/reset-password?token={$token}&email={$email}");
 })->name('password.reset');
+
+// File & Image streaming routes with session cookie auth for direct browser tabs/windows
+use App\Http\Controllers\Api\DocumentController;
+use App\Http\Controllers\Api\EkstraksiController;
+
+Route::middleware('auth:sanctum,web')->prefix('api/documents')->group(function () {
+    Route::get('/{id}/pdf', [DocumentController::class, 'servePdf'])->name('api.documents.pdf');
+    Route::get('/{id}/halaman/{pageNumber}/citra', [EkstraksiController::class, 'citraHalaman'])->name('api.documents.halaman.citra');
+});

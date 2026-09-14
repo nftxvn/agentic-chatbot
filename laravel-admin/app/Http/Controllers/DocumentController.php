@@ -8,6 +8,7 @@ use App\Services\AiMicroserviceClient;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class DocumentController extends Controller
 {
@@ -37,42 +38,43 @@ class DocumentController extends Controller
     }
 
     /**
-     * Handle a new PDF document upload.
+     * Handle a new document upload.
      */
     public function upload(Request $request)
     {
         $request->validate([
-            'title' => 'required|string|max:255',
-            'pdf_file' => 'required|file|mimes:pdf|max:51200', // Max 50MB
+            'title'    => ['required', 'string', 'max:255'],
+            'pdf_file' => ['required', 'file', 'mimes:pdf,docx,xlsx,csv,txt,md', 'max:51200'], // Max 50MB
         ], [
-            'title.required' => 'Judul dokumen wajib diisi.',
-            'pdf_file.required' => 'File PDF wajib diunggah.',
-            'pdf_file.mimes' => 'File harus berformat PDF.',
-            'pdf_file.max' => 'Ukuran file maksimal 50MB.',
+            'title.required'    => 'Judul dokumen wajib diisi.',
+            'title.max'         => 'Judul dokumen maksimal 255 karakter.',
+            'pdf_file.required' => 'File dokumen wajib diunggah.',
+            'pdf_file.mimes'    => 'Format file tidak diizinkan. Gunakan format: PDF, DOCX, XLSX, CSV, TXT, atau MD.',
+            'pdf_file.max'      => 'Ukuran file maksimal 50MB.',
         ]);
 
-        $file = $request->file('pdf_file');
-        $originalFilename = $file->getClientOriginalName();
+        $file             = $request->file('pdf_file');
+        $rawFilename      = $file->getClientOriginalName();
+        $originalFilename = preg_replace('/[^\w\s\-\.\(\)\[\]]/u', '_', basename($rawFilename));
+        $sanitizedTitle   = strip_tags(trim($request->input('title')));
 
-        // Store the file
-        $storagePath = $file->store('documents', 'local');
+        // Generate a secure random hashed filename (SHA-256)
+        $extension        = strtolower($file->getClientOriginalExtension() ?: $file->extension() ?: 'bin');
+        $hashedName       = hash('sha256', Str::uuid()->toString() . microtime(true) . $file->getContent()) . '.' . $extension;
+        $storagePath      = $file->storeAs('documents', $hashedName, 'local');
 
         // Create the document record
         $document = Document::create([
-            'title' => $request->input('title'),
+            'title'             => $sanitizedTitle,
             'original_filename' => $originalFilename,
-            'storage_path' => $storagePath,
-            'status' => 'pending',
-            'pdf_type' => 'unknown',
-            'uploaded_by' => Auth::id(),
+            'storage_path'      => $storagePath,
+            'status'            => 'pending',
+            'pdf_type'          => 'unknown',
+            'uploaded_by'       => Auth::id(),
         ]);
 
         // Log the upload
-        DocumentLog::create([
-            'document_id' => $document->id,
-            'action' => 'uploaded',
-            'details' => "File \"{$originalFilename}\" diunggah oleh " . Auth::user()->name,
-        ]);
+        $document->recordLog('uploaded', "File \"{$originalFilename}\" diunggah oleh " . Auth::user()->name);
 
         // Dispatch processing to AI microservice
         $this->dispatchToAiService($document, 'new');
@@ -83,18 +85,18 @@ class DocumentController extends Controller
     }
 
     /**
-     * Handle replacing an existing document's PDF file.
+     * Handle replacing an existing document's file.
      */
     public function replace(int $id, Request $request)
     {
         $document = Document::findOrFail($id);
 
         $request->validate([
-            'pdf_file' => 'required|file|mimes:pdf|max:51200',
+            'pdf_file' => ['required', 'file', 'mimes:pdf,docx,xlsx,csv,txt,md', 'max:51200'],
         ], [
-            'pdf_file.required' => 'File PDF wajib diunggah.',
-            'pdf_file.mimes' => 'File harus berformat PDF.',
-            'pdf_file.max' => 'Ukuran file maksimal 50MB.',
+            'pdf_file.required' => 'File dokumen wajib diunggah.',
+            'pdf_file.mimes'    => 'Format file tidak diizinkan. Gunakan format: PDF, DOCX, XLSX, CSV, TXT, atau MD.',
+            'pdf_file.max'      => 'Ukuran file maksimal 50MB.',
         ]);
 
         // Delete the old file
@@ -102,37 +104,36 @@ class DocumentController extends Controller
             Storage::disk('local')->delete($document->storage_path);
         }
 
-        $file = $request->file('pdf_file');
-        $originalFilename = $file->getClientOriginalName();
+        $file             = $request->file('pdf_file');
+        $rawFilename      = $file->getClientOriginalName();
+        $originalFilename = preg_replace('/[^\w\s\-\.\(\)\[\]]/u', '_', basename($rawFilename));
 
-        // Store the new file
-        $storagePath = $file->store('documents', 'local');
+        // Generate a secure random hashed filename (SHA-256)
+        $extension        = strtolower($file->getClientOriginalExtension() ?: $file->extension() ?: 'bin');
+        $hashedName       = hash('sha256', Str::uuid()->toString() . microtime(true) . $file->getContent()) . '.' . $extension;
+        $storagePath      = $file->storeAs('documents', $hashedName, 'local');
 
         // Update the document record
         $document->update([
             'original_filename' => $originalFilename,
-            'storage_path' => $storagePath,
-            'status' => 'pending',
-            'pdf_type' => 'unknown',
-            'error_message' => null,
-            'total_pages' => null,
-            'total_chunks' => null,
-            'processed_at' => null,
+            'storage_path'      => $storagePath,
+            'status'            => 'pending',
+            'pdf_type'          => 'unknown',
+            'error_message'     => null,
+            'total_pages'       => null,
+            'total_chunks'      => null,
+            'processed_at'      => null,
         ]);
 
         // Log the replacement
-        DocumentLog::create([
-            'document_id' => $document->id,
-            'action' => 'replaced',
-            'details' => "File diganti dengan \"{$originalFilename}\" oleh " . Auth::user()->name,
-        ]);
+        $document->recordLog('replaced', "File diganti dengan \"{$originalFilename}\" oleh " . Auth::user()->name);
 
         // Dispatch processing to AI microservice with overwrite action
         $this->dispatchToAiService($document, 'overwrite');
 
         return redirect()
             ->route('documents.show', $document->id)
-            ->with('success', 'File PDF berhasil diganti dan sedang diproses ulang.');
+            ->with('success', 'File dokumen berhasil diganti dan sedang diproses ulang.');
     }
 
     /**
@@ -147,16 +148,16 @@ class DocumentController extends Controller
             Storage::disk('local')->delete($document->storage_path);
         }
 
-        $title = $document->title;
-        $document->delete(); // Cascades to document_logs
+        // Delete the document record (cascade deletes logs)
+        $document->delete();
 
         return redirect()
-            ->route('dashboard')
-            ->with('success', "Dokumen \"{$title}\" berhasil dihapus.");
+            ->route('documents.index')
+            ->with('success', 'Dokumen berhasil dihapus.');
     }
 
     /**
-     * Serve the PDF file for iframe preview.
+     * Serve the document file for preview/download.
      */
     public function servePdf(int $id)
     {
@@ -165,12 +166,15 @@ class DocumentController extends Controller
         $filePath = Storage::disk('local')->path($document->storage_path);
 
         if (!file_exists($filePath)) {
-            abort(404, 'File PDF tidak ditemukan.');
+            abort(404, 'File dokumen tidak ditemukan.');
         }
 
+        $mimeType = @mime_content_type($filePath) ?: 'application/octet-stream';
+        $filename = $document->original_filename ?? 'document';
+
         return response()->file($filePath, [
-            'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="' . $document->original_filename . '"',
+            'Content-Type'        => $mimeType,
+            'Content-Disposition' => 'inline; filename="' . addslashes($filename) . '"',
         ]);
     }
 
@@ -185,21 +189,13 @@ class DocumentController extends Controller
         // Update status to processing
         $document->update(['status' => 'processing']);
 
-        DocumentLog::create([
-            'document_id' => $document->id,
-            'action' => 'processing',
-            'details' => 'Dokumen dikirim ke AI Service untuk diproses.',
-        ]);
+        $document->recordLog('processing', 'Dokumen dikirim ke AI Service untuk diproses.', 15);
 
         $result = $client->processDocument($document->id, $filePath, $action);
 
         if (!$result['success']) {
             // Log the failure but don't change status yet — the service might still process it async
-            DocumentLog::create([
-                'document_id' => $document->id,
-                'action' => 'failed',
-                'details' => $result['message'],
-            ]);
+            $document->recordLog('failed', $result['message'], 10);
 
             // If it's a connection error, revert to pending
             if ($result['data'] === null) {

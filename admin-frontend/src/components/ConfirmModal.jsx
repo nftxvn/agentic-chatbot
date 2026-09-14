@@ -1,7 +1,16 @@
 import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom';
 
-const ConfirmModal = ({ isOpen, title, message, onConfirm, onCancel, confirmText = 'Ya', cancelText = 'Batal', isDanger = true }) => {
+const ConfirmModal = ({
+  isOpen,
+  title,
+  message,
+  onConfirm,
+  onCancel,
+  confirmText = 'Ya',
+  cancelText = 'Batal',
+  isDanger = true,
+}) => {
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -16,57 +25,63 @@ const ConfirmModal = ({ isOpen, title, message, onConfirm, onCancel, confirmText
   if (!isOpen) return null;
 
   return ReactDOM.createPortal(
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 transition-all duration-300">
-      <div className="bg-[var(--bg-card)] border border-[var(--border-color)] max-w-md w-full rounded-2xl shadow-2xl overflow-hidden transform transition-all duration-300 scale-100 animate-fadeIn">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+      <div className="bg-[var(--bg-card)] border border-[var(--border-color)] max-w-md w-full rounded-2xl shadow-2xl animate-in fade-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="px-6 py-5 border-b border-[var(--border-color)] flex justify-between items-center bg-black/5 dark:bg-white/5">
-          <div className="flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDanger ? 'bg-red-500/10 text-red-500' : 'bg-sky-500/10 text-sky-500'}`}>
+        <div className="px-6 py-4 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-input)] rounded-t-2xl">
+          <div className="flex items-center gap-2.5">
+            <div
+              className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 ${
+                isDanger
+                  ? 'bg-[var(--bg-card)] border-[var(--border-color)] text-red-500'
+                  : 'bg-[var(--bg-card)] border-[var(--border-color)] text-sky-500'
+              }`}
+            >
               {isDanger ? (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
                 </svg>
               ) : (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
                 </svg>
               )}
             </div>
-            <h3 className="text-lg font-bold text-[var(--text-primary)] m-0">{title}</h3>
+            <h3 className="text-base font-bold text-[var(--text-primary)] m-0">{title}</h3>
           </div>
           <button
-            className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1.5 rounded-lg transition-colors"
+            className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 rounded-lg transition-colors cursor-pointer"
             onClick={onCancel}
+            title="Tutup"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            ✕
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6">
-          <p className="text-sm text-[var(--text-secondary)] leading-relaxed m-0">{message}</p>
-        </div>
+        {/* Content & Actions */}
+        <div className="p-6 space-y-5">
+          <p className="text-sm text-[var(--text-secondary)] leading-relaxed m-0 font-medium">{message}</p>
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-[var(--border-color)] bg-black/5 dark:bg-white/5 flex justify-end gap-3">
-          <button
-            className="px-4 py-2.5 rounded-xl text-[var(--text-primary)] text-sm font-semibold border border-[var(--border-color)] bg-[var(--bg-input)] hover:bg-[var(--border-color)] transition-all duration-200"
-            onClick={onCancel}
-          >
-            {cancelText}
-          </button>
-          <button
-            className={`px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200 shadow-md hover:shadow-lg ${
-              isDanger
-                ? 'bg-red-600 hover:bg-red-700 text-white'
-                : 'bg-sky-600 hover:bg-sky-700 text-white'
-            }`}
-            onClick={onConfirm}
-          >
-            {confirmText}
-          </button>
+          <div className="flex justify-end gap-2.5 pt-2">
+            <button
+              type="button"
+              className="px-4 py-2 rounded-xl text-xs font-bold bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--border-color)] transition-colors cursor-pointer"
+              onClick={onCancel}
+            >
+              {cancelText}
+            </button>
+            <button
+              type="button"
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all hover:scale-[1.01] cursor-pointer shadow-md ${
+                isDanger
+                  ? 'bg-red-600 hover:bg-red-700 text-white'
+                  : 'bg-gradient-to-r from-sky-500 via-sky-500 to-sky-300 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white'
+              }`}
+              onClick={onConfirm}
+            >
+              {confirmText}
+            </button>
+          </div>
         </div>
       </div>
     </div>,

@@ -39,17 +39,69 @@ export const documentsApi = {
     return data
   },
 
+  /** Batalkan proses ekstraksi (set status failed). */
   async cancel(id) {
     const { data } = await client.post(`/api/documents/${id}/cancel`)
     return data
   },
 
+  /** Minta jeda ekstraksi di batas halaman (tidak merusak progress). */
   async pause(id) {
-    return this.cancel(id)
+    const { data } = await client.post(`/api/documents/${id}/ekstraksi/jeda`)
+    return data
   },
 
-  async resume(id) {
-    const { data } = await client.post(`/api/documents/${id}/resume`)
+  /** Mulai atau lanjutkan ekstraksi bertahap. */
+  async resume(id, maksHalaman = null) {
+    const payload = maksHalaman ? { maks_halaman: maksHalaman } : {}
+    const { data } = await client.post(`/api/documents/${id}/ekstraksi`, payload)
+    return data
+  },
+
+  async startExtraction(id, maksHalaman = null) {
+    return this.resume(id, maksHalaman)
+  },
+
+  /** Ambil status dan kemajuan ekstraksi bertahap. */
+  async getExtractionStatus(id) {
+    const { data } = await client.get(`/api/documents/${id}/ekstraksi`)
+    return data
+  },
+
+  /** Ambil daftar teks halaman untuk editor koreksi manual. */
+  async getPages(id, perluDiperiksa = false) {
+    const { data } = await client.get(`/api/documents/${id}/halaman`, {
+      params: { perlu_diperiksa: perluDiperiksa ? 1 : 0 },
+    })
+    return data
+  },
+
+  /** Simpan koreksi teks satu halaman. */
+  async savePageCorrection(id, pageNumber, text) {
+    const { data } = await client.put(`/api/documents/${id}/halaman/${pageNumber}`, { text })
+    return data
+  },
+
+  /** Ambil ukuran dan orientasi semua halaman. */
+  async getPageSizes(id) {
+    const { data } = await client.get(`/api/documents/${id}/halaman/ukuran`)
+    return data
+  },
+
+  /** URL citra JPEG satu halaman untuk perbandingan dengan teks OCR. */
+  pageImageUrl(id, pageNumber, zoom = 2.0) {
+    return `/api/documents/${id}/halaman/${pageNumber}/citra?zoom=${zoom}`
+  },
+
+  /** Ambil pratinjau potongan induk dan anak dengan opsi kustom. */
+  async getChunksPreview(id, params = {}) {
+    const { data } = await client.post(`/api/documents/${id}/potongan`, params)
+    return data
+  },
+
+  /** Finalisasi dokumen: simpan potongan vektor ke ChromaDB dengan opsi kustom. */
+  async saveToCorpus(id, params = {}) {
+    const { data } = await client.post(`/api/documents/${id}/simpan`, params)
     return data
   },
 

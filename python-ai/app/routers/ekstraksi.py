@@ -9,13 +9,14 @@ dan menunggu manusia di keduanya:
 Tidak ada tahap yang berjalan otomatis setelah tahap sebelumnya selesai. Hasil
 OCR dokumen pindaian tidak layak masuk korpus tanpa diperiksa mata manusia, dan
 embedding adalah satu-satunya langkah yang mahal sekaligus mengganti isi korpus
-— jadi hanya itu yang dijaga tombol.
+- jadi hanya itu yang dijaga tombol.
 """
 
 import json
 import logging
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from app.database import get_document_by_id
@@ -53,7 +54,15 @@ def _penyimpanan() -> "eb.PenyimpananMySQL":
     return eb.PenyimpananMySQL()
 
 
-# ── POST /{id}/ekstraksi — Mulai atau lanjutkan ──────────────────
+# ── POST /{id}/ekstraksi - Mulai atau lanjutkan ──────────────────
+
+
+class MulaiEkstraksiRequest(BaseModel):
+    maks_halaman: int | None = None
+    category_prompt: str | None = None
+    job_titles: str | None = None
+    vision_model: str | None = None
+    custom_prompts: dict | None = None
 
 
 @router.post(
@@ -63,27 +72,35 @@ def _penyimpanan() -> "eb.PenyimpananMySQL":
 )
 async def mulai_ekstraksi(
     document_id: int,
-    maks_halaman: int | None = Body(default=None, embed=True),
+    payload: MulaiEkstraksiRequest = Body(default_factory=MulaiEkstraksiRequest),
     _token: str = Depends(verify_token),
 ) -> dict:
-    """
-    Satu endpoint untuk mulai DAN lanjut — keduanya memang operasi yang sama.
-
-    Halaman yang sudah tersimpan dilewati otomatis, jadi pemanggil tidak perlu
-    melacak sendiri apakah ini pekerjaan baru atau penerusan. Menyediakan dua
-    endpoint terpisah hanya menambah satu keadaan yang bisa salah dipilih.
-    """
+    # Mulai atau lanjutkan ekstraksi
     dokumen = _dokumen_atau_404(document_id)
 
     from app.tasks.ekstraksi import ekstrak_dokumen_task
 
-    ekstrak_dokumen_task.delay(document_id, dokumen["file_path"], maks_halaman)
-    logger.info("Dokumen %d: ekstraksi diantrekan", document_id)
+    ekstrak_dokumen_task.delay(
+        document_id,
+        dokumen["file_path"],
+        payload.maks_halaman,
+        category_prompt=payload.category_prompt,
+        job_titles=payload.job_titles,
+        vision_model=payload.vision_model,
+        custom_prompts=payload.custom_prompts,
+    )
+    logger.info(
+        "Dokumen %d: ekstraksi diantrekan (maks_halaman=%s, has_cat_prompt=%s, has_custom_prompts=%s)",
+        document_id,
+        payload.maks_halaman,
+        bool(payload.category_prompt),
+        bool(payload.custom_prompts),
+    )
 
     return {"document_id": document_id, "status": eb.STATUS_ANTRE}
 
 
-# ── POST /{id}/ekstraksi/jeda — Minta berhenti ───────────────────
+# ── POST /{id}/ekstraksi/jeda - Minta berhenti ───────────────────
 
 
 @router.post(
@@ -97,16 +114,8 @@ async def jeda_ekstraksi(
 ) -> dict:
     """
     Jeda adalah PERMINTAAN, bukan penghentian seketika.
-
     Satu panggilan model vision berlangsung 20-60 detik dan tidak bisa dipotong
-    di tengah tanpa menyisakan halaman separuh. Jadi benderanya dinyalakan di
-    sini, lalu diperiksa worker di antara halaman: halaman yang sedang berjalan
-    diselesaikan dan disimpan dulu, baru berhenti.
-
-    Akibatnya untuk antarmuka: status BELUM langsung `jeda`. Ia masih
-    `berjalan` dengan `jeda_diminta: true` sampai halaman itu tuntas.
-    Tampilkan "Menjeda..." selama masa itu — kalau tombolnya langsung berkata
-    "Terjeda", pengguna akan mengira sistemnya macet.
+    di tengah tanpa menyisakan halaman separuh.
     """
     _dokumen_atau_404(document_id)
     _penyimpanan().minta_jeda(document_id)
@@ -115,7 +124,7 @@ async def jeda_ekstraksi(
     return {"document_id": document_id, "jeda_diminta": True}
 
 
-# ── GET /{id}/ekstraksi — Keadaan sekarang ───────────────────────
+# ── GET /{id}/ekstraksi - Keadaan sekarang ───────────────────────
 
 
 @router.get("/{document_id}/ekstraksi", summary="Status dan kemajuan ekstraksi")
@@ -127,7 +136,7 @@ async def status_ekstraksi(
 
     keadaan = _penyimpanan().keadaan(document_id)
     if keadaan is None:
-        # Dokumen ada tapi belum pernah diekstrak — bukan galat, hanya keadaan
+        # Dokumen ada tapi belum pernah diekstrak - bukan galat, hanya keadaan
         # awal. Mengembalikan 404 di sini memaksa Dev 2 menangani dua cabang
         # untuk satu hal yang sama.
         return {
@@ -142,7 +151,7 @@ async def status_ekstraksi(
     return keadaan
 
 
-# ── GET /{id}/ekstraksi/aliran — Kemajuan langsung (SSE) ─────────
+# ── GET /{id}/ekstraksi/aliran - Kemajuan langsung (SSE) ─────────
 
 
 @router.get(
@@ -154,7 +163,7 @@ async def aliran_ekstraksi(
     _token: str = Depends(verify_token),
 ):
     """
-    Aliran ditutup sendiri begitu pekerjaannya berhenti — selesai, dijeda,
+    Aliran ditutup sendiri begitu pekerjaannya berhenti - selesai, dijeda,
     menunggu koreksi, atau gagal. Aliran yang dibiarkan terbuka selamanya
     menahan koneksi dan worker untuk keadaan yang tidak akan berubah lagi.
     """
@@ -202,7 +211,7 @@ async def aliran_ekstraksi(
     return EventSourceResponse(kabar(), media_type="text/event-stream")
 
 
-# ── GET /{id}/halaman — Teks semua halaman (untuk editor) ────────
+# ── GET /{id}/halaman - Teks semua halaman (untuk editor) ────────
 
 
 @router.get("/{document_id}/halaman", summary="Teks halaman untuk editor koreksi")
@@ -211,15 +220,7 @@ async def daftar_halaman(
     perlu_diperiksa: bool = False,
     _token: str = Depends(verify_token),
 ) -> dict:
-    """
-    Dengan `perlu_diperiksa=1`, hanya halaman yang ditandai mencurigakan yang
-    dikembalikan, beserta alasannya.
-
-    Triase inilah yang membuat 171 halaman masuk akal dikoreksi manusia. Tanpa
-    urutan yang menempatkan halaman bermasalah di depan, memeriksa satu per
-    satu terasa mustahil dan pada akhirnya dilewati — yang sama saja dengan
-    tidak punya tahap koreksi.
-    """
+    # Daftar halaman untuk editor koreksi
     _dokumen_atau_404(document_id)
 
     from app.services.pdf_processor import _bagian_kepala_hilang, _header_sop_tidak_lengkap
@@ -248,7 +249,7 @@ async def daftar_halaman(
     }
 
 
-# ── PUT /{id}/halaman/{n} — Simpan koreksi satu halaman ──────────
+# ── PUT /{id}/halaman/{n} - Simpan koreksi satu halaman ──────────
 
 
 @router.put("/{document_id}/halaman/{page_number}", summary="Simpan koreksi satu halaman")
@@ -258,12 +259,7 @@ async def simpan_koreksi(
     text: str = Body(..., embed=True),
     _token: str = Depends(verify_token),
 ) -> dict:
-    """
-    Menyimpan per halaman, bukan seluruh dokumen sekaligus.
-
-    Halaman pindaian menghasilkan teks panjang; mengirim 171 halaman tiap kali
-    menyimpan membuat satu kesalahan jaringan bisa menimpa pekerjaan berjam-jam.
-    """
+    # Simpan koreksi per halaman
     _dokumen_atau_404(document_id)
 
     if not text.strip():
@@ -282,22 +278,29 @@ async def simpan_koreksi(
     return {"document_id": document_id, "page_number": page_number, "tersimpan": True}
 
 
-# ── GET /{id}/potongan — Pratinjau induk/anak ────────────────────
+class OpsiPemotongan(BaseModel):
+    parent_chunk_size: int = Field(1500, ge=300, le=4500)
+    parent_chunk_overlap: int = Field(200, ge=0, le=800)
+    child_chunk_size: int = Field(300, ge=100, le=1200)
+    child_chunk_overlap: int = Field(50, ge=0, le=300)
+    strategy: str = "auto"
 
 
+# ── POST / GET /{id}/potongan - Pratinjau induk/anak ────────────────────
+
+
+@router.post("/{document_id}/potongan", summary="Pratinjau potongan dengan opsi kustom")
 @router.get("/{document_id}/potongan", summary="Pratinjau potongan induk dan anak")
 async def pratinjau_potongan(
     document_id: int,
+    opsi: OpsiPemotongan | None = None,
+    parent_chunk_size: int | None = None,
+    parent_chunk_overlap: int | None = None,
+    child_chunk_size: int | None = None,
+    child_chunk_overlap: int | None = None,
     _token: str = Depends(verify_token),
 ) -> dict:
-    """
-    Dihitung saat diminta, tidak disimpan.
-
-    Pemotongan adalah fungsi murni dari teksnya: teks yang sama selalu
-    menghasilkan potongan yang sama, dan biayanya milidetik. Menyimpannya
-    justru menciptakan masalah — potongan yang dibuat dari teks versi lama,
-    tetap tampak sah, dan masuk korpus tanpa ada yang menyadari selisihnya.
-    """
+    # Dihitung saat diminta, tidak disimpan.
     _dokumen_atau_404(document_id)
 
     from app.services import embedding_service
@@ -306,12 +309,31 @@ async def pratinjau_potongan(
     if not halaman:
         return {"document_id": document_id, "induk": [], "anak": [], "siap": False}
 
+    # Ambil parameter dari model opsi atau query params
+    p_size = opsi.parent_chunk_size if opsi else (parent_chunk_size or 1500)
+    p_overlap = opsi.parent_chunk_overlap if opsi else (parent_chunk_overlap or 200)
+    c_size = opsi.child_chunk_size if opsi else (child_chunk_size or 300)
+    c_overlap = opsi.child_chunk_overlap if opsi else (child_chunk_overlap or 50)
+    strat = opsi.strategy if opsi else "auto"
+
     judul = embedding_service.derive_document_title(halaman)
-    induk, anak = embedding_service.chunk_text_hierarchical(halaman, document_title=judul)
+    induk, anak = embedding_service.chunk_text_hierarchical(
+        halaman,
+        document_title=judul,
+        parent_chunk_size=p_size,
+        parent_chunk_overlap=p_overlap,
+        child_chunk_size=c_size,
+        child_chunk_overlap=c_overlap,
+        strategy=strat,
+    )
 
     return {
         "document_id": document_id,
         "judul": judul,
+        "parent_chunk_size": p_size,
+        "parent_chunk_overlap": p_overlap,
+        "child_chunk_size": c_size,
+        "child_chunk_overlap": c_overlap,
         "jumlah_induk": len(induk),
         "jumlah_anak": len(anak),
         "induk": induk,
@@ -320,7 +342,7 @@ async def pratinjau_potongan(
     }
 
 
-# ── POST /{id}/simpan — Tombol akhir: potong lalu embed ──────────
+# ── POST /{id}/simpan - Tombol akhir: potong lalu embed ──────────
 
 
 @router.post(
@@ -330,16 +352,10 @@ async def pratinjau_potongan(
 )
 async def simpan_ke_korpus(
     document_id: int,
+    opsi: OpsiPemotongan | None = None,
     _token: str = Depends(verify_token),
 ) -> dict:
-    """
-    Satu-satunya langkah yang dijaga tombol, karena satu-satunya yang mahal
-    sekaligus mengganti isi korpus.
-
-    Potongannya dihitung ulang di dalam tugas, bukan diambil dari pratinjau
-    yang mungkin dilihat berjam-jam sebelumnya. Dengan begitu yang masuk korpus
-    selalu berasal dari teks yang berlaku sekarang.
-    """
+    # Simpan ke korpus
     _dokumen_atau_404(document_id)
 
     keadaan = _penyimpanan().keadaan(document_id)
@@ -360,7 +376,8 @@ async def simpan_ke_korpus(
 
     from app.tasks.ekstraksi import potong_dan_embed_task
 
-    potong_dan_embed_task.delay(document_id)
-    logger.info("Dokumen %d: potong & embed diantrekan", document_id)
+    custom_kwargs = opsi.dict() if opsi else None
+    potong_dan_embed_task.delay(document_id, custom_kwargs)
+    logger.info("Dokumen %d: potong & embed diantrekan dengan opsi %s", document_id, custom_kwargs)
 
     return {"document_id": document_id, "status": "diantrekan"}

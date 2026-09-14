@@ -35,13 +35,46 @@ class ChatRequest(BaseModel):
             "Kosongkan untuk mencari ke seluruh dokumen."
         ),
     )
+    system_prompt: str | None = Field(
+        default=None,
+        description="Override system prompt untuk pengujian sandbox/playground.",
+    )
+    temperature: float | None = Field(
+        default=None,
+        description="Override temperature untuk pengujian sandbox/playground.",
+    )
+    top_k: int | None = Field(
+        default=None,
+        description="Override top_k untuk pengujian sandbox/playground.",
+    )
+    include_debug: bool = Field(
+        default=False,
+        description="Sertakan metadata retrieval debug chunks di event SSE.",
+    )
 
 
 class ChatMessageRequest(BaseModel):
-    """Schema untuk request chat non-streaming (WhatsApp webhook)."""
+    """Schema untuk request chat non-streaming (WhatsApp webhook & Public API Gateway)."""
 
-    phone_number: str = Field(..., description="Nomor telepon pengguna WhatsApp")
     message: str = Field(..., description="Pesan/pertanyaan dari pengguna")
+    phone_number: Optional[str] = Field(default="api-consumer", description="Nomor telepon pengguna WhatsApp atau identifier pemanggil")
+    session_id: Optional[str] = Field(default=None, description="Identifier sesi percakapan")
+    system_prompt: Optional[str] = Field(
+        default=None,
+        description="Override system prompt untuk request ini",
+    )
+    temperature: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Override temperature sampling (0.0 - 1.0)",
+    )
+    top_k: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=30,
+        description="Override jumlah context chunks yang diambil",
+    )
     document_ids: list[int] | None = Field(
         default=None,
         description=(

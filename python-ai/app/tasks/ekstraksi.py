@@ -35,6 +35,10 @@ def ekstrak_dokumen_task(
     document_id: int,
     file_path: str,
     maks_halaman: int | None = None,
+    category_prompt: str | None = None,
+    job_titles: str | None = None,
+    vision_model: str | None = None,
+    custom_prompts: dict | None = None,
 ) -> dict:
     """
     Ekstraksi bertahap: kerjakan halaman yang belum tersimpan, lalu berhenti.
@@ -53,6 +57,10 @@ def ekstrak_dokumen_task(
             mengantre lagi. Berguna agar satu tugas Celery tidak berjalan
             berjam-jam — worker yang mati di tengah tugas panjang membuat
             broker mengulang seluruh tugas itu, walau halamannya sudah aman.
+        category_prompt: instruksi/panduan khusus dari kategori dokumen di Laravel.
+        job_titles: daftar jabatan/pelaksana relevan dari kategori dokumen.
+        vision_model: model vision spesifik kategori (opsional).
+        custom_prompts: kamus prompt kustom untuk menimpa aturan bawaan.
     """
     import fitz
 
@@ -69,7 +77,15 @@ def ekstrak_dokumen_task(
         # Catatan format dioper masuk dan keluar. Melewatkannya tidak
         # menimbulkan galat apa pun — halaman lanjutan hanya kehilangan aturan
         # format tabelnya, dan itu baru ketahuan lewat jawaban yang ngawur.
-        return pdf_processor.ekstrak_satu_halaman(file_path, nomor, petunjuk)
+        return pdf_processor.ekstrak_satu_halaman(
+            file_path,
+            nomor,
+            petunjuk,
+            category_prompt=category_prompt,
+            job_titles=job_titles,
+            vision_model=vision_model,
+            custom_prompts=custom_prompts,
+        )
 
     hasil = eb.ekstrak_bertahap(
         document_id,
@@ -82,11 +98,51 @@ def ekstrak_dokumen_task(
     if hasil.status == eb.STATUS_SELESAI:
         _rapikan_lintas_halaman(document_id, penyimpanan)
         penyimpanan.catat_status(document_id, eb.STATUS_MENUNGGU_KOREKSI)
+        try:
+            from app.database import record_document_log, update_document_status
+            update_document_status(
+                document_id,
+                status="menunggu_koreksi",
+                total_pages=hasil.halaman_total,
+                processed_pages=hasil.halaman_total,
+            )
+            record_document_log(
+                document_id,
+                action="ocr_completed",
+                details=f"Seluruh {hasil.halaman_total} halaman berhasil diekstrak OCR. Dokumen siap ditinjau/dikoreksi.",
+            )
+        except Exception:
+            logger.exception("Gagal sinkron status dokumen %d ke tabel documents", document_id)
         logger.info(
             "Dokumen %d: %d halaman terekstrak, menunggu koreksi admin",
             document_id, hasil.halaman_total,
         )
         return {"status": eb.STATUS_MENUNGGU_KOREKSI, "halaman": hasil.halaman_total}
+
+    if hasil.status == eb.STATUS_JEDA:
+        try:
+            from app.database import update_document_status
+            update_document_status(
+                document_id,
+                status="paused",
+                total_pages=hasil.halaman_total,
+                processed_pages=hasil.halaman_selesai,
+            )
+        except Exception:
+            logger.exception("Gagal sinkron status jeda dokumen %d ke tabel documents", document_id)
+
+    if hasil.status == eb.STATUS_GAGAL:
+        try:
+            from app.database import update_document_status
+            update_document_status(
+                document_id,
+                status="failed",
+                error_message=hasil.pesan,
+                total_pages=hasil.halaman_total,
+                processed_pages=hasil.halaman_selesai,
+            )
+        except Exception:
+            logger.exception("Gagal sinkron status gagal dokumen %d ke tabel documents", document_id)
 
     if hasil.status == eb.STATUS_BERJALAN:
         # Batas halaman tercapai tapi pekerjaan belum tuntas — antre lagi
@@ -133,19 +189,10 @@ def _rapikan_lintas_halaman(document_id: int, penyimpanan) -> None:
     max_retries=3,
     default_retry_delay=60,
 )
-def potong_dan_embed_task(self, document_id: int) -> dict:
+def potong_dan_embed_task(self, document_id: int, custom_kwargs: dict | None = None) -> dict:
     """
     Potong jadi induk/anak lalu simpan vektornya. Dipicu tombol admin.
-
-    Pemotongan dihitung ulang di sini, bukan diambil dari hasil pratinjau yang
-    tersimpan. Sengaja: pratinjau bisa dilihat berjam-jam sebelum tombol
-    ditekan, dan di antaranya admin mungkin menyunting halaman lagi. Potongan
-    yang dihitung ulang selalu berasal dari teks yang berlaku sekarang — jadi
-    mustahil ada potongan basi yang masuk korpus sementara layar menampilkan
-    teks yang lain.
-
-    Murah pula: memotong sepuluh halaman butuh sepersekian detik. Yang mahal
-    adalah embedding-nya, dan itu memang hanya jalan sekali di sini.
+    Mendukung opsi kustom dinamis untuk ukuran dan tumpang tindih chunk.
     """
     from app.database import update_document_status
     from app.services import embedding_service
@@ -159,16 +206,47 @@ def potong_dan_embed_task(self, document_id: int) -> dict:
         return {"status": eb.STATUS_GAGAL, "pesan": pesan}
 
     try:
-        judul = embedding_service.derive_document_title(halaman)
-        induk, anak = embedding_service.chunk_text_hierarchical(
-            halaman, document_title=judul
+        from app.database import record_document_log, update_document_status
+
+        penyimpanan.catat_kemajuan_embed(
+            document_id,
+            status=eb.STATUS_BERJALAN,
+            persen=10,
+            pesan="Mengumpulkan teks dokumen dan menganalisis struktur...",
         )
+
+        judul = embedding_service.derive_document_title(halaman)
+        chunk_params = custom_kwargs or {}
+
+        penyimpanan.catat_kemajuan_embed(
+            document_id,
+            status=eb.STATUS_BERJALAN,
+            persen=25,
+            pesan="Memecah teks menjadi potongan semantik (Parent & Child)...",
+        )
+
+        induk, anak = embedding_service.chunk_text_hierarchical(
+            halaman,
+            document_title=judul,
+            **chunk_params,
+        )
+
+        def on_embed_progress(pct: int, msg: str) -> None:
+            penyimpanan.catat_kemajuan_embed(
+                document_id,
+                status=eb.STATUS_BERJALAN,
+                persen=pct,
+                pesan=msg,
+            )
 
         # Penghapusan ditaruh sedekat mungkin dengan penyimpanan, supaya jeda
         # korpus-kosong sesingkat mungkin bila terjadi kegagalan di antaranya.
         embedding_service.delete_document_vectors(document_id)
         tersimpan = embedding_service.embed_and_store_hierarchical(
-            document_id, induk, anak
+            document_id,
+            induk,
+            anak,
+            progress_callback=on_embed_progress,
         )
     except Exception as e:  # noqa: BLE001 - dicatat sebagai status, bukan ditelan
         pesan = f"Gagal memotong/embed: {type(e).__name__}: {e}"
@@ -176,8 +254,18 @@ def potong_dan_embed_task(self, document_id: int) -> dict:
         penyimpanan.catat_status(document_id, eb.STATUS_GAGAL, pesan)
         raise self.retry(exc=e)
 
-    penyimpanan.catat_status(document_id, eb.STATUS_SELESAI)
+    penyimpanan.catat_kemajuan_embed(
+        document_id,
+        status=eb.STATUS_SELESAI,
+        persen=100,
+        pesan=f"Selesai! {tersimpan} vektor berhasil disimpan ke korpus.",
+    )
     update_document_status(document_id, status="completed", total_chunks=tersimpan)
+    record_document_log(
+        document_id,
+        action="completed",
+        details=f"Dokumen berhasil diindeks ke basis pengetahuan AI ({len(induk)} parent chunks, {len(anak)} child chunks, {tersimpan} vektor).",
+    )
 
     logger.info(
         "Dokumen %d selesai: %d induk, %d anak, %d vektor tersimpan",

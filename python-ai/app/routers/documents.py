@@ -7,7 +7,6 @@ import logging
 import secrets
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
-from starlette.requests import Request
 
 from app.config import settings
 from app.database import get_all_documents, get_document_by_id
@@ -222,6 +221,76 @@ async def process_document(
         ) from e
 
 
+@router.post(
+    "/{document_id}/cancel",
+    summary="Batalkan pemrosesan dokumen secara instan",
+    description="Membatalkan tugas ekstraksi aktif, membersihkan antrean, dan membebaskan RAM/VRAM model AI.",
+)
+async def cancel_document_processing(
+    document_id: int,
+    _token: str = Depends(verify_token),
+) -> dict:
+    import httpx
+    from app.tasks.process_document import celery_app
+
+    # 1. Update status di database
+    update_document_status(
+        document_id,
+        status="failed",
+        error_message="Pemrosesan dibatalkan oleh pengguna.",
+    )
+
+    # 2. Bersihkan antrean Celery
+    try:
+        celery_app.control.purge()
+    except Exception as e:
+        logger.warning("Gagal purge Celery antrean: %s", e)
+
+    # 3. Bebaskan VRAM/CPU Ollama segera
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.post(
+                f"{settings.OLLAMA_BASE_URL}/api/generate",
+                json={"model": settings.VISION_MODEL_NAME, "keep_alive": 0},
+            )
+    except Exception as e:
+        logger.warning("Gagal unload Ollama model: %s", e)
+
+    logger.info("Dokumen %d: pemrosesan dibatalkan dan memori dibebaskan", document_id)
+    return {
+        "document_id": document_id,
+        "status": "cancelled",
+        "message": "Pemrosesan dokumen berhasil dibatalkan dan resource sistem telah dibebaskan.",
+    }
+
+
+@router.delete(
+    "/{document_id}",
+    summary="Hapus vektor dokumen dari ChromaDB",
+    description="Menghapus seluruh chunk embedding yang terkait dengan document_id dari ChromaDB.",
+)
+async def delete_document_route(
+    document_id: int,
+    _token: str = Depends(verify_token),
+) -> dict:
+    from app.services.embedding_service import delete_document_vectors
+    try:
+        deleted_count = delete_document_vectors(document_id)
+        logger.info("Dokumen %d: %d vektor berhasil dihapus dari ChromaDB", document_id, deleted_count)
+        return {
+            "success": True,
+            "document_id": document_id,
+            "deleted_vectors": deleted_count,
+            "message": f"Berhasil menghapus {deleted_count} vektor untuk dokumen {document_id}.",
+        }
+    except Exception as e:
+        logger.error("Gagal menghapus vektor dokumen %d: %s", document_id, str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Gagal menghapus vektor dokumen dari ChromaDB: {str(e)}",
+        )
+
+
 @router.get(
     "/{document_id}/chunks",
     summary="Ambil daftar chunk dokumen",
@@ -247,52 +316,6 @@ async def get_document_chunks_route(
         )
 
 
-@router.post(
-    "/{document_id}/re-embed",
-    summary="Re-embed dokumen dari markdown flowchart",
-    description="Menghapus vektor lama dan meng-embed ulang dari markdown yang diberikan (hasil konversi flowchart).",
-)
-async def re_embed_document(
-    document_id: int,
-    request: Request,
-    _token: str = Depends(verify_token),
-) -> dict:
-    from app.database import update_document_status
-    from app.services import embedding_service
-    
-    try:
-        body = await request.json()
-        markdown = body.get("markdown", "").strip()
-        
-        if not markdown:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Markdown content cannot be empty."
-            )
-            
-        logger.info("Re-embedding document %d from markdown", document_id)
-        
-        embedding_service.delete_document_vectors(document_id)
-        
-        pages = [{"page_number": 1, "text": markdown}]
-        chunks = embedding_service.chunk_text(pages)
-        embedding_service.embed_and_store(document_id, chunks)
-        
-        update_document_status(document_id, "completed")
-        
-        return {
-            "success": True,
-            "message": f"Dokumen {document_id} berhasil di-embed ulang.",
-            "total_chunks": len(chunks)
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Gagal melakukan re-embed dokumen %d: %s", document_id, str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Gagal melakukan re-embed: {str(e)}"
-        )
 
 
 # ── GET /api/docs/{id}/halaman/{n}/citra — Citra satu halaman ────
@@ -441,3 +464,125 @@ async def ukuran_semua_halaman(
         "zoom_diizinkan": list(pdf_processor.ZOOM_DIIZINKAN),
         "halaman": halaman,
     }
+
+
+@router.get("/ollama/tags", tags=["Ollama"])
+def get_ollama_tags():
+    """Mengambil daftar model yang terpasang di server Ollama."""
+    import requests
+
+    try:
+        r = requests.get(f"{settings.OLLAMA_BASE_URL}/api/tags", timeout=5)
+        if r.status_code == 200:
+            return r.json()
+        return {"models": []}
+    except Exception as e:
+        logger.warning("Gagal mengambil tag Ollama: %s", e)
+        return {"models": []}
+
+
+@router.get("/prompt-ekstraksi", tags=["Ollama"])
+def prompt_ekstraksi_bawaan(_token: str = Depends(verify_token)) -> dict:
+    """
+    Teks prompt bawaan yang BENAR-BENAR dipakai saat ekstraksi.
+
+    Diambil langsung dari konstanta di pdf_processor, bukan disalin ke frontend.
+    Salinan di frontend pernah ada dan itulah sumber masalahnya: teksnya mirip
+    tapi tidak sama, admin menyetel berdasarkan teks yang tidak pernah berjalan,
+    dan tidak ada yang memberi tahu ketika keduanya melenceng. Dengan diambil
+    dari sini, keduanya tidak bisa berbeda.
+    """
+    from app.services import pdf_processor as pp
+
+    return {
+        "dasar": {
+            "judul": "Aturan dasar",
+            "kapan": "",
+            "teks": pp._PROMPT_OCR_DASAR,
+        },
+        "tabel_sop": {
+            "judul": "Petunjuk tabel prosedur SOP",
+            "kapan": (
+                "Dipasang otomatis begitu sebuah halaman terdeteksi berformat "
+                "formulir SOP, lalu ikut dipakai pada halaman-halaman berikutnya."
+            ),
+            "teks": pp._PETUNJUK_TABEL_SOP,
+        },
+        "kepala_sop": {
+            "judul": "Petunjuk kepala formulir SOP",
+            "kapan": (
+                "Hanya dipasang pada halaman yang kepala formulirnya memang "
+                "terlihat ('Nomor SOP', 'Nama SOP', 'Disahkan Oleh')."
+            ),
+            "teks": pp._PETUNJUK_KEPALA_SOP,
+        },
+    }
+
+
+@router.post("/test-prompt", tags=["Ollama"])
+def test_prompt_endpoint(payload: dict):
+    """
+    Uji coba prompt ekstraksi pada satu gambar.
+
+    Menjalankan gambar lewat `ekstrak_gambar_uji`, yaitu jalur vision yang SAMA
+    dengan yang dipakai tombol Ekstraksi. Endpoint ini sengaja tidak punya
+    logika prompt sendiri — dulu punya, dan itulah sumber kebingungannya:
+    sandbox memakai prompt kategori sebagai pengganti aturan dasar dan tidak
+    mengenal deteksi formulir SOP, sehingga hasil uji tidak mewakili hasil
+    sungguhan.
+
+    Tahap koreksi LLM juga sudah dihapus. Pipeline produksi tidak punya tahap
+    itu — koreksi dikerjakan manusia lewat editor koreksi — dan menyimulasikan
+    tahap yang tidak ada membuat hasil uji makin jauh dari kenyataan. Di mesin
+    ber-VRAM terbatas tahap itu juga memaksa tukar model vision <-> teks pada
+    tiap halaman, yang mahal.
+    """
+    import time
+
+    from app.services.pdf_processor import ekstrak_gambar_uji
+
+    start_time = time.time()
+    try:
+        image_base64 = payload.get("image_base64", "")
+        if not image_base64:
+            return {"success": False, "error": "Gambar (base64) wajib diunggah."}
+
+        # Bersihkan format data URL bila ada
+        if "," in image_base64:
+            image_base64 = image_base64.split(",", 1)[1]
+
+        category = payload.get("category") or {}
+        vision_model = (category.get("vision_model") or "").strip() or None
+
+        # Kata kunci disimpan sebagai daftar di prompt_variables; sisi ekstraksi
+        # menerimanya sebagai teks. Kunci lama `job_titles` tetap dibaca supaya
+        # kategori yang sudah ada tidak kehilangan datanya.
+        prompt_vars = category.get("prompt_variables") or {}
+        daftar = prompt_vars.get("kata_kunci") or prompt_vars.get("job_titles") or []
+        kata_kunci = ", ".join(daftar) if isinstance(daftar, list) else str(daftar)
+        custom_prompts = prompt_vars.get("custom_prompts") or category.get("custom_prompts") or None
+
+        hasil = ekstrak_gambar_uji(
+            image_base64,
+            category_prompt=(category.get("vision_prompt") or "").strip() or None,
+            job_titles=kata_kunci or None,
+            vision_model=vision_model,
+            custom_prompts=custom_prompts,
+        )
+
+        return {
+            "success": True,
+            "result": hasil["teks"],
+            "raw_ocr": hasil["teks_awal"],
+            "petunjuk_aktif": hasil["petunjuk_aktif"],
+            "duration": round(time.time() - start_time, 2),
+        }
+    except Exception as e:
+        logger.exception("Error saat uji coba prompt")
+        return {
+            "success": False,
+            "error": str(e),
+            "duration": round(time.time() - start_time, 2),
+        }
+
+

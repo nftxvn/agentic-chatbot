@@ -13,14 +13,19 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Trust all upstream proxies (Cloudflare Tunnel, Vite proxy, etc.)
+        $middleware->trustProxies(at: '*');
+
         // Sanctum SPA stateful middleware for cookie-based session auth
         $middleware->statefulApi();
 
-        // Ensure API routes always return JSON for unauthenticated responses
-        $middleware->redirectGuestsTo(fn (Request $request) => $request->expectsJson()
-            ? null
-            : route('login')
-        );
+        // Register auth.apikey route middleware alias
+        $middleware->alias([
+            'auth.apikey' => \App\Http\Middleware\AuthenticateApiKey::class,
+        ]);
+
+        // Ensure API/SPA requests return JSON 401 for unauthenticated responses without redirection
+        $middleware->redirectGuestsTo(fn (Request $request) => null);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

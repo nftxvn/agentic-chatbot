@@ -31,7 +31,11 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,  # Acknowledge setelah task selesai (lebih aman)
     worker_prefetch_multiplier=1,  # Proses satu task pada satu waktu
+    worker_concurrency=1,  # Kunci 1 worker eksklusif untuk inferensi GPU stabil
 )
+
+# Registrasi task ekstraksi bertahap
+from app.tasks.ekstraksi import ekstrak_dokumen_task, potong_dan_embed_task
 
 
 @celery_app.task(
@@ -82,18 +86,47 @@ def process_document_task(
         update_document_status(document_id, status="processing")
         logger.info("[1/7] Status dokumen %d diupdate ke 'processing'", document_id)
 
-        # ── Langkah 2: Deteksi tipe PDF / Dokumen ──
+        # ── Langkah 2: Deteksi tipe PDF / Dokumen & Hitung Total Halaman ──
         pdf_type = document_processor.detect_document_type(file_path)
-        logger.info("[2/7] Tipe dokumen terdeteksi: %s", pdf_type)
+        initial_total_pages = document_processor.get_total_pages(file_path)
+        logger.info("[2/7] Tipe dokumen: %s, Total halaman awal: %d", pdf_type, initial_total_pages)
 
-        # ── Langkah 3: Update tipe PDF di database ──
-        update_document_status(document_id, status="processing", pdf_type=pdf_type)
-        logger.info("[3/7] Tipe dokumen '%s' disimpan ke database", pdf_type)
+        # ── Langkah 3: Update tipe PDF dan total halaman di database ──
+        update_document_status(
+            document_id,
+            status="processing",
+            pdf_type=pdf_type,
+            total_pages=initial_total_pages,
+            processed_pages=0,
+        )
+        logger.info("[3/7] Tipe dokumen '%s' dan total halaman %d disimpan ke database", pdf_type, initial_total_pages)
 
-        # ── Langkah 4: Ekstrak teks dari PDF / Dokumen ──
-        pages = document_processor.extract_document(file_path)
+        # ── Langkah 4: Ekstrak teks dari PDF / Dokumen dengan Callback Progress ──
+        from app.services.ekstraksi_bertahap import PenyimpananMySQL
+        penyimpanan = PenyimpananMySQL()
+
+        def on_page_progress(processed: int, total: int, page_number: int | None = None, page_text: str | None = None):
+            try:
+                update_document_status(
+                    document_id,
+                    status="processing",
+                    total_pages=total,
+                    processed_pages=processed,
+                )
+                if page_number and page_text:
+                    penyimpanan.simpan_halaman(document_id, page_number, page_text)
+                    logger.info("Halaman %d dokumen %d langsung disimpan ke basis data", page_number, document_id)
+            except Exception as e:
+                logger.warning("Gagal memperbarui progres/halaman dokumen %d: %s", document_id, e)
+
+        pages = document_processor.extract_document(file_path, progress_callback=on_page_progress)
         total_pages = len(pages)
         logger.info("[4/7] Berhasil mengekstrak teks dari %d halaman/bagian", total_pages)
+
+        # Ambil halaman terkumpul dari basis data (agar editan manual yang dikerjakan saat proses berjalan ikut terpakai)
+        saved_pages = penyimpanan.teks_terkumpul(document_id)
+        if saved_pages:
+            pages = saved_pages
 
         if not pages:
             logger.warning(

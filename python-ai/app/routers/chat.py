@@ -99,6 +99,10 @@ async def _stream_response(
     query: str,
     session_id: str,
     document_ids: list[int] | None = None,
+    system_prompt: str | None = None,
+    temperature: float | None = None,
+    top_k: int | None = None,
+    include_debug: bool = False,
 ) -> AsyncGenerator[str, None]:
     """
     Async generator yang membungkus generator sinkron dari rag_service.
@@ -108,19 +112,30 @@ async def _stream_response(
         query: Pertanyaan dari pengguna.
         session_id: ID sesi chat.
         document_ids: Bila diisi, pencarian dibatasi hanya pada dokumen tersebut.
+        system_prompt: Override system prompt untuk sandbox testing.
+        temperature: Override temperature untuk sandbox testing.
+        top_k: Override top_k untuk sandbox testing.
+        include_debug: Sertakan metadata chunk debug di awal stream.
 
     Yields:
-        String JSON berisi chunk respons atau metadata sumber.
+        String JSON berisi chunk respons, metadata debug, atau status selesai.
     """
     try:
         import asyncio
-        for chunk in rag_service.generate_response(
+        for item in rag_service.generate_response(
             query=query,
             session_id=session_id,
             document_ids=document_ids,
+            system_prompt_override=system_prompt,
+            temperature_override=temperature,
+            top_k_override=top_k,
+            include_debug=include_debug,
         ):
-            # Kirim setiap chunk sebagai event SSE
-            yield json.dumps({"type": "chunk", "content": chunk}, ensure_ascii=False)
+            if isinstance(item, dict):
+                yield json.dumps(item, ensure_ascii=False)
+            else:
+                # Kirim setiap chunk sebagai event SSE
+                yield json.dumps({"type": "chunk", "content": item}, ensure_ascii=False)
             await asyncio.sleep(0.01) # Beri napas ke event loop agar bisa mengirim data ke frontend
 
         # Sinyal bahwa streaming selesai
@@ -175,6 +190,10 @@ async def chat_stream(
             query=request.query,
             session_id=request.session_id,
             document_ids=request.document_ids,
+            system_prompt=request.system_prompt,
+            temperature=request.temperature,
+            top_k=request.top_k,
+            include_debug=request.include_debug,
         ),
         media_type="text/event-stream",
     )
@@ -254,8 +273,7 @@ async def chat_message(
     )
 
     try:
-        # Gunakan phone_number sebagai session_id untuk tracking
-        session_id = f"wa-{request.phone_number}"
+        session_id = request.session_id or (f"wa-{request.phone_number}" if request.phone_number else "api-session")
 
         # Kumpulkan seluruh respons dari generator
         reply_parts: list[str] = []
@@ -265,9 +283,12 @@ async def chat_message(
             query=request.message,
             session_id=session_id,
             document_ids=request.document_ids,
+            system_prompt_override=request.system_prompt,
+            temperature_override=request.temperature,
+            top_k_override=request.top_k,
         ):
             # Pisahkan bagian sumber referensi dari jawaban utama
-            if chunk.startswith("\n\n📚 **Sumber Referensi:**"):
+            if isinstance(chunk, str) and "Sumber Referensi" in chunk:
                 # Parse sumber dari teks referensi
                 source_lines = chunk.strip().split("\n")
                 for line in source_lines:

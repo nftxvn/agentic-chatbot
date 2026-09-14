@@ -190,14 +190,14 @@ export default function LoginPage() {
         {/* Glowing background shapes */}
         <div
           ref={glowShape1Ref}
-          className={`absolute -top-10 -left-10 w-96 h-96 rounded-full blur-3xl pointer-events-none ${
-            isDark ? 'bg-sky-300/30' : 'bg-white/70'
+          className={`absolute -top-10 -left-10 w-96 h-96 rounded-full blur-3xl pointer-events-none opacity-30 ${
+            isDark ? 'bg-sky-300' : 'bg-white'
           }`}
         />
         <div
           ref={glowShape2Ref}
-          className={`absolute bottom-10 right-10 w-80 h-80 rounded-full blur-3xl pointer-events-none ${
-            isDark ? 'bg-blue-400/30' : 'bg-sky-200/60'
+          className={`absolute bottom-10 right-10 w-80 h-80 rounded-full blur-3xl pointer-events-none opacity-30 ${
+            isDark ? 'bg-blue-400' : 'bg-sky-200'
           }`}
         />
 
@@ -230,7 +230,7 @@ export default function LoginPage() {
           <p
             ref={heroTextRef}
             className={`text-base leading-relaxed font-medium flex flex-wrap gap-x-1.5 gap-y-0.5 ${
-              isDark ? 'text-sky-100' : 'text-sky-900/90'
+              isDark ? 'text-sky-100' : 'text-sky-900'
             }`}
           >
             {words.map((word, idx) => (
@@ -277,7 +277,7 @@ export default function LoginPage() {
               </div>
 
               {error && (
-                <div className="bg-red-500/10 border border-red-500/20 text-red-500 px-4 py-3 rounded-xl text-sm font-medium">
+                <div className="bg-[var(--bg-input)] border border-[var(--border-color)] text-red-500 px-4 py-3 rounded-xl text-sm font-medium">
                   {error}
                 </div>
               )}
@@ -379,12 +379,12 @@ export default function LoginPage() {
               </div>
 
               {forgotError && (
-                <div className="bg-red-500/10 border border-red-500/20 text-red-500 px-4 py-3 rounded-xl text-sm font-medium">
+                <div className="bg-[var(--bg-input)] border border-[var(--border-color)] text-red-500 px-4 py-3 rounded-xl text-sm font-medium">
                   {forgotError}
                 </div>
               )}
               {forgotMessage && (
-                <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 px-4 py-3 rounded-xl text-sm font-medium">
+                <div className="bg-[var(--bg-input)] border border-[var(--border-color)] text-emerald-500 px-4 py-3 rounded-xl text-sm font-medium">
                   {forgotMessage}
                 </div>
               )}

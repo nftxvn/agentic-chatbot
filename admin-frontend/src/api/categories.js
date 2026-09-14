@@ -24,5 +24,15 @@ export const categoriesApi = {
   async testPrompt(payload) {
     const { data } = await client.post('/api/ai/docs/test-prompt', payload)
     return data
+  },
+  /**
+   * Teks prompt bawaan yang benar-benar dipakai saat ekstraksi.
+   *
+   * Diambil dari layanan Python, TIDAK disalin ke frontend — salinan lokal
+   * pernah ada dan diam-diam melenceng dari yang sebenarnya berjalan.
+   */
+  async promptEkstraksi() {
+    const { data } = await client.get('/api/ai/docs/prompt-ekstraksi')
+    return data
   }
 }

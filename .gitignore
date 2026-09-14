@@ -115,19 +115,29 @@ laravel-admin/public/hot
 laravel-admin/public/storage
 
 # =========================
-# REACT / NODE (react-widget/)
+# REACT / NODE (react-widget/ & admin-frontend/)
 # =========================
 
 # Node dependencies
 react-widget/node_modules/
+admin-frontend/node_modules/
 
 # Build output
 react-widget/dist/
 react-widget/build/
 react-widget/.vite/
+admin-frontend/dist/
+admin-frontend/build/
+admin-frontend/.vite/
 
 # Cache
 react-widget/.eslintcache
+admin-frontend/.eslintcache
+
+# Logs
+admin-frontend/*.log
+laravel-admin/*.log
+*.log
 
 # =========================
 # ROOT VENV (jika ada)
@@ -139,3 +149,4 @@ react-widget/.eslintcache
 # GLOBAL IGNORES
 # =========================
 node_modules/
+*.log

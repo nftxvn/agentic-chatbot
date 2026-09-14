@@ -10,6 +10,7 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 import requests
+import time
 
 from app.config import settings
 
@@ -332,45 +333,114 @@ def _terlihat_formulir_sop(text: str) -> bool:
     return sum(p in rendah for p in _PENANDA_FORMULIR_SOP) >= _MIN_PENANDA_FORMULIR
 
 
+# Penanda tempat daftar kata kunci disisipkan bila admin menuliskannya sendiri
+# di dalam prompt kategori. `{job_titles}` dipertahankan karena kategori lama
+# sudah memakainya — mengganti nama tidak boleh mematikan data yang sudah ada.
+_POLA_KATA_KUNCI = ("{kata_kunci}", "{job_titles}")
+
+
+def _sisipkan_kata_kunci(prompt: str, kata_kunci: str) -> str:
+    """
+    Masukkan daftar kata kunci ke dalam prompt.
+
+    Dua jalur, dan yang kedua yang membuatnya tidak bisa gagal diam-diam:
+    ditulis sebagai penanda -> disisipkan PERSIS di posisi itu, sehingga admin
+    mengendalikan letaknya; tidak ditulis (atau salah ketik) -> ditempelkan di
+    akhir sebagai blok. Daftar yang sudah diisi admin tidak pernah hilang hanya
+    karena penandanya keliru.
+    """
+    if not kata_kunci:
+        return prompt
+
+    for pola in _POLA_KATA_KUNCI:
+        if pola in prompt:
+            return prompt.replace(pola, kata_kunci)
+
+    # Daftar telanjang tidak cukup: diuji pada halaman 8 SOP FULL, model tetap
+    # menulis "Renatra" walau "Renstra" ada di daftar. Model perlu diberi tahu
+    # apa yang harus DILAKUKAN dengan daftar itu, bukan sekadar disodori.
+    # Kalimatnya juga membatasi diri — "hanya bila memang mirip" — supaya model
+    # tidak memaksakan istilah dari daftar ke kata yang sebenarnya berbeda.
+    return prompt + (
+        "\n[ISTILAH & JABATAN RESMI]\n"
+        "Dokumen ini memakai istilah berikut. Bila sebuah kata terbaca MIRIP "
+        "salah satunya, tulis persis seperti daftar ini. Bila tidak mirip, "
+        "salin apa adanya — jangan memaksakan istilah dari daftar.\n"
+        f"{kata_kunci}\n"
+    )
+
+
 def vision_extract_general(
-    img_base64: str, retries: int = 2, petunjuk: str | None = None
+    img_base64: str,
+    retries: int = 3,
+    petunjuk: str | None = None,
+    category_prompt: str | None = None,
+    job_titles: str | None = None,
+    vision_model: str | None = None,
+    custom_prompts: dict | None = None,
 ) -> str:
     """
     Ekstraksi teks satu halaman gambar lewat model vision.
+
+    Prompt disusun berlapis, dan urutannya disengaja:
+        aturan dasar  ->  tambahan dari kategori  ->  petunjuk otomatis
+    Prompt kategori MENAMBAH, tidak menggantikan. Aturan dasar memuat penjaga
+    yang tidak boleh hilang (jangan menomori ulang, jangan menebak sel kosong),
+    dan petunjuk otomatis memuat penjaga anti-karangan untuk halaman lanjutan
+    formulir SOP yang tidak punya kepala.
 
     Args:
         img_base64: Halaman yang sudah dirender, dalam base64.
         retries: Percobaan ulang bila panggilan HTTP-nya gagal.
         petunjuk: Petunjuk format tambahan yang ditempelkan ke prompt dasar.
             Dibiarkan None untuk dokumen umum — itu jalur bawaannya.
+        category_prompt: Panduan/instruksi khusus dari kategori dokumen di Laravel.
+        job_titles: Daftar kata kunci/jabatan resmi dari kategori dokumen, sudah
+            berbentuk teks dipisah koma.
+        vision_model: Model vision spesifik kategori (opsional).
+        custom_prompts: Kamus prompt kustom untuk menimpa aturan bawaan secara dinamis.
     """
     logger.info("Using general vision extraction pipeline...")
 
-    prompt = _PROMPT_OCR_DASAR + (petunjuk or "")
+    prompt_dasar = (custom_prompts.get("dasar") if custom_prompts else None) or _PROMPT_OCR_DASAR
+    prompt = prompt_dasar
+    if category_prompt:
+        prompt += f"\n\n[PANDUAN KHUSUS KATEGORI DOKUMEN]:\n{category_prompt}\n"
+    prompt = _sisipkan_kata_kunci(prompt, job_titles or "")
+    if petunjuk:
+        prompt += f"\n{petunjuk}"
+
+    model_to_use = vision_model or settings.VISION_MODEL_NAME
 
     payload = {
-        "model": settings.VISION_MODEL_NAME,
+        "model": model_to_use,
         "prompt": prompt,
         "images": [img_base64],
         "stream": False,
         "options": {
-            "num_ctx": 8192, 
-            "num_predict": -1, 
+            "num_ctx": 4096, 
+            "num_predict": 2048, 
             "temperature": 0.1
         }
     }
     url = f"{settings.OLLAMA_BASE_URL}/api/generate"
 
+    last_error = None
     for attempt in range(1, retries + 1):
         try:
             response = requests.post(url, json=payload, timeout=settings.VISION_TIMEOUT)
             response.raise_for_status()
             raw = response.json().get("response", "").strip()
-            return _strip_garbage(raw)
+            if raw:
+                return _strip_garbage(raw)
         except requests.exceptions.RequestException as e:
+            last_error = e
             logger.warning(f"Attempt {attempt}/{retries}: Timeout/Error saat vision extract: {e}")
-            
-    return ""
+            time.sleep(2)
+
+    if last_error:
+        raise RuntimeError(f"Gagal melakukan Vision OCR: {last_error}")
+    raise RuntimeError("Model Vision OCR mengembalikan teks kosong")
 
 
 # ── Penjaga kelengkapan hasil OCR ────────────────────────────────
@@ -435,7 +505,13 @@ def _bagian_kepala_hilang(text: str) -> str:
 
 
 def _ocr_dengan_penjaga(
-    img_base64: str, page_label: int, petunjuk: str | None = None
+    img_base64: str,
+    page_label: int,
+    petunjuk: str | None = None,
+    category_prompt: str | None = None,
+    job_titles: str | None = None,
+    vision_model: str | None = None,
+    custom_prompts: dict | None = None,
 ) -> str:
     """
     Menjalankan ekstraksi vision, mengulang bila kepala tabel SOP jelas tidak lengkap.
@@ -450,7 +526,14 @@ def _ocr_dengan_penjaga(
     langsung kembali pada percobaan pertama — tidak ada OCR ulang, tidak ada
     yang ditandai gagal.
     """
-    text = vision_extract_general(img_base64, petunjuk=petunjuk)
+    text = vision_extract_general(
+        img_base64,
+        petunjuk=petunjuk,
+        category_prompt=category_prompt,
+        job_titles=job_titles,
+        vision_model=vision_model,
+        custom_prompts=custom_prompts,
+    )
 
     for percobaan in range(1, _OCR_ULANG_MAKS + 1):
         if not _header_sop_tidak_lengkap(text):
@@ -460,7 +543,14 @@ def _ocr_dengan_penjaga(
             "Halaman %d: kepala formulir terbaca tetapi %s hilang — OCR diulang (%d/%d)",
             page_label, _bagian_kepala_hilang(text), percobaan, _OCR_ULANG_MAKS,
         )
-        ulang = vision_extract_general(img_base64, petunjuk=petunjuk)
+        ulang = vision_extract_general(
+            img_base64,
+            petunjuk=petunjuk,
+            category_prompt=category_prompt,
+            job_titles=job_titles,
+            vision_model=vision_model,
+            custom_prompts=custom_prompts,
+        )
 
         if not _header_sop_tidak_lengkap(ulang):
             logger.info("Halaman %d: kepala formulir lengkap pada pengulangan ke-%d",
@@ -481,114 +571,44 @@ def _ocr_dengan_penjaga(
     return text
 
 
-def _clean_text_with_llm(dirty_text: str, retries: int = 2) -> str:
-    """Menggunakan LLM untuk mengoreksi typo pada teks bebas hasil OCR/Vision."""
-    if not dirty_text.strip():
-        return dirty_text
-
-    prompt = (
-        "Anda adalah editor ahli bahasa. Koreksi typo dari teks OCR berikut tanpa merubah makna asli. "
-        "Pertahankan struktur Markdown (seperti tabel, header). "
-        "Keluarkan HANYA teks yang sudah diperbaiki.\n\n"
-        f"{dirty_text}"
-    )
-
-    payload = {
-        "model": settings.LLM_MODEL_NAME,
-        "prompt": prompt,
-        "stream": False,
-        "options": {"num_ctx": 4096, "num_predict": 2048, "temperature": 0.0, "top_p": 0.1},
-    }
-    url = f"{settings.OLLAMA_BASE_URL}/api/generate"
-
-    for attempt in range(1, retries + 1):
-        try:
-            response = requests.post(url, json=payload, timeout=120)
-            response.raise_for_status()
-            raw = response.json().get("response", "").strip()
-            return _strip_garbage(raw)
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Attempt {attempt}/{retries} LLM correction gagal: {e}")
-            
-    return dirty_text
 
 
 # ─────────────────────────────────────────────────────────────
 # PERBAIKAN PENANDA DAFTAR HASIL OCR
 # ─────────────────────────────────────────────────────────────
 
-# Daftar resmi Indonesia yang melebihi 26 item memakai huruf yang DIULANG:
-# a..z, lalu aa..zz, lalu aaa..zzz. Model vision tidak menghitung pengulangan
-# itu; ia menebak jumlah yang terlihat wajar. Terukur pada korpus ini: halaman
-# yang seharusnya berpenanda hhh, iii, jjj, ... vvv terbaca h, iii, jj, ... vv —
-# satu utuh, satu rontok dua huruf, tiga belas rontok satu. Tidak beraturan,
-# jadi memang tebakan, bukan aturan.
-#
-# Akibatnya bukan sekadar penanda jelek: penanda yang memendek terbaca sebagai
-# urutan MUNDUR, sehingga daftar 74 item terpecah di batas halaman menjadi
-# 59 + 15, dan jawaban berhenti di item ke-59 dengan penuh keyakinan.
-#
-# Perbaikan di sini deterministik, bukan menebak: penerus dari "ggg" pasti
-# "hhh". Yang disentuh HANYA penandanya; isi itemnya tidak diubah sama sekali.
-_POLA_PENANDA_HURUF = re.compile(r"(?m)^([ \t]*)([a-zA-Z]{1,4})\.([ \t]+)")
+_POLA_PENANDA_HURUF = re.compile(
+    r"(?m)^(\s*)([A-Za-z]{1,2})\.(\s+)"
+)
 
-# Di bawah panjang ini runtunnya belum cukup meyakinkan untuk dipakai sebagai
-# dasar perbaikan — daftar pendek dibiarkan apa adanya.
 _MIN_RUNTUN_UNTUK_PERBAIKAN = 3
-
-
-def _penanda_berikutnya(penanda: str) -> str:
-    """Penerus dalam skema huruf-diulang: c -> d, z -> aa, zz -> aaa."""
-    huruf, panjang = penanda[0], len(penanda)
-    if huruf == "z":
-        return "a" * (panjang + 1)
-    return chr(ord(huruf) + 1) * panjang
-
-
-def _huruf_diulang(penanda: str) -> bool:
-    """Benar bila penanda berupa satu huruf yang diulang (a, aa, aaa)."""
-    return len(set(penanda)) == 1
 
 
 def perbaiki_penanda_daftar(pages_content: list[dict]) -> int:
     """
-    Kembalikan penanda daftar yang huruf ulangnya rontok saat OCR.
-
-    Berjalan lintas halaman karena daftarnya memang menyeberang halaman —
-    penanda pertama di satu halaman hanya bisa disimpulkan dari penanda
-    terakhir di halaman sebelumnya.
-
-    Perbaikan dilakukan HANYA bila ketiganya terpenuhi:
-      1. penanda yang terbaca berupa huruf yang diulang,
-      2. hurufnya sama dengan huruf yang diharapkan (hanya panjangnya beda),
-      3. runtun sebelumnya sudah cukup panjang untuk dipercaya.
-    Di luar itu runtun dianggap mulai dari awal, sehingga daftar yang memang
-    berbeda tidak pernah ikut ditimpa.
-
-    Args:
-        pages_content: Daftar {"page_number", "text"} terurut menurut halaman.
-
-    Returns:
-        Jumlah penanda yang diperbaiki.
+    Memulihkan penanda daftar bertingkat yang dipotong model vision.
     """
-    keadaan = {"terakhir": None, "panjang_runtun": 0, "diperbaiki": 0}
+    keadaan = {
+        "terakhir": None,
+        "panjang_runtun": 0,
+        "diperbaiki": 0,
+    }
 
-    def tangani(m) -> str:
+    def tangani(m: re.Match) -> str:
         spasi_awal, penanda, spasi_akhir = m.group(1), m.group(2), m.group(3)
         rendah = penanda.lower()
-
-        if not _huruf_diulang(rendah):
-            keadaan["terakhir"] = None          # bukan skema ini — runtun putus
-            keadaan["panjang_runtun"] = 0
-            return m.group(0)
-
         terakhir = keadaan["terakhir"]
+
         if terakhir is None:
             keadaan["terakhir"] = rendah
             keadaan["panjang_runtun"] = 1
             return m.group(0)
 
-        diharapkan = _penanda_berikutnya(terakhir)
+        panjang = len(terakhir)
+        huruf_terakhir = terakhir[0]
+        huruf_berikutnya = chr(ord(huruf_terakhir) + 1)
+        diharapkan = huruf_berikutnya * panjang
+
         if rendah == diharapkan:
             keadaan["terakhir"] = rendah
             keadaan["panjang_runtun"] += 1
@@ -624,28 +644,13 @@ def _ekstrak_halaman(
     page: "fitz.Page",
     nomor: int,
     petunjuk_tabel: str | None,
+    category_prompt: str | None = None,
+    job_titles: str | None = None,
+    vision_model: str | None = None,
+    custom_prompts: dict | None = None,
 ) -> tuple[str, str | None]:
     """
     Ekstrak SATU halaman. Satu-satunya tempat logika per halaman ditulis.
-
-    Dipakai dua jalur: `extract_text()` yang mengerjakan seluruh dokumen dalam
-    satu panggilan, dan `ekstrak_satu_halaman()` yang dipanggil berulang oleh
-    ekstraksi bertahap. Keduanya HARUS menghasilkan teks yang sama untuk
-    halaman yang sama; menulis logikanya dua kali berarti menunggu keduanya
-    menyimpang tanpa ada yang menyadarinya.
-
-    Args:
-        petunjuk_tabel: petunjuk format tabel yang dibawa dari halaman
-            sebelumnya, atau None bila belum ada formulir SOP yang terdeteksi.
-
-    Returns:
-        (teks halaman, petunjuk_tabel untuk halaman berikutnya)
-
-    Petunjuk tabel LENGKET dan karena itu dikembalikan: halaman lanjutan sebuah
-    SOP tidak memuat kepala apa pun, tapi tetap butuh aturan format langkah
-    prosedurnya. Petunjuk kepala justru TIDAK lengket — ia diputuskan ulang di
-    sini dari isi halaman ini sendiri, karena halaman tanpa kepala yang diberi
-    tahu bahwa kepala "PASTI ada" akan mengarang satu.
     """
     text = _extract_text_from_page(page)
     if len(text) >= _MIN_TEXT_LENGTH:
@@ -656,19 +661,23 @@ def _ekstrak_halaman(
         nomor, len(text),
     )
 
-    pixmap = page.get_pixmap(matrix=fitz.Matrix(ZOOM_OCR, ZOOM_OCR))
-    img_base64 = base64.b64encode(pixmap.tobytes("png")).decode("utf-8")
+    pixmap = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+    img_base64 = base64.b64encode(pixmap.tobytes("jpeg", jpg_quality=85)).decode("utf-8")
 
-    # Lintasan pertama memakai petunjuk TABEL yang lengket saja — tanpa
-    # penjaga, karena lintasan ini cuma untuk MENGENALI halaman. Menjaganya di
-    # sini berarti mengulang OCR karena kepala tidak lengkap, padahal petunjuk
-    # kepalanya memang belum diberikan: dua panggilan vision terbuang tiap
-    # halaman berkepala.
+    tabel_rule = (custom_prompts.get("tabel_sop") if custom_prompts else None) or _PETUNJUK_TABEL_SOP
+    kepala_rule = (custom_prompts.get("kepala_sop") if custom_prompts else None) or _PETUNJUK_KEPALA_SOP
+
     petunjuk_awal = petunjuk_tabel
-    text = vision_extract_general(img_base64, petunjuk=petunjuk_tabel)
+    text = vision_extract_general(
+        img_base64,
+        petunjuk=petunjuk_tabel,
+        category_prompt=category_prompt,
+        job_titles=job_titles,
+        vision_model=vision_model,
+        custom_prompts=custom_prompts,
+    )
 
-    # Kepala hanya ditambahkan bila HALAMAN INI SENDIRI menunjukkannya.
-    kepala = _PETUNJUK_KEPALA_SOP if _kepala_sop_terlihat(text) else ""
+    kepala = kepala_rule if _kepala_sop_terlihat(text) else ""
 
     if petunjuk_tabel is None and _terlihat_formulir_sop(text):
         logger.info(
@@ -676,9 +685,8 @@ def _ekstrak_halaman(
             "prosedur diaktifkan untuk halaman berikutnya.",
             nomor,
         )
-        petunjuk_tabel = _PETUNJUK_TABEL_SOP
+        petunjuk_tabel = tabel_rule
 
-    # Baca ulang hanya bila ada petunjuk yang belum sempat dipakai tadi.
     petunjuk_penuh = (petunjuk_tabel or "") + kepala
     if petunjuk_penuh and petunjuk_penuh != (petunjuk_awal or ""):
         if kepala:
@@ -687,52 +695,95 @@ def _ekstrak_halaman(
                 "petunjuk kepala.",
                 nomor,
             )
-        text = _ocr_dengan_penjaga(img_base64, nomor, petunjuk_penuh)
+        text = _ocr_dengan_penjaga(
+            img_base64,
+            nomor,
+            petunjuk_penuh,
+            category_prompt=category_prompt,
+            job_titles=job_titles,
+            vision_model=vision_model,
+            custom_prompts=custom_prompts,
+        )
 
     return text, petunjuk_tabel
+
+
+def ekstrak_gambar_uji(
+    img_base64: str,
+    category_prompt: str | None = None,
+    job_titles: str | None = None,
+    vision_model: str | None = None,
+    custom_prompts: dict | None = None,
+) -> dict:
+    """
+    Jalankan SATU gambar lepas lewat jalur vision yang sama persis dengan produksi.
+
+    Ada supaya sandbox "Uji Prompt" di admin tidak lagi punya implementasi
+    sendiri. Sebelumnya sandbox memakai prompt kategori sebagai PENGGANTI aturan
+    dasar dan tidak punya deteksi formulir SOP sama sekali — sehingga hasil uji
+    bisa jauh berbeda dari hasil ekstraksi sungguhan, dan admin menyetel
+    promptnya berdasarkan hasil yang menyesatkan.
+
+    Satu perbedaan tetap ada dan memang tidak terhindarkan: di produksi petunjuk
+    tabel SOP menempel antar halaman (halaman lanjutan mewarisi dari halaman
+    sebelumnya), sedangkan di sini hanya ada satu gambar sehingga deteksinya
+    berlaku untuk gambar itu saja. Itu dilaporkan lewat `petunjuk_aktif` supaya
+    terlihat, bukan disembunyikan.
+
+    Returns:
+        dict berisi `teks` (hasil akhir), `teks_awal` (bacaan pertama sebelum
+        petunjuk otomatis dipasang), dan `petunjuk_aktif` (daftar nama petunjuk
+        yang menyala).
+    """
+    tabel_rule = (custom_prompts.get("tabel_sop") if custom_prompts else None) or _PETUNJUK_TABEL_SOP
+    kepala_rule = (custom_prompts.get("kepala_sop") if custom_prompts else None) or _PETUNJUK_KEPALA_SOP
+
+    teks_awal = vision_extract_general(
+        img_base64,
+        category_prompt=category_prompt,
+        job_titles=job_titles,
+        vision_model=vision_model,
+        custom_prompts=custom_prompts,
+    )
+
+    # Urutan pemeriksaannya sama dengan _ekstrak_satu_halaman: petunjuk dipilih
+    # dari ISI bacaan pertama, bukan dari setelan kategori.
+    tabel = tabel_rule if _terlihat_formulir_sop(teks_awal) else ""
+    kepala = kepala_rule if _kepala_sop_terlihat(teks_awal) else ""
+
+    aktif = []
+    if tabel:
+        aktif.append("tabel prosedur SOP")
+    if kepala:
+        aktif.append("kepala formulir SOP")
+
+    teks = teks_awal
+    petunjuk_penuh = tabel + kepala
+    if petunjuk_penuh:
+        teks = _ocr_dengan_penjaga(
+            img_base64,
+            1,
+            petunjuk_penuh,
+            category_prompt=category_prompt,
+            job_titles=job_titles,
+            vision_model=vision_model,
+            custom_prompts=custom_prompts,
+        )
+
+    return {"teks": teks, "teks_awal": teks_awal, "petunjuk_aktif": aktif}
 
 
 def ekstrak_satu_halaman(
     file_path: str,
     page_number: int,
     petunjuk_tabel: str | None = None,
+    category_prompt: str | None = None,
+    job_titles: str | None = None,
+    vision_model: str | None = None,
+    custom_prompts: dict | None = None,
 ) -> tuple[str, str | None]:
     """
     Ekstrak satu halaman, membawa petunjuk format dari panggilan sebelumnya.
-
-    Dibuat untuk ekstraksi bertahap yang bisa dijeda: tiap halaman dikerjakan
-    lewat panggilan terpisah, disimpan, baru lanjut.
-
-    KENAPA `petunjuk_tabel` harus dioper masuk dan keluar — dan kenapa
-    melewatkannya adalah kesalahan yang tidak menimbulkan galat apa pun:
-
-        Saat model membaca halaman 7, ia menyadari dokumen ini formulir SOP dan
-        menyimpan catatan format. Halaman 8 memakai catatan itu, dan karena itu
-        tahu cara menulis tabel prosedur dengan benar — Waktu dan Output sebagai
-        dua kolom terpisah, tiap langkah dirinci.
-
-        Bila tiap panggilan mulai dengan catatan kosong, halaman 8 kehilangan
-        aturan itu. Halamannya tetap terekstrak, tetap tersimpan, tetap
-        ditandai selesai, kemajuan tetap 8/171. Tidak ada yang tampak salah.
-        Yang berubah cuma isinya — dan itu baru ketahuan berhari-hari kemudian
-        lewat jawaban yang ngawur.
-
-    Karena itu pemanggil WAJIB menyimpan nilai kembaliannya dan menyerahkannya
-    lagi pada panggilan berikutnya. Pada alur bertahap, nilai itu ikut disimpan
-    ke basis data bersama status — supaya ia juga bertahan melewati jeda dan
-    worker yang dijalankan ulang.
-
-    Args:
-        page_number: nomor halaman dihitung dari 1.
-        petunjuk_tabel: nilai kembalian dari panggilan halaman sebelumnya.
-
-    Returns:
-        (teks halaman, petunjuk_tabel untuk halaman berikutnya)
-
-    Catatan: perbaikan penanda daftar TIDAK dijalankan di sini. Daftar
-    menyeberang halaman — penanda pertama sebuah halaman hanya bisa disimpulkan
-    dari penanda terakhir halaman sebelumnya — jadi `perbaiki_penanda_daftar()`
-    harus dijalankan pemanggil setelah SELURUH halaman terkumpul.
     """
     if not Path(file_path).exists():
         raise FileNotFoundError(f"File tidak ditemukan: {file_path}")
@@ -743,10 +794,22 @@ def ekstrak_satu_halaman(
                 f"Halaman {page_number} di luar jangkauan "
                 f"(dokumen ini {len(doc)} halaman)"
             )
-        return _ekstrak_halaman(doc[page_number - 1], page_number, petunjuk_tabel)
+        return _ekstrak_halaman(
+            doc[page_number - 1],
+            page_number,
+            petunjuk_tabel,
+            category_prompt=category_prompt,
+            job_titles=job_titles,
+            vision_model=vision_model,
+            custom_prompts=custom_prompts,
+        )
 
 
-def extract_text(file_path: str, page_num: int | None = None) -> list[dict]:
+def extract_text(
+    file_path: str,
+    page_num: int | None = None,
+    progress_callback: callable | None = None,
+) -> list[dict]:
     """
     Mengekstrak teks dari seluruh halaman PDF.
     - Halaman teks: PyMuPDF langsung.
@@ -768,16 +831,9 @@ def extract_text(file_path: str, page_num: int | None = None) -> list[dict]:
             logger.info("Memproses PDF '%s' (%d halaman)", file_path, total_pages)
 
         # Petunjuk format ditemukan dari dokumennya sendiri, bukan diandaikan.
-        # Petunjuk TABEL lengket antar halaman: halaman lanjutan sebuah SOP
-        # tidak punya kepala tapi tetap butuh aturan format langkahnya.
-        # Petunjuk KEPALA justru TIDAK boleh lengket — diputuskan ulang tiap
-        # halaman dari isi halaman itu sendiri. Ketika keduanya masih menyatu
-        # dan sama-sama lengket, halaman tabel tanpa kepala menerima perintah
-        # "'Nama SOP' PASTI ada" dan menjawabnya dengan mengarang kepala.
-        # Dokumen umum tidak pernah menyentuh jalur ini sama sekali.
         petunjuk_tabel: str | None = None
 
-        for p_idx in pages_to_process:
+        for count, p_idx in enumerate(pages_to_process, start=1):
             if p_idx >= total_pages:
                 logger.warning(f"Halaman {p_idx + 1} di luar jangkauan (total {total_pages}).")
                 continue
@@ -791,6 +847,17 @@ def extract_text(file_path: str, page_num: int | None = None) -> list[dict]:
                     "page_number": p_idx + 1,
                     "text": text,
                 })
+
+            if progress_callback is not None:
+                try:
+                    progress_callback(count, total_pages, p_idx + 1, text)
+                except TypeError:
+                    try:
+                        progress_callback(count, total_pages)
+                    except Exception as cb_err:
+                        logger.warning("Error saat memanggil progress_callback: %s", cb_err)
+                except Exception as cb_err:
+                    logger.warning("Error saat memanggil progress_callback: %s", cb_err)
 
         doc.close()
 

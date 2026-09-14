@@ -1,7 +1,7 @@
 # AI Microservice — Agentic IT Support Copilot
 
 Layanan FastAPI yang menjawab pertanyaan tentang dokumen SOP menggunakan RAG
-(*Retrieval-Augmented Generation*) dengan LLM lokal via Ollama. Seluruh
+(_Retrieval-Augmented Generation_) dengan LLM lokal via Ollama. Seluruh
 pemrosesan berjalan di mesin sendiri — tidak ada isi dokumen yang dikirim ke
 layanan pihak ketiga.
 
@@ -20,12 +20,12 @@ Dua tanggung jawab utamanya:
 
 ## Prasyarat
 
-| Kebutuhan | Versi | Catatan |
-|---|---|---|
-| Python | **3.10+** | Kode memakai sintaks `list[int] \| None` |
-| [Ollama](https://ollama.com) | terbaru | Mesin LLM & OCR |
-| MySQL | 8.0+ | Dipakai bersama `laravel-admin` |
-| Redis | 6+ | Broker antrean Celery |
+| Kebutuhan                    | Versi     | Catatan                                  |
+| ---------------------------- | --------- | ---------------------------------------- |
+| Python                       | **3.10+** | Kode memakai sintaks `list[int] \| None` |
+| [Ollama](https://ollama.com) | terbaru   | Mesin LLM & OCR                          |
+| MySQL                        | 8.0+      | Dipakai bersama `laravel-admin`          |
+| Redis                        | 6+        | Broker antrean Celery                    |
 
 Tesseract **tidak** dibutuhkan. OCR dikerjakan model vision lewat REST API
 Ollama (`pdf_processor.py:181`), bukan mesin OCR terpisah.
@@ -33,8 +33,8 @@ Ollama (`pdf_processor.py:181`), bukan mesin OCR terpisah.
 Tarik dua model Ollama berikut:
 
 ```bash
-ollama pull qwen2.5:7b      # chat, ekstraksi kata kunci
-ollama pull qwen2.5vl:7b    # OCR halaman pindai
+ollama pull qwen3:8b               # chat, ekstraksi kata kunci
+ollama pull qwen2.5vl:7b-q4_K_M    # OCR halaman pindai
 ```
 
 ---
@@ -62,26 +62,38 @@ turunan) sebagai ganti `requirements.txt`.
 ## Konfigurasi
 
 Seluruh pengaturan dibaca dari `.env` oleh `app/config.py`.
+Mulailah dari `.env.example` — di sana setiap variabel sudah berkomentar, dan
+setelan yang bergantung perangkat keras ditandai `[MESIN]`:
 
-| Variabel | Contoh | Keterangan |
-|---|---|---|
-| `LLM_MODEL_NAME` | `qwen2.5:7b` | Model chat & ekstraksi kata kunci |
-| `OLLAMA_BASE_URL` | `http://localhost:11434` | Alamat server Ollama |
-| `VISION_MODEL_NAME` | `qwen2.5vl` | Model OCR halaman pindai |
-| `VISION_TIMEOUT` | `1000` | Detik. OCR di CPU bisa sangat lambat |
-| `EMBEDDING_MODEL_NAME` | `BAAI/bge-m3` | Diunduh otomatis saat pertama dipakai |
-| `CHROMA_PERSIST_DIR` | `./data/chromadb` | Lokasi basis data vektor |
-| `MYSQL_HOST` `MYSQL_PORT` | `localhost` `3306` | Basis data bersama Laravel |
-| `MYSQL_DATABASE` | `agentic_copilot` | |
-| `MYSQL_USER` `MYSQL_PASSWORD` | | |
-| `CELERY_BROKER_URL` | `redis://localhost:6379/0` | Antrean tugas |
-| `CELERY_RESULT_BACKEND` | `redis://localhost:6379/1` | |
-| `INTERNAL_API_TOKEN` | | Token Bearer untuk seluruh endpoint internal |
-| `CHAT_STREAM_REQUIRE_AUTH` | `true` | Penjaga token di `/api/chat/stream`. Setel `false` hanya untuk pengembangan lokal |
-| `LLM_MAX_NUM_CTX` | `16384` | Batas atas jendela konteks. Turunkan bila log memuat `failed to allocate buffer` |
-| `CORS_ALLOW_ORIGINS` | `http://localhost:5173,...` | Origin yang boleh memanggil dari browser, dipisah koma. Jangan diisi `*` |
-| `DEBUG_DUMP_CONTEXT` | `false` | Menulis konteks retrieval ke `debug_context.txt` tiap pertanyaan. Jangan diaktifkan di produksi |
-| `GEMINI_API_KEY` | | **Hanya untuk evaluasi RAGAS.** Layanan berjalan normal tanpa ini |
+```bash
+cp .env.example .env
+```
+
+> **Isi `LLM_MODEL_NAME`, `VISION_MODEL_NAME`, dan `EMBEDDING_MODEL_NAME` secara
+> eksplisit.** Nilai default di `app/config.py` masih menunjuk model lama
+> (`qwen2.5:3b`, MiniLM) dan tidak sama dengan yang dipakai serta diuji.
+
+| Variabel                      | Contoh                      | Keterangan                                                                                                                                                                                |
+| ----------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LLM_MODEL_NAME`              | `qwen3:8b`                  | Model chat & ekstraksi kata kunci                                                                                                                                                         |
+| `OLLAMA_BASE_URL`             | `http://localhost:11434`    | Alamat server Ollama                                                                                                                                                                      |
+| `VISION_MODEL_NAME`           | `qwen2.5vl:7b-q4_K_M`       | Model OCR halaman pindai                                                                                                                                                                  |
+| `VISION_TIMEOUT`              | `1000`                      | Detik. OCR di CPU bisa sangat lambat                                                                                                                                                      |
+| `EMBEDDING_MODEL_NAME`        | `BAAI/bge-m3`               | Diunduh otomatis saat pertama dipakai. Menggantinya wajib diikuti reindex seluruh dokumen                                                                                                 |
+| `EMBEDDING_DEVICE`            | `auto`                      | **[MESIN]** `auto` \| `cpu` \| `cuda`. Setel `cpu` hanya bila VRAM diperebutkan dengan LLM — bge-m3 memakan 2272 MiB                                                                      |
+| `CHROMA_PERSIST_DIR`          | `./data/chromadb`           | Lokasi basis data vektor                                                                                                                                                                  |
+| `MYSQL_HOST` `MYSQL_PORT`     | `localhost` `3306`          | Basis data bersama Laravel                                                                                                                                                                |
+| `MYSQL_DATABASE`              | `agentic_copilot`           |                                                                                                                                                                                           |
+| `MYSQL_USER` `MYSQL_PASSWORD` |                             |                                                                                                                                                                                           |
+| `CELERY_BROKER_URL`           | `redis://localhost:6379/0`  | Antrean tugas                                                                                                                                                                             |
+| `CELERY_RESULT_BACKEND`       | `redis://localhost:6379/1`  |                                                                                                                                                                                           |
+| `INTERNAL_API_TOKEN`          |                             | Token Bearer untuk seluruh endpoint internal                                                                                                                                              |
+| `CHAT_STREAM_REQUIRE_AUTH`    | `true`                      | Penjaga token di `/api/chat/stream`. Setel `false` hanya untuk pengembangan lokal                                                                                                         |
+| `LLM_NUM_CTX`                 | `8192`                      | Jendela konteks LLM (dipatok, sama untuk semua panggilan). Naikkan hanya setelah VRAM bebas + `OLLAMA_KV_CACHE_TYPE=q8_0`                                                                 |
+| `LLM_NUM_GPU`                 | `0`                         | **[MESIN]** Jumlah layer dipaksa ke GPU; `0` = auto-fit Ollama. Isi `99` hanya di mesin yang anggaran VRAM-nya sudah diukur — nilai kelewat tinggi tidak memberi galat, tapi memperlambat |
+| `CORS_ALLOW_ORIGINS`          | `http://localhost:5173,...` | Origin yang boleh memanggil dari browser, dipisah koma. Jangan diisi `*`                                                                                                                  |
+| `DEBUG_DUMP_CONTEXT`          | `false`                     | Menulis konteks retrieval ke `debug_context.txt` tiap pertanyaan. Jangan diaktifkan di produksi                                                                                           |
+| `GEMINI_API_KEY`              |                             | **Hanya untuk evaluasi RAGAS.** Layanan berjalan normal tanpa ini                                                                                                                         |
 
 **Kalau pemuatan model embedding terasa lama.** `sentence_transformers`
 memeriksa pembaruan ke huggingface.co setiap kali dimuat, walau modelnya
@@ -92,7 +104,7 @@ ada di disk.
 
 Obatnya `HF_HUB_OFFLINE=1` di `.env`. **Sengaja tidak dinyalakan otomatis:**
 `transformers` memanggil `model_info()` tanpa syarat saat memeriksa jenis
-tokenizer, dan dalam mode luring panggilan itu *melempar* `OfflineModeIsEnabled`
+tokenizer, dan dalam mode luring panggilan itu _melempar_ `OfflineModeIsEnabled`
 alih-alih dilewati — pemuatan model gagal total, bukan sekadar lambat.
 Kegagalan itu tidak muncul di semua mesin, dan setelan yang kadang
 menghentikan pekerjaan tidak layak jadi bawaan.
@@ -141,14 +153,14 @@ Setelah jalan:
 
 ## Endpoint
 
-| Metode | Rute | Auth | Fungsi |
-|---|---|---|---|
-| `POST` | `/api/chat/stream` | Bearer¹ | Tanya-jawab streaming (SSE) untuk widget |
-| `POST` | `/api/chat/message` | Bearer | Tanya-jawab sekali balas untuk WhatsApp |
-| `GET` | `/api/docs` | Bearer | Daftar seluruh dokumen |
-| `GET` | `/api/docs/{id}/status` | Bearer | Status pemrosesan satu dokumen |
-| `POST` | `/api/docs/process` | Bearer | Kirim dokumen ke antrean ingest |
-| `GET` | `/health` | tidak ada | Health check |
+| Metode | Rute                    | Auth      | Fungsi                                   |
+| ------ | ----------------------- | --------- | ---------------------------------------- |
+| `POST` | `/api/chat/stream`      | Bearer¹   | Tanya-jawab streaming (SSE) untuk widget |
+| `POST` | `/api/chat/message`     | Bearer    | Tanya-jawab sekali balas untuk WhatsApp  |
+| `GET`  | `/api/docs`             | Bearer    | Daftar seluruh dokumen                   |
+| `GET`  | `/api/docs/{id}/status` | Bearer    | Status pemrosesan satu dokumen           |
+| `POST` | `/api/docs/process`     | Bearer    | Kirim dokumen ke antrean ingest          |
+| `GET`  | `/health`               | tidak ada | Health check                             |
 
 ¹ Bisa dimatikan lewat `CHAT_STREAM_REQUIRE_AUTH=false` untuk pengembangan lokal.
 
@@ -228,12 +240,12 @@ hanya salinan untuk dibaca manusia.
 
 Dataset ini memakai dua kriteria tambahan:
 
-| Kriteria | Arti |
-|---|---|
-| `terlarang` | Ungkapan yang **tidak boleh** muncul; kemunculannya menggugurkan jawaban walau fakta lain sudah benar. Dipakai menangkap jawaban yang diambil dari SOP yang salah — dua SOP di dokumen ini isinya hampir kembar. |
-| `harus_menolak` | Jawaban yang benar adalah **menolak menjawab**, untuk pertanyaan berpremis palsu (mis. "Diktum KEEMPAT" yang tidak ada). |
-| `jumlah` | Angka yang harus dinyatakan **sebagai jumlah**, bukan sekadar muncul. Tanpa ini, kriteria `9` ikut cocok dengan penanda daftar `9. Format Renja` — sehingga jawaban yang menyebut jumlah salah tetap dapat nilai. |
-| `menolak_premis` | Frasa yang menunjukkan premis palsunya berhasil dibantah. Jawaban yang membantah tapi kurang presisi dinilai SEBAGIAN, tidak disamakan dengan yang mengarang. |
+| Kriteria         | Arti                                                                                                                                                                                                              |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `terlarang`      | Ungkapan yang **tidak boleh** muncul; kemunculannya menggugurkan jawaban walau fakta lain sudah benar. Dipakai menangkap jawaban yang diambil dari SOP yang salah — dua SOP di dokumen ini isinya hampir kembar.  |
+| `harus_menolak`  | Jawaban yang benar adalah **menolak menjawab**, untuk pertanyaan berpremis palsu (mis. "Diktum KEEMPAT" yang tidak ada).                                                                                          |
+| `jumlah`         | Angka yang harus dinyatakan **sebagai jumlah**, bukan sekadar muncul. Tanpa ini, kriteria `9` ikut cocok dengan penanda daftar `9. Format Renja` — sehingga jawaban yang menyebut jumlah salah tetap dapat nilai. |
+| `menolak_premis` | Frasa yang menunjukkan premis palsunya berhasil dibantah. Jawaban yang membantah tapi kurang presisi dinilai SEBAGIAN, tidak disamakan dengan yang mengarang.                                                     |
 
 Setiap butir juga menyimpan `jawaban_umpan`: satu jawaban SALAH yang khas untuk
 pertanyaan itu. Unit test memastikan kriteria **menjatuhkan** umpan itu, bukan
@@ -271,16 +283,16 @@ python test_ragas.py --limit 3         # evaluasi 3 pertanyaan
 python test_ragas.py --limit 10 --reuse  # pakai ulang jawaban tersimpan
 ```
 
-| Flag | Fungsi |
-|---|---|
-| `--limit N` | Jumlah pertanyaan dari `reference_eval_dataset.json` |
-| `--deepseek` | Juri DeepSeek — **bawaan**. Butuh `DEEPSEEK_API_KEY` |
-| `--gemini` | Juri Gemini. Butuh `GEMINI_API_KEY`. Berjatah harian sempit |
-| `--ollama` | Juri lokal. Tidak keluar mesin, tapi bukan penilaian independen |
-| `--judge-model=<nama>` | Ganti model juri (jatah gratis dihitung per model per hari) |
-| `--reuse` | Pakai ulang jawaban RAG dari cache, hanya ulangi penilaian |
-| `--list-models` | Daftar model yang boleh dipakai API key ini |
-| `--verbose` | Tampilkan seluruh log |
+| Flag                   | Fungsi                                                          |
+| ---------------------- | --------------------------------------------------------------- |
+| `--limit N`            | Jumlah pertanyaan dari `reference_eval_dataset.json`            |
+| `--deepseek`           | Juri DeepSeek — **bawaan**. Butuh `DEEPSEEK_API_KEY`            |
+| `--gemini`             | Juri Gemini. Butuh `GEMINI_API_KEY`. Berjatah harian sempit     |
+| `--ollama`             | Juri lokal. Tidak keluar mesin, tapi bukan penilaian independen |
+| `--judge-model=<nama>` | Ganti model juri (jatah gratis dihitung per model per hari)     |
+| `--reuse`              | Pakai ulang jawaban RAG dari cache, hanya ulangi penilaian      |
+| `--list-models`        | Daftar model yang boleh dipakai API key ini                     |
+| `--verbose`            | Tampilkan seluruh log                                           |
 
 Hasilnya ditulis ke `hasil_ragas.md`: pertanyaan, jawaban RAG, ground
 truth, skor per metrik, **dan seluruh chunk konteks yang dikirim ke LLM**
@@ -422,15 +434,11 @@ dipakai serentak, ongkosnya kecil.
 
 **Kehabisan memori saat menjawab.** Bila log memuat
 `ggml_backend_cpu_buffer_type_alloc_buffer: failed to allocate buffer`, Ollama
-gagal menyiapkan KV cache — RAM sistem, bukan VRAM. Layanan sudah menanganinya
-dua lapis: jendela konteks dihitung dari panjang konteks yang sebenarnya
-(bukan angka tetap), dan bila alokasi tetap gagal, permintaan diulang otomatis
-dengan jendela separuhnya sampai batas 4096. Bila masih sering terjadi,
-turunkan `LLM_MAX_NUM_CTX` di `.env`.
-
-Yang membuat gejala ini membingungkan: kegagalannya bergantung pada apa yang
-kebetulan sedang berjalan di mesin, jadi pertanyaan yang sama bisa berhasil
-sekarang dan gagal lima menit kemudian.
+gagal menyiapkan KV cache — RAM sistem, bukan VRAM. `num_ctx` dipatok ke
+`LLM_NUM_CTX`; bila alokasi gagal sebelum jawaban mulai mengalir, permintaan
+dicoba SEKALI lagi pada 4096 lalu galat dinaikkan. Bila sering terjadi,
+turunkan `LLM_NUM_CTX` di `.env`, atau bebaskan VRAM dan aktifkan
+`OLLAMA_KV_CACHE_TYPE=q8_0` di systemd Ollama.
 
 **Halaman SOP yang kehilangan judulnya.** Model vision kadang menjatuhkan baris
 `Nama SOP:` saat meng-OCR formulir SOP. Tanpa baris itu, halaman tersebut tidak

@@ -1,188 +1,70 @@
-# 👥 Pembagian Tugas & Tanggung Jawab Tim
+# 👥 Pembagian Modul & Tanggung Jawab Komponen
 
-## Proyek: Agentic IT Support Copilot
-
----
-
-## 🟦 Dev 1 — Backend AI (Python)
-
-**Branch:** `feat/python-ai`  
-**Folder:** `python-ai/`
-
-### ✅ Tugas Utama
-
-| No  | Tugas                                                      | Prioritas |
-| --- | ---------------------------------------------------------- | --------- |
-| 1   | Setup FastAPI project structure                            | 🔴 Tinggi |
-| 2   | Buat endpoint `POST /api/chat` (RAG pipeline)              | 🔴 Tinggi |
-| 3   | Buat endpoint `POST /api/documents/upload`                 | 🔴 Tinggi |
-| 4   | Buat endpoint `GET /api/documents` (list dokumen)          | 🔴 Tinggi |
-| 5   | Buat endpoint `GET /api/documents/{id}/status`             | 🔴 Tinggi |
-| 6   | Integrasi Ollama + Qwen2.5 sebagai LLM                     | 🔴 Tinggi |
-| 7   | Integrasi ChromaDB sebagai vector database                 | 🔴 Tinggi |
-| 8   | Integrasi embedding model (paraphrase-multilingual-MiniLM) | 🔴 Tinggi |
-| 9   | Setup Celery + Redis untuk async processing PDF            | 🟡 Sedang |
-| 10  | Integrasi Tesseract OCR untuk PDF scan                     | 🟡 Sedang |
-| 11  | Buat LangChain RAG chain                                   | 🔴 Tinggi |
-| 12  | Update status dokumen ke database (MySQL) setelah proses   | 🟡 Sedang |
-| 13  | Buat `.env.example` lengkap                                | 🟢 Rendah |
-| 14  | Tulis dokumentasi API (otomatis via FastAPI /docs)         | 🟢 Rendah |
-
-> **Catatan realisasi.** Tabel di atas adalah penugasan awal dan sengaja
-> dibiarkan apa adanya sebagai catatan rencana. Empat butir dikerjakan berbeda
-> dari rumusan aslinya, seluruhnya keputusan sadar:
->
-> | # | Rencana | Realisasi | Alasan |
-> |---|---|---|---|
-> | 2 | `POST /api/chat` | `/api/chat/message` + `/api/chat/stream` | dipisah non-streaming (WhatsApp) dan streaming (widget) |
-> | 3 | `POST /api/documents/upload` | Laravel menyimpan berkas, Python dipicu lewat `POST /api/docs/process` | Python tidak perlu mengurus penyimpanan berkas |
-> | 8 | `paraphrase-multilingual-MiniLM-L12-v2` | `BAAI/bge-m3` | retrieval lebih baik pada dokumen resmi berbahasa Indonesia |
-> | 10 | Tesseract OCR | model vision `qwen2.5vl` | hasil Tesseract jauh lebih kotor pada dokumen padat tabel |
->
-> Perhatikan juga prefiksnya: kode dan [`04`](04-api_spec_agentic_copilot.md)
-> memakai **`/api/docs`**, bukan `/api/documents` seperti tertulis di butir 4 dan 5.
-> Rincian teknis seluruhnya di [`07-arsitektur-rag-python-ai.md`](07-arsitektur-rag-python-ai.md).
-
-### 📌 Tanggung Jawab
-
-- Menjaga API tetap **running & accessible** selama development
-- Share **base URL API** ke Dev 2 & Dev 3
-- Kalau ada perubahan endpoint → **kabari Dev 2 & Dev 3 segera**
-- Pastikan response format sesuai `docs/api_spec_agentic_copilot.md`
-
-### ⚠️ Dependency
-
-- Dev 2 & Dev 3 **bergantung** pada API ini — prioritas tertinggi
+## Proyek: Agentic IT Support Copilot & Central RAG Hub
 
 ---
 
-## 🟩 Dev 2 — Backend Web (Laravel)
+## 🟦 Modul AI Engine & Microservice (`python-ai/`)
 
-**Branch:** `feat/laravel-admin`  
-**Folder:** `laravel-admin/`
+### ✅ Fitur & Deliverables
 
-### ✅ Tugas Utama
-
-| No  | Tugas                                                                    | Prioritas |
-| --- | ------------------------------------------------------------------------ | --------- |
-| 1   | Setup Laravel project + konfigurasi MySQL                                | 🔴 Tinggi |
-| 2   | Buat migration tabel `documents` & `document_logs`                       | 🔴 Tinggi |
-| 3   | Buat halaman **Login Admin**                                             | 🔴 Tinggi |
-| 4   | Buat halaman **Daftar Dokumen** (list + status)                          | 🔴 Tinggi |
-| 5   | Buat fitur **Upload PDF** (form + validasi)                              | 🔴 Tinggi |
-| 6   | Integrasi hit API Python untuk trigger pemrosesan PDF                    | 🔴 Tinggi |
-| 7   | Tampilkan **status real-time** dokumen (Menunggu/Diproses/Selesai/Gagal) | 🟡 Sedang |
-| 8   | Buat halaman **Detail Dokumen** + preview PDF                            | 🟡 Sedang |
-| 9   | Fitur **Replace/Update** dokumen lama                                    | 🟡 Sedang |
-| 10  | Buat **log aktivitas** upload per dokumen                                | 🟢 Rendah |
-| 11  | Polling status otomatis (AJAX) tanpa refresh halaman                     | 🟡 Sedang |
-| 12  | Validasi file: hanya PDF, max size                                       | 🟡 Sedang |
-| 13  | Setup `.env.example` dengan `AI_MICROSERVICE_URL`                        | 🟢 Rendah |
-
-### 📌 Tanggung Jawab
-
-- Koordinasi dengan **Dev 1** untuk format request/response API
-- Pastikan `.env` sudah diisi `AI_MICROSERVICE_URL` dengan benar
-- Menjaga keamanan: Auth admin wajib sebelum semua fitur
-- Handle error jika API Python tidak respond
-
-### ⚠️ Dependency
-
-- Butuh API Python dari Dev 1 untuk: upload trigger & cek status
+| No  | Fitur | Status | Keterangan |
+| --- | --- | :---: | --- |
+| 1   | Arsitektur FastAPI & Middleware | ✅ Selesai | CORS terkonfigurasi, bearer token guard |
+| 2   | Chat SSE Streaming (`POST /api/chat/stream`) | ✅ Selesai | Format terpadu `type: chunk, trace, telemetry, sources, done, error` |
+| 3   | Chat Synchronous (`POST /api/chat/sync`) | ✅ Selesai | Digunakan untuk webhook WhatsApp & non-streaming client |
+| 4   | Ekstraksi PDF Bertahap (Celery + Redis) | ✅ Selesai | Pipeline per halaman dengan jeda, lanjut, simpan cache |
+| 5   | Vision OCR Multimodal (`qwen2.5vl:7b`) | ✅ Selesai | Deskewing 0.25° & ekstraksi tabel pindaian via Ollama |
+| 6   | Hybrid Retrieval & RRF Fusion ($k=60$) | ✅ Selesai | Gabungan dense vector ChromaDB (BGE-M3) + RankBM25 |
+| 7   | Boundary-Aware Parent-Child Splitter | ✅ Selesai | Child 300 char (search) -> Parent 1500 char (LLM context) |
+| 8   | Multi-turn Session Memory | ✅ Selesai | Memori percakapan kontekstual dengan TTL |
+| 9   | Hallucination Guards & Anti-False Premise | ✅ Selesai | Penjaga konsistensi jawaban terprogram |
+| 10  | Cluster Health Check (`GET /health`) | ✅ Selesai | Diagnostik aktif 4 subsistem (FastAPI, Ollama, Chroma, Redis) |
 
 ---
 
-## 🟨 Dev 3 — Frontend (React)
+## 🟩 Modul Backend & API Gateway (`laravel-admin/`)
 
-**Branch:** `feat/react-widget`  
-**Folder:** `react-widget/`
+### ✅ Fitur & Deliverables
 
-### ✅ Tugas Utama
-
-| No  | Tugas                                                        | Prioritas |
-| --- | ------------------------------------------------------------ | --------- |
-| 1   | Setup React + Vite project                                   | 🔴 Tinggi |
-| 2   | Buat komponen **ChatWidget** (bubble chat UI)                | 🔴 Tinggi |
-| 3   | Buat komponen **MessageBubble** (pesan user & bot)           | 🔴 Tinggi |
-| 4   | Buat komponen **SourceReference** (tampilkan sumber dokumen) | 🟡 Sedang |
-| 5   | Integrasi `POST /api/chat` ke API Python                     | 🔴 Tinggi |
-| 6   | Handle **loading state** saat menunggu jawaban AI            | 🟡 Sedang |
-| 7   | Handle **error state** jika API tidak respond                | 🟡 Sedang |
-| 8   | Implement **streaming response** (jika API support)          | 🟡 Sedang |
-| 9   | Simpan **riwayat chat** di local state                       | 🟡 Sedang |
-| 10  | Desain UI yang responsive (mobile & desktop)                 | 🟡 Sedang |
-| 11  | Setup `VITE_API_URL` di `.env`                               | 🟢 Rendah |
-| 12  | Clear chat / reset session                                   | 🟢 Rendah |
-
-### 📌 Tanggung Jawab
-
-- Koordinasi dengan **Dev 1** untuk format request/response chat API
-- Pastikan `.env` sudah diisi `VITE_API_URL` dengan benar
-- Widget ini **hanya untuk testing & demo** — bukan produksi
-- Handle CORS error jika muncul (lapor ke Dev 1)
-
-### ⚠️ Dependency
-
-- Butuh endpoint `POST /api/chat` dari Dev 1
+| No  | Fitur | Status | Keterangan |
+| --- | --- | :---: | --- |
+| 1   | Autentikasi Sanctum & Multi-Role | ✅ Selesai | Login aman untuk Admin Diskominfotik |
+| 2   | Public API Gateway (`/api/v1/*`) | ✅ Selesai | Kunci API `Bearer sk_live_xxx` dengan SHA-256 hash |
+| 3   | Manajemen Dokumen & Kategori SOP | ✅ Selesai | Upload, status multi-fase, preview & sinkronisasi |
+| 4   | Ekstraksi Controller & Job Tracker | ✅ Selesai | Pengendali tahapan ekstraksi, koreksi OCR & embedding |
+| 5   | Manajemen Kunci API (API Keys Manager) | ✅ Selesai | CRUD kunci API, kuota laju (rate limit), & audit last used |
+| 6   | Telemetri Percakapan (`chat_logs`) | ✅ Selesai | Pencatatan latensi milidetik, token, dan audit trail |
+| 7   | Prompt Studio & Settings Controller | ✅ Selesai | Konfigurasi prompt dinamis & pemilih model Ollama |
+| 8   | Fast Paths & Direktori Layanan | ✅ Selesai | Pilihan jawaban instan & kontak kedinasan |
+| 9   | Graceful Degradation Service | ✅ Selesai | Penanganan fallback saat AI microservice mengalami kendala |
 
 ---
 
-## 🔗 Diagram Ketergantungan
+## 🟨 Modul Frontend Admin & RAG Playground (`admin-frontend/`)
 
-```
-Dev 1 (Python)
-     │
-     ├──► Dev 2 (Laravel) — butuh: /api/documents/upload, /api/documents/{id}/status
-     │
-     └──► Dev 3 (React)   — butuh: /api/chat
-```
+### ✅ Fitur & Deliverables
 
----
-
-## 📅 Timeline Saran
-
-| Minggu | Dev 1 (Python)                          | Dev 2 (Laravel)                      | Dev 3 (React)                   |
-| ------ | --------------------------------------- | ------------------------------------ | ------------------------------- |
-| **1**  | Setup FastAPI, endpoint dasar, ChromaDB | Setup Laravel, auth, halaman upload  | Setup React, UI chat            |
-| **2**  | Integrasi Celery, OCR, LLM              | Integrasi API Python, polling status | Integrasi API Python, streaming |
-| **3**  | Bug fix, optimasi RAG                   | Bug fix, UI polish                   | Bug fix, UX polish              |
-| **4**  | Testing end-to-end bersama              | Testing end-to-end bersama           | Testing end-to-end bersama      |
+| No  | Fitur | Status | Keterangan |
+| --- | --- | :---: | --- |
+| 1   | SPA React + Vite + Tailwind CSS | ✅ Selesai | Desain modern, responsif, dark/light theme |
+| 2   | Dashboard & Analitik Korpus | ✅ Selesai | Ringkasan dokumen, grafik metrik, cluster status |
+| 3   | RAG Playground & Live Pipeline Stepper | ✅ Selesai | Uji coba prompt dengan 3-tahap visualisasi pipeline SSE |
+| 4   | Editor Koreksi Manual OCR | ✅ Selesai | Tampilan *side-by-side* citra vs teks + deteksi baris |
+| 5   | Manajemen Kunci API & Token Copy | ✅ Selesai | UI pembuatan API Key instan & modal salin kunci |
+| 6   | Observabilitas & Log Percakapan | ✅ Selesai | Tampilan interaktif riwayat chat, filter kanal, & rating |
+| 7   | Konfigurasi Mesin & Prompt Presets | ✅ Selesai | Studio prompt sistem & parameter tuning |
+| 8   | Fast Paths & Direktori Manager | ✅ Selesai | CRUD shortcut jawaban cepat |
 
 ---
 
-## 📋 Aturan Git Tim
+## 🔗 Panduan Berkas Dokumentasi
 
-```bash
-# Setiap dev kerja di branch sendiri
-git checkout feat/python-ai      # Dev 1
-git checkout feat/laravel-admin  # Dev 2
-git checkout feat/react-widget   # Dev 3
+> - [`docs/01-prd_agentic_copilot.md`](01-prd_agentic_copilot.md) — Product Requirements Document (PRD)
+> - [`docs/02-arsitektur_sistem_agentic_copilot.md`](02-arsitektur_sistem_agentic_copilot.md) — Diagram Arsitektur Keseluruhan
+> - [`docs/03-rencana_fitur_agentic_copilot.md`](03-rencana_fitur_agentic_copilot.md) — Rencana & Status Fitur
+> - [`docs/04-api_spec_agentic_copilot.md`](04-api_spec_agentic_copilot.md) — Spesifikasi API Terpadu (Gateway, Admin, & AI)
+> - [`docs/07-arsitektur-rag-python-ai.md`](07-arsitektur-rag-python-ai.md) — Arsitektur Teknis RAG, Hybrid Search & OCR
+> - [`docs/09-panduan-integrasi-api-dan-rag-gateway.md`](09-panduan-integrasi-api-dan-rag-gateway.md) — Panduan Integrasi Public API Gateway
+> - [`docs/10-observabilitas-dan-telemetri-rag.md`](10-observabilitas-dan-telemetri-rag.md) — Panduan Observabilitas, Tracing & Telemetri
 
-# Commit rutin (minimal 1x sehari)
-git add .
-git commit -m "feat: deskripsi perubahan"
-git push origin feat/<nama-branch>
-
-# Kalau butuh update dari main
-git pull origin main
-```
-
-### Format Commit Message
-
-| Prefix      | Kapan Dipakai      |
-| ----------- | ------------------ |
-| `feat:`     | Fitur baru         |
-| `fix:`      | Bug fix            |
-| `chore:`    | Setup, config      |
-| `docs:`     | Update dokumentasi |
-| `refactor:` | Refactor kode      |
-
----
-
-## 📞 Acuan Bersama
-
-> Semua dev **WAJIB** baca file ini sebelum mulai coding:
->
-> - `docs/prd_agentic_copilot.md` — tujuan & scope proyek
-> - `docs/api_spec_agentic_copilot.md` — kontrak API antar komponen
-> - `docs/arsitektur_sistem_agentic_copilot.md` — arsitektur sistem keseluruhan

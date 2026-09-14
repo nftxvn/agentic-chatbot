@@ -15,22 +15,21 @@ export default function GlobalErrorToast() {
   if (!error) return null;
 
   return (
-    <div className="fixed bottom-6 right-6 z-[99999]" style={{ animation: 'slideIn 0.4s ease-in-out' }}>
-      <div className="bg-[var(--error-bg)] border border-[var(--error-border)] shadow-[0_8px_30px_rgba(0,0,0,0.1)] p-4 flex items-start gap-3 max-w-[360px]">
-        <div className="text-[var(--error-title)] shrink-0 mt-0.5">
-          <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-            <line x1="12" y1="9" x2="12" y2="13"></line>
-            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+    <div className="fixed bottom-6 right-6 z-[99999] animate-in fade-in slide-in-from-bottom-5 duration-300">
+      <div className="bg-[var(--bg-card)] border border-[var(--border-color)] shadow-2xl rounded-2xl p-4 flex items-start gap-3.5 max-w-[400px]">
+        <div className="w-8 h-8 rounded-xl bg-[var(--bg-input)] text-[var(--red-color)] border border-[var(--border-color)] flex items-center justify-center shrink-0 mt-0.5">
+          <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+            <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
         </div>
-        <div className="flex-1">
-          <h4 className="text-[var(--error-title)] text-sm font-bold mb-1">Koneksi Bermasalah</h4>
-          <p className="text-[var(--error-text)] text-[13px] leading-snug font-medium">{error}</p>
+        <div className="flex-1 pr-1">
+          <h4 className="text-[var(--text-primary)] text-sm font-bold">Koneksi Bermasalah</h4>
+          <p className="text-[var(--text-secondary)] text-xs leading-relaxed font-medium mt-0.5">{error}</p>
         </div>
         <button
-          className="text-[var(--error-title)] opacity-60 cursor-pointer p-1 text-base transition-opacity duration-200 hover:opacity-100"
+          className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 rounded-lg text-sm transition-colors cursor-pointer"
           onClick={() => setError(null)}
+          title="Tutup"
         >
           ✕
         </button>

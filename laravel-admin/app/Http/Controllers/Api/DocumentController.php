@@ -10,6 +10,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class DocumentController extends Controller
 {
@@ -18,28 +19,48 @@ class DocumentController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $documents = Document::with(['uploader', 'category'])
+        $documents = Document::with(['uploader', 'category', 'ekstraksiJob', 'ekstraksiHalaman'])
             ->orderBy('created_at', 'desc')
             ->paginate(15);
 
+        $allDocs = Document::with('ekstraksiJob')->get();
+
+        $total           = $allDocs->count();
+        $completed       = 0;
+        $menungguKoreksi = 0;
+        $processing      = 0;
+        $failed          = 0;
+
+        foreach ($allDocs as $doc) {
+            $resolved = $this->resolveEffectiveStatus($doc);
+            match ($resolved['status']) {
+                'completed'        => $completed++,
+                'menunggu_koreksi' => $menungguKoreksi++,
+                'processing'       => $processing++,
+                'failed'           => $failed++,
+                default            => null,
+            };
+        }
+
         $stats = [
-            'total'      => Document::count(),
-            'completed'  => Document::where('status', 'completed')->count(),
-            'processing' => Document::where('status', 'processing')->count(),
-            'failed'     => Document::where('status', 'failed')->count(),
+            'total'            => $total,
+            'completed'        => $completed,
+            'menunggu_koreksi' => $menungguKoreksi,
+            'processing'       => $processing,
+            'failed'           => $failed,
         ];
 
         return response()->json([
             'success' => true,
             'data'    => [
-                'documents' => $documents->map(fn ($doc) => $this->formatDocument($doc)),
-                'meta'      => [
+                'documents'      => $documents->map(fn ($doc) => $this->formatDocument($doc)),
+                'meta'           => [
                     'current_page' => $documents->currentPage(),
                     'last_page'    => $documents->lastPage(),
                     'per_page'     => $documents->perPage(),
                     'total'        => $documents->total(),
                 ],
-                'stats'         => $stats,
+                'stats'          => $stats,
                 'has_processing' => $stats['processing'] > 0,
             ],
         ]);
@@ -50,7 +71,7 @@ class DocumentController extends Controller
      */
     public function show(int $id): JsonResponse
     {
-        $document = Document::with(['uploader', 'category', 'logs'])->findOrFail($id);
+        $document = Document::with(['uploader', 'category', 'logs', 'ekstraksiJob'])->findOrFail($id);
 
         return response()->json([
             'success' => true,
@@ -61,40 +82,45 @@ class DocumentController extends Controller
     }
 
     /**
-     * Handle a new PDF document upload.
+     * Handle a new document upload (supports PDF, DOCX, XLSX, CSV, TXT, MD).
      */
     public function upload(Request $request): JsonResponse
     {
         $request->validate([
             'title'       => ['required', 'string', 'max:255'],
-            'pdf_file'    => ['required', 'file', 'mimes:pdf', 'max:51200'],
-            'category_id' => ['nullable', 'exists:document_categories,id'],
+            'pdf_file'    => ['required', 'file', 'mimes:pdf,docx,xlsx,csv,txt,md', 'max:51200'],
+            'category_id' => ['nullable', 'integer', 'exists:document_categories,id'],
         ], [
             'title.required'    => 'Judul dokumen wajib diisi.',
-            'pdf_file.required' => 'File PDF wajib diunggah.',
-            'pdf_file.mimes'    => 'File harus berformat PDF.',
+            'title.max'         => 'Judul dokumen maksimal 255 karakter.',
+            'pdf_file.required' => 'File dokumen wajib diunggah.',
+            'pdf_file.mimes'    => 'Format file tidak diizinkan. Gunakan format: PDF, DOCX, XLSX, CSV, TXT, atau MD.',
             'pdf_file.max'      => 'Ukuran file maksimal 50MB.',
         ]);
 
-        $file            = $request->file('pdf_file');
-        $originalFilename = $file->getClientOriginalName();
-        $storagePath     = $file->store('documents', 'local');
+        $file             = $request->file('pdf_file');
+        $rawFilename      = $file->getClientOriginalName();
+        // Sanitize original filename (strip path traversal and unsafe characters)
+        $originalFilename = preg_replace('/[^\w\s\-\.\(\)\[\]]/u', '_', basename($rawFilename));
+        $sanitizedTitle   = strip_tags(trim($request->input('title')));
+
+        // Generate a secure random hashed filename (SHA-256)
+        $extension        = strtolower($file->getClientOriginalExtension() ?: $file->extension() ?: 'bin');
+        $hashedName       = hash('sha256', Str::uuid()->toString() . microtime(true) . $file->getContent()) . '.' . $extension;
+        $storagePath      = $file->storeAs('documents', $hashedName, 'local');
+        $absolutePath     = Storage::disk('local')->path($storagePath);
 
         $document = Document::create([
-            'title'             => $request->input('title'),
-            'original_filename' => $originalFilename,
-            'storage_path'      => $storagePath,
-            'status'            => 'pending',
-            'pdf_type'          => 'unknown',
-            'category_id'       => $request->input('category_id'),
-            'uploaded_by'       => Auth::id(),
+            'title'         => $sanitizedTitle,
+            'original_name' => $originalFilename,
+            'file_path'     => $absolutePath,
+            'status'        => 'pending',
+            'pdf_type'      => 'unknown',
+            'category_id'   => $request->input('category_id'),
+            'uploaded_by'   => Auth::id(),
         ]);
 
-        DocumentLog::create([
-            'document_id' => $document->id,
-            'action'      => 'uploaded',
-            'details'     => "File \"{$originalFilename}\" diunggah oleh " . Auth::user()->name,
-        ]);
+        $document->recordLog('uploaded', "File \"{$originalFilename}\" diunggah oleh " . Auth::user()->name);
 
         $client = new AiMicroserviceClient();
         if (!$client->healthCheck()) {
@@ -120,50 +146,53 @@ class DocumentController extends Controller
     }
 
     /**
-     * Replace an existing document's PDF file.
+     * Replace an existing document's file.
      */
     public function replace(int $id, Request $request): JsonResponse
     {
         $document = Document::findOrFail($id);
 
         $request->validate([
-            'pdf_file' => ['required', 'file', 'mimes:pdf', 'max:51200'],
+            'pdf_file' => ['required', 'file', 'mimes:pdf,docx,xlsx,csv,txt,md', 'max:51200'],
         ], [
-            'pdf_file.required' => 'File PDF wajib diunggah.',
-            'pdf_file.mimes'    => 'File harus berformat PDF.',
+            'pdf_file.required' => 'File dokumen wajib diunggah.',
+            'pdf_file.mimes'    => 'Format file tidak diizinkan. Gunakan format: PDF, DOCX, XLSX, CSV, TXT, atau MD.',
             'pdf_file.max'      => 'Ukuran file maksimal 50MB.',
         ]);
 
-        if (Storage::disk('local')->exists($document->storage_path)) {
-            Storage::disk('local')->delete($document->storage_path);
+        $oldPath = $document->file_path ?? Storage::disk('local')->path($document->storage_path ?? '');
+        if ($oldPath && file_exists($oldPath)) {
+            @unlink($oldPath);
         }
 
-        $file            = $request->file('pdf_file');
-        $originalFilename = $file->getClientOriginalName();
-        $storagePath     = $file->store('documents', 'local');
+        $file             = $request->file('pdf_file');
+        $rawFilename      = $file->getClientOriginalName();
+        $originalFilename = preg_replace('/[^\w\s\-\.\(\)\[\]]/u', '_', basename($rawFilename));
+
+        // Generate a secure random hashed filename (SHA-256)
+        $extension        = strtolower($file->getClientOriginalExtension() ?: $file->extension() ?: 'bin');
+        $hashedName       = hash('sha256', Str::uuid()->toString() . microtime(true) . $file->getContent()) . '.' . $extension;
+        $storagePath      = $file->storeAs('documents', $hashedName, 'local');
+        $absolutePath     = Storage::disk('local')->path($storagePath);
 
         $document->update([
-            'original_filename' => $originalFilename,
-            'storage_path'      => $storagePath,
-            'status'            => 'pending',
-            'pdf_type'          => 'unknown',
-            'error_message'     => null,
-            'total_pages'       => null,
-            'total_chunks'      => null,
-            'processed_at'      => null,
+            'original_name' => $originalFilename,
+            'file_path'     => $absolutePath,
+            'status'        => 'pending',
+            'pdf_type'      => 'unknown',
+            'error_message' => null,
+            'total_pages'   => null,
+            'total_chunks'  => null,
+            'processed_at'  => null,
         ]);
 
-        DocumentLog::create([
-            'document_id' => $document->id,
-            'action'      => 'replaced',
-            'details'     => "File diganti dengan \"{$originalFilename}\" oleh " . Auth::user()->name,
-        ]);
+        $document->recordLog('replaced', "File diganti dengan \"{$originalFilename}\" oleh " . Auth::user()->name);
 
         $this->dispatchToAiService($document, 'overwrite');
 
         return response()->json([
             'success' => true,
-            'message' => 'File PDF berhasil diganti dan sedang diproses ulang.',
+            'message' => 'File dokumen berhasil diganti dan sedang diproses ulang.',
             'data'    => ['document' => $this->formatDocument($document->fresh())],
         ]);
     }
@@ -180,21 +209,21 @@ class DocumentController extends Controller
             'error_message' => 'Pemrosesan dibatalkan oleh Admin.',
         ]);
 
-        DocumentLog::create([
-            'document_id' => $document->id,
-            'action'      => 'failed',
-            'details'     => 'Pemrosesan AI dibatalkan oleh ' . (Auth::user()?->name ?? 'Admin') . '.',
-        ]);
+        $document->recordLog('cancelled', 'Pemrosesan AI dibatalkan oleh ' . (Auth::user()?->name ?? 'Admin') . '.', 15);
+
+        // Explicitly cancel background task in Python AI & release GPU/CPU memory
+        $client = new AiMicroserviceClient();
+        $client->cancelDocument($document->id);
 
         return response()->json([
             'success' => true,
-            'message' => 'Pemrosesan dokumen berhasil dibatalkan.',
+            'message' => 'Pemrosesan dokumen berhasil dibatalkan dan resource sistem telah dibebaskan.',
             'data'    => ['document' => $this->formatDocument($document->fresh())],
         ]);
     }
 
     /**
-     * Resume / Continue (Cicil) document AI processing.
+     * Resume / Continue (Cicil) document AI processing using the staged extraction API.
      */
     public function resume(int $id): JsonResponse
     {
@@ -219,92 +248,138 @@ class DocumentController extends Controller
             'error_message' => null,
         ]);
 
-        DocumentLog::create([
-            'document_id' => $document->id,
-            'action'      => 'processing',
-            'details'     => 'Pemrosesan AI dilanjutkan kembali oleh ' . (Auth::user()?->name ?? 'Admin') . '.',
-        ]);
+        $document->recordLog('resumed', 'Ekstraksi AI dilanjutkan kembali oleh ' . (Auth::user()?->name ?? 'Admin') . '.', 15);
 
-        $this->dispatchToAiService($document, 'overwrite');
+        // Start / resume staged extraction in Python AI
+        $client->mulaiEkstraksi($document->id);
 
         return response()->json([
             'success' => true,
-            'message' => 'Pemrosesan dokumen berhasil dilanjutkan.',
+            'message' => 'Ekstraksi dokumen berhasil dilanjutkan.',
             'data'    => ['document' => $this->formatDocument($document->fresh())],
         ]);
     }
 
     /**
-     * Delete a document and its associated file.
+     * Delete a document, its physical file, and its ChromaDB vector embeddings.
      */
     public function destroy(int $id): JsonResponse
     {
         $document = Document::findOrFail($id);
 
-        if (Storage::disk('local')->exists($document->storage_path)) {
-            Storage::disk('local')->delete($document->storage_path);
+        $filePath = $document->file_path ?? Storage::disk('local')->path($document->storage_path ?? '');
+        if ($filePath && file_exists($filePath)) {
+            @unlink($filePath);
         }
 
         $title = $document->title;
+        $docId = $document->id;
+
+        // Cascade delete ChromaDB vector embeddings via Python microservice
+        try {
+            $client = new AiMicroserviceClient();
+            $client->deleteDocument($docId);
+        } catch (\Exception $e) {
+            \Log::warning("Gagal menghapus vektor dokumen {$docId} dari ChromaDB: " . $e->getMessage());
+        }
+
         $document->delete();
 
         return response()->json([
             'success' => true,
-            'message' => "Dokumen \"{$title}\" berhasil dihapus.",
+            'message' => "Dokumen \"{$title}\" dan seluruh vektor embedding berhasil dihapus.",
         ]);
     }
 
     /**
-     * Serve a PDF file (kept as web route, uses session cookie auth).
-     * This method stays for the /api/documents/{id}/pdf endpoint.
+     * Serve a document file.
      */
     public function servePdf(int $id): mixed
     {
         $document = Document::findOrFail($id);
-        $filePath = Storage::disk('local')->path($document->storage_path);
+        $filePath = $document->file_path;
+
+        if (!$filePath || !file_exists($filePath)) {
+            $filePath = Storage::disk('local')->path($document->storage_path ?? '');
+        }
 
         if (!file_exists($filePath)) {
             return response()->json(['success' => false, 'message' => 'File tidak ditemukan.'], 404);
         }
 
+        $mimeType = @mime_content_type($filePath) ?: 'application/octet-stream';
+        $filename = $document->original_name ?? $document->original_filename ?? 'document';
+
         return response()->file($filePath, [
-            'Content-Type'        => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="' . $document->original_filename . '"',
+            'Content-Type'        => $mimeType,
+            'Content-Disposition' => 'inline; filename="' . addslashes($filename) . '"',
         ]);
     }
 
     /**
-     * Dispatch document processing to the AI microservice.
+     * Dispatch document processing to the AI microservice using staged extraction.
      */
     protected function dispatchToAiService(Document $document, string $action): void
     {
-        $client   = new AiMicroserviceClient();
-        $filePath = Storage::disk('local')->path($document->storage_path);
+        $client = new AiMicroserviceClient();
 
-        $document->update(['status' => 'processing']);
-
-        DocumentLog::create([
-            'document_id' => $document->id,
-            'action'      => 'processing',
-            'details'     => 'Dokumen dikirim ke AI Service untuk diproses.',
+        $document->update([
+            'status'        => 'processing',
+            'error_message' => null,
         ]);
 
-        $result = $client->processDocument($document->id, $filePath, $action);
+        $document->recordLog('processing', 'Dokumen dikirim ke antrean Ekstraksi AI bertahap.', 15);
+
+        // Dispatch staged extraction: every page is saved to database immediately upon completion
+        $result = $client->mulaiEkstraksi($document->id);
 
         if (!$result['success']) {
-            DocumentLog::create([
-                'document_id' => $document->id,
-                'action'      => 'failed',
-                'details'     => $result['message'],
-            ]);
+            $document->recordLog('failed', $result['message'] ?? 'Gagal memulai ekstraksi', 10);
 
-            if ($result['data'] === null) {
-                $document->update([
-                    'status'        => 'pending',
-                    'error_message' => $result['message'],
-                ]);
-            }
+            $document->update([
+                'status'        => 'pending',
+                'error_message' => $result['message'] ?? 'Gagal memulai ekstraksi',
+            ]);
         }
+    }
+
+    /**
+     * Determine the unified effective status and label for a document.
+     */
+    public function resolveEffectiveStatus(Document $document, int $donePages = 0, int $totalPages = 0): array
+    {
+        $job    = $document->ekstraksiJob;
+        $status = $document->status;
+
+        // 1. Selesai (Completed / Indexed to corpus)
+        if ($job?->status === 'selesai' || $status === 'completed') {
+            return ['status' => 'completed', 'label' => 'Selesai'];
+        }
+
+        // 2. Menunggu Verifikasi (All pages extracted, waiting for human admin review)
+        if ($job?->status === 'menunggu_koreksi' || $status === 'menunggu_koreksi') {
+            return ['status' => 'menunggu_koreksi', 'label' => 'Menunggu Verifikasi'];
+        }
+
+        // 3. Dijeda (Paused)
+        if ($job?->status === 'jeda' || $status === 'paused') {
+            return ['status' => 'jeda', 'label' => 'Dijeda'];
+        }
+
+        // 4. Gagal (Failed)
+        if ($job?->status === 'gagal' || $status === 'failed') {
+            return ['status' => 'failed', 'label' => 'Gagal'];
+        }
+
+        // 5. Sedang Berjalan / Antre (Processing)
+        if ($job?->status === 'berjalan' || $job?->status === 'ekstraksi' || $job?->status === 'antre' || $status === 'processing') {
+            return ['status' => 'processing', 'label' => 'Memproses'];
+        }
+
+        return [
+            'status' => $status ?? 'pending',
+            'label'  => $document->status_badge['label'] ?? 'Menunggu',
+        ];
     }
 
     /**
@@ -312,27 +387,44 @@ class DocumentController extends Controller
      */
     protected function formatDocument(Document $document, bool $withLogs = false): array
     {
-        $badge = $document->status_badge;
+        $job = $document->ekstraksiJob;
+
+        $savedCount  = $document->relationLoaded('ekstraksiHalaman') ? $document->ekstraksiHalaman->count() : $document->ekstraksiHalaman()->count();
+        $donePages   = max($savedCount, (int) ($document->processed_pages ?? 0), (int) ($job?->halaman_selesai ?? 0));
+        $totalPages  = $document->total_pages ?? $job?->halaman_total ?? 0;
+        $percent     = ($totalPages > 0) ? min(100, (int) round(($donePages / $totalPages) * 100)) : ($job?->persen ?? 0);
+
+        $resolved    = $this->resolveEffectiveStatus($document, $donePages, $totalPages);
+        $status      = $resolved['status'];
+        $statusLabel = $resolved['label'];
 
         $data = [
             'id'                => $document->id,
             'title'             => $document->title,
-            'original_filename' => $document->original_filename,
-            'status'            => $document->status,
-            'status_label'      => $badge['label'],
+            'original_filename' => $document->original_name ?? $document->original_filename,
+            'original_name'     => $document->original_name ?? $document->original_filename,
+            'file_path'         => $document->file_path,
+            'status'            => $status,
+            'status_label'      => $statusLabel,
             'pdf_type'          => $document->pdf_type,
             'pdf_type_label'    => $document->pdf_type_label,
             'category_id'       => $document->category_id,
             'category_name'     => $document->category?->name ?? 'Umum',
             'category_ui_layout'=> $document->category?->ui_layout ?? 'general',
-            'flowchart_status'  => $document->flowchart_status ?? 'draft',
-            'total_pages'       => $document->total_pages,
+            'total_pages'       => $totalPages,
+            'processed_pages'   => $donePages,
             'total_chunks'      => $document->total_chunks,
             'error_message'     => $document->error_message,
             'uploaded_by'       => $document->uploader?->name,
-            'pdf_url'           => route('api.documents.pdf', $document->id),
+            'pdf_url'           => url("/api/documents/{$document->id}/pdf"),
             'created_at'        => $document->created_at ? \Carbon\Carbon::parse($document->created_at)->toIso8601String() : null,
             'processed_at'      => $document->processed_at ? \Carbon\Carbon::parse($document->processed_at)->toIso8601String() : null,
+
+            // Staged extraction progress
+            'ekstraksi_status'  => $job?->status,
+            'jeda_diminta'      => (bool) $job?->jeda_diminta,
+            'halaman_selesai'   => $donePages,
+            'persen_ekstraksi'  => $percent,
         ];
 
         if ($withLogs) {

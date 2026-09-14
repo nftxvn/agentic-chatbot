@@ -1,263 +1,239 @@
-# 🏗️ Arsitektur Sistem — Agentic IT Support Copilot
+# 🏗️ Arsitektur Sistem — Agentic IT Support Copilot & Central RAG Hub
 
 ## 1. Diagram Arsitektur Keseluruhan
 
 ```mermaid
 graph TB
-    subgraph Frontend["🌐 Channel Chat"]
-        Widget["React Chat Widget<br/>(Testing/Demo Only)"]
-        WAWebhook["WhatsApp Business API<br/>(Produksi)"]
+    subgraph Frontend["🌐 Klien & Antarmuka Pengguna"]
+        AdminSPA["Admin Frontend SPA (Port 5173)<br/>(Dashboard, RAG Playground, OCR Editor, ApiKeys, Logs)"]
+        WebWidget["Portal Web / React Widget<br/>(Layanan Publik)"]
+        WAClient["WhatsApp Business / End-User<br/>(Kanal Produksi)"]
     end
 
-    subgraph Laravel["🔧 Laravel (Dashboard Admin)"]
-        Auth["Login Admin"]
-        DocManager["Manajemen Dokumen<br/>(Upload, Preview, Overwrite)"]
-        StatusMonitor["Status Monitor<br/>(Polling AJAX/Livewire)"]
-        FileStorage["File Storage<br/>(PDF Files)"]
+    subgraph LaravelGateway["🔧 Laravel Backend & API Gateway (Port 8000)"]
+        Auth["Admin Auth (Sanctum)"]
+        APIGateway["Public API Gateway (/api/v1)<br/>ApiKey Middleware (sk_live_xxx)"]
+        DocManager["Manajemen Dokumen & Kategori"]
+        EkstraksiCtrl["Ekstraksi Controller & Job Tracker"]
+        Degradation["Graceful Degradation Service"]
+        AuditLog["Telemetry & Chat Logger (chat_logs)"]
+        SettingsMgr["Prompt & Parameter Manager"]
     end
 
-    subgraph Python["🐍 Python AI Microservice (FastAPI)"]
-        API_Doc["POST /api/docs/process"]
-        API_Chat["POST /api/chat/stream"]
-        Queue["Celery Worker<br/>(Background Task)"]
-        OCR["Deskew + OCR Vision<br/>(qwen2.5vl)"]
-        Chunker["Chunker Parent-Child<br/>(sadar batas item)"]
-        Embedder["Embedding Model<br/>(BAAI/bge-m3)"]
-        RAGChain["RAG Hybrid<br/>(Vektor + BM25 → RRF)"]
-        Guards["Penjaga Jawaban<br/>(premis palsu, label, daftar)"]
+    subgraph PythonAI["🐍 Python AI Microservice (FastAPI - Port 8080)"]
+        API_Chat["POST /api/chat/stream & /api/chat/sync"]
+        API_Ekstraksi["POST /api/ekstraksi/jobs & /api/docs/process"]
+        ToolRouter["Semantic Router & Intent Classifier"]
+        SessionMem["Multi-turn Session Memory"]
+        RAGChain["Hybrid Search (ChromaDB + BM25 → RRF)"]
+        ParentChild["Parent-Child Boundary-Aware Chunker"]
+        Guards["Penjaga Halusinasi & Anti-Premis Palsu"]
+        CeleryWorker["Celery Worker (Queue Ingestion)"]
+        VisionOCR["Deskew (0.25°) + Qwen2.5-VL OCR"]
     end
 
     subgraph Storage["💾 Storage Layer"]
-        MySQL[("MySQL<br/>(Users, Documents, Status)")]
-        ChromaDB[("ChromaDB<br/>(Vector Embeddings)")]
-        Redis[("Redis<br/>(Task Queue Broker)")]
+        MySQL[("MySQL 8.0+<br/>(Documents, Jobs, Halaman, ApiKeys, Logs, Users)")]
+        ChromaDB[("ChromaDB Persisten<br/>(Vector Embeddings BGE-M3)")]
+        Redis[("Redis 6.0+<br/>(Task Queue Celery & Session Cache)")]
     end
 
-    subgraph AI["🤖 AI Engine"]
-        Ollama["Ollama Server<br/>(localhost:11434)"]
-        Qwen["qwen2.5:7b<br/>(teks — jawaban)"]
-        QwenVL["qwen2.5vl<br/>(vision — OCR)"]
+    subgraph AI["🤖 AI Engine (Ollama Local)"]
+        Ollama["Ollama Server (Port 11434)"]
+        QwenText["qwen3:8b / qwen2.5:7b<br/>(Penalaran Teks & Jawaban)"]
+        QwenVision["qwen2.5vl:7b<br/>(Multimodal Vision OCR)"]
     end
 
-    %% Admin Flow
-    Auth --> DocManager
-    DocManager -->|"Save PDF"| FileStorage
-    DocManager -->|"POST /api/docs/process"| API_Doc
-    API_Doc -->|"Dispatch Task"| Queue
-    Queue --> OCR
-    OCR -.->|"halaman pindai"| Ollama
-    Ollama --- QwenVL
-    OCR --> Chunker
-    Chunker --> Embedder
-    Embedder -->|"Upsert Vectors"| ChromaDB
-    Queue -->|"UPDATE status"| MySQL
-    StatusMonitor -->|"SELECT status"| MySQL
+    %% Relasi Frontend & Gateway
+    AdminSPA -->|"Sanctum API"| LaravelGateway
+    WebWidget -->|"Bearer sk_live_xxx"| APIGateway
+    WAClient -->|"Webhook"| APIGateway
 
-    %% Chat Flow (Testing - React Widget)
-    Widget -->|"POST /api/chat/stream"| API_Chat
-    %% Chat Flow (Produksi - WhatsApp)
-    WAWebhook -->|"POST /api/chat/message"| API_Chat
-    API_Chat --> RAGChain
-    RAGChain -->|"Vektor + BM25"| ChromaDB
-    RAGChain --> Guards
-    Guards -->|"lolos: susun jawaban"| Ollama
-    Guards -.->|"tertahan: jawab tanpa LLM"| API_Chat
-    Ollama --- Qwen
-    API_Chat -->|"SSE Stream"| Widget
-    API_Chat -->|"JSON Response"| WAWebhook
+    %% Gateway ke Python AI
+    APIGateway -->|"Forward Query + Injeksi Prompt"| API_Chat
+    EkstraksiCtrl -->|"Trigger Ingestion"| API_Ekstraksi
+    DocManager -->|"Proxy / Status Check"| PythonAI
 
-    %% Queue Broker
-    API_Doc -->|"Enqueue"| Redis
-    Redis -->|"Dequeue"| Queue
+    %% Python AI Internal
+    API_Chat --> ToolRouter
+    ToolRouter --> SessionMem
+    SessionMem --> RAGChain
+    RAGChain --> ParentChild
+    ParentChild --> Guards
+    Guards -->|"Inferensi Terpandu"| QwenText
+    Ollama --- QwenText
+    Ollama --- QwenVision
 
-    style Frontend fill:#1a1a2e,stroke:#e94560,color:#fff
-    style Laravel fill:#0f3460,stroke:#16213e,color:#fff
-    style Python fill:#533483,stroke:#2b2d42,color:#fff
-    style Storage fill:#1b1b2f,stroke:#e2e2e2,color:#fff
-    style AI fill:#2d4059,stroke:#ea5455,color:#fff
+    %% Celery Ingestion
+    API_Ekstraksi -->|"Enqueue Task"| Redis
+    Redis -->|"Dequeue"| CeleryWorker
+    CeleryWorker --> VisionOCR
+    VisionOCR --> QwenVision
+    CeleryWorker -->|"Simpan Halaman/Job"| MySQL
+    CeleryWorker -->|"Upsert Vektor"| ChromaDB
+
+    %% Storage & Logs
+    RAGChain -->|"Dense Query"| ChromaDB
+    RAGChain -->|"Sparse Match"| MySQL
+    AuditLog -->|"Insert Latency & Tokens"| MySQL
+    Degradation -.->|"Fallback saat Python 503"| APIGateway
+
+    style Frontend fill:#1a1a2e,stroke:#3b82f6,color:#fff
+    style LaravelGateway fill:#0f3460,stroke:#3b82f6,color:#fff
+    style PythonAI fill:#311b92,stroke:#8b5cf6,color:#fff
+    style Storage fill:#1b1b2f,stroke:#10b981,color:#fff
+    style AI fill:#2d4059,stroke:#f59e0b,color:#fff
 ```
 
 ---
 
-## 2. Alur Data Detail
+## 2. Alur Kerja Komponen Utama
 
-### A. Alur Upload & Pemrosesan Dokumen (Admin)
+### A. Alur Ingestion & Ekstraksi Bertahap (Step-by-Step with Manual Correction)
 
 ```mermaid
 sequenceDiagram
-    participant Admin
-    participant Laravel
-    participant MySQL
-    participant FastAPI as Python (FastAPI)
-    participant Redis
-    participant Celery as Celery Worker
-    participant OCR as Deskew + OCR Vision (qwen2.5vl)
-    participant ChromaDB
+    participant Admin as Admin (Frontend UI)
+    participant Laravel as Laravel Backend
+    participant MySQL as MySQL Database
+    participant Celery as Celery Worker + Redis
+    participant Vision as PyMuPDF + Qwen2.5-VL (Ollama)
+    participant Chroma as ChromaDB (BGE-M3)
 
-    Admin->>Laravel: Upload PDF baru (replace)
-    Laravel->>Laravel: Simpan file ke /storage
-    Laravel->>MySQL: INSERT/UPDATE documents (status='processing')
-    Laravel->>FastAPI: POST /api/docs/process
-    FastAPI->>Redis: Enqueue task
-    FastAPI-->>Laravel: 202 Accepted ("Sedang diproses")
-    Laravel-->>Admin: "Dokumen sedang diproses di latar belakang ✅"
-
-    Note over Admin,Laravel: Admin bebas menutup browser / lanjut kerja
-
-    Redis->>Celery: Dequeue task
-    Celery->>Celery: Deteksi PDF (teks / scan gambar?)
-
-    alt PDF Scan Gambar
-        Celery->>OCR: Ekstrak teks via OCR
-        OCR-->>Celery: Teks hasil OCR
-    else PDF Teks Biasa
-        Celery->>Celery: Ekstrak teks langsung (PyMuPDF)
+    Admin->>Laravel: Upload Dokumen PDF SOP
+    Laravel->>MySQL: Buat rekaman dokumen & ekstraksi_job (status='antre')
+    Laravel->>Celery: Pemicu tugas ekstraksi berjenjang
+    
+    loop Per Halaman PDF
+        Celery->>Vision: Cek native text vs scanned image
+        alt Scan Image
+            Vision->>Vision: Deskewing 0.25° precision
+            Vision->>Vision: Vision OCR (qwen2.5vl:7b)
+        else Native Digital Text
+            Vision->>Vision: Ekstrak teks & tabel Markdown murni
+        end
+        Vision-->>Celery: Teks halaman
+        Celery->>MySQL: Simpan teks ke ekstraksi_halaman
+        Celery->>MySQL: Update progres halaman di ekstraksi_job
     end
 
-    Celery->>Celery: Chunking teks (split per ~500 token)
-    Celery->>ChromaDB: DELETE vektor lama (by document_id)
-    Celery->>ChromaDB: INSERT vektor baru + metadata
-    Celery->>MySQL: UPDATE status='completed'
-
-    Note over Admin,MySQL: Saat Admin buka dashboard lagi...
-    Admin->>Laravel: Buka halaman Dokumen
-    Laravel->>MySQL: SELECT status
-    MySQL-->>Laravel: status='completed'
-    Laravel-->>Admin: Badge hijau "✅ Selesai Diproses"
+    Celery->>MySQL: Update status job -> 'menunggu_koreksi'
+    Admin->>Laravel: Buka Document Detail & Manual Correction Editor
+    Admin->>Laravel: Periksa halaman mencurigakan & edit teks jika perlu
+    Admin->>Laravel: Klik "Simpan & Masukkan ke Korpus Vektor"
+    Laravel->>Celery: Jalankan embedding & chunking
+    Celery->>Chroma: Parent-Child chunking + BAAI/bge-m3 embedding
+    Celery->>MySQL: Update status job -> 'selesai', status dokumen -> 'completed'
 ```
 
-### B. Alur Chat — Testing (React Widget)
+### B. Alur Inferensi RAG & Live Pipeline Tracing (Playground & Public API)
 
 ```mermaid
 sequenceDiagram
-    participant User as End-User (Browser)
-    participant Widget as React Chat Widget
-    participant FastAPI as Python (FastAPI)
-    participant RAG as RAG Service
-    participant ChromaDB
-    participant Ollama as Ollama (qwen2.5:7b)
+    participant Klien as Client (Playground / Widget / WhatsApp)
+    participant Gateway as Laravel API Gateway
+    participant Python as Python AI Microservice
+    participant Hybrid as Hybrid Search (Chroma + BM25)
+    participant LLM as Ollama (qwen3:8b)
 
-    User->>Widget: Ketik pertanyaan
-    Widget->>FastAPI: POST /api/chat/stream
-    FastAPI->>RAG: query + session_id + document_ids?
-
-    RAG->>Ollama: Betulkan ketik, tarik kata kunci
-    Ollama-->>RAG: Kata kunci
-    RAG->>ChromaDB: Vektor + BM25 (top-k 20, atau 80 utk daftar)
-    ChromaDB-->>RAG: Child chunk → ditelusuri ke parent
-
-    alt Penjaga tertahan (konteks kosong / premis palsu / minta daftar utuh)
-        RAG-->>FastAPI: Jawaban disusun terprogram, LLM tidak dipanggil
-    else Lolos penjaga
-        RAG->>Ollama: System prompt (konteks) + pertanyaan
-        Ollama-->>RAG: Token stream
+    Klien->>Gateway: POST /api/v1/chat/stream (Bearer sk_live_xxx)
+    Gateway->>Gateway: Validasi API Key & ambil pengaturan prompt aktif
+    Gateway->>Python: Forward POST /api/chat/stream
+    
+    Python-->>Klien: SSE trace stage 1: "Mencari konteks di ChromaDB & BM25..."
+    Python->>Hybrid: Retrieval Dense (Cosine) + Sparse (BM25)
+    Hybrid-->>Python: Ambil child chunks -> lookup parent chunk utuh
+    
+    Python-->>Klien: SSE trace stage 2: "RRF Re-ranking (k=60) & deduplikasi konteks..."
+    Python->>Python: Hitung skor RRF, filter ambang relevansi & evaluasi guardrails
+    
+    Python-->>Klien: SSE trace stage 3: "Mengirim konteks ke Ollama (qwen3:8b)..."
+    Python->>LLM: Injeksi system prompt + konteks + pertanyaan pengguna
+    
+    loop Token Streaming
+        LLM-->>Python: Token chunk
+        Python-->>Klien: SSE type="chunk", content="..."
     end
 
-    loop Setiap potongan
-        FastAPI-->>Widget: data: {"type":"chunk","content":"..."}
-    end
-    FastAPI-->>Widget: data: {"type":"done","content":""}
-    Widget-->>User: Jawaban + sumber dokumen
-
-    Note over FastAPI,Widget: Kegagalan dikirim sebagai {"type":"error"},<br/>bukan kode status — koneksi SSE sudah telanjur terbuka
-```
-
-### C. Alur Chat — Produksi (WhatsApp)
-
-```mermaid
-sequenceDiagram
-    participant User as End-User (HP)
-    participant WA as WhatsApp Business API
-    participant FastAPI as Python (FastAPI)
-    participant RAG as RAG Service
-    participant ChromaDB
-    participant Ollama as Ollama (qwen2.5:7b)
-
-    User->>WA: Kirim pesan WhatsApp
-    WA->>FastAPI: POST /api/chat/message (webhook)
-
-    FastAPI->>RAG: query + session_id
-    RAG->>ChromaDB: Vektor + BM25 (top-k 20, atau 80 utk daftar)
-    ChromaDB-->>RAG: Child chunk → ditelusuri ke parent
-    RAG->>Ollama: System prompt (konteks) + pertanyaan
-    Ollama-->>RAG: Jawaban utuh
-
-    FastAPI-->>WA: JSON {reply, sources[]}
-    WA-->>User: Pesan balasan otomatis di WhatsApp
-
-    Note over FastAPI,WA: Mesin RAG-nya sama dengan jalur widget;<br/>bedanya hanya jawaban dikirim utuh, bukan dialirkan
+    Python-->>Klien: SSE type="telemetry", content={latency_ms, context_tokens, grounding}
+    Python-->>Klien: SSE type="sources", content=[{doc_name, page, document_id}]
+    Python-->>Klien: SSE type="done"
+    
+    Gateway->>Gateway: Simpan log percakapan, token, & latensi ke tabel chat_logs
 ```
 
 ---
 
-## 3. Struktur Proyek
+## 3. Struktur Proyek Terkini
 
 ```
 agentic-ai/
-├── 📁 laravel-admin/              # Dashboard Admin (Laravel)
-│   ├── app/
-│   │   ├── Http/Controllers/
-│   │   │   ├── AuthController.php
-│   │   │   └── DocumentController.php
-│   │   ├── Models/
-│   │   │   ├── User.php
-│   │   │   └── Document.php
-│   │   └── Services/
-│   │       └── AiMicroserviceClient.php    # HTTP client ke Python
-│   ├── resources/views/
-│   │   ├── dashboard.blade.php
-│   │   └── documents/
-│   │       ├── index.blade.php             # Daftar PDF + status badge
-│   │       └── show.blade.php              # Preview PDF (PDF.js)
-│   ├── routes/
-│   │   └── web.php
-│   ├── database/migrations/
-│   │   └── xxxx_create_documents_table.php
-│   ├── .env
-│   └── docker/
-│       └── Dockerfile
-│
-├── 📁 python-ai/                  # AI Microservice (FastAPI)
-│   ├── app/
-│   │   ├── main.py                         # FastAPI entry point
-│   │   ├── config.py                       # LLM_MODEL, EMBEDDING_MODEL, dll.
-│   │   ├── routers/
-│   │   │   ├── documents.py                # POST /api/docs/process
-│   │   │   └── chat.py                     # POST /api/chat/stream (SSE)
-│   │   ├── services/
-│   │   │   ├── pdf_processor.py            # OCR detection + extraction
-│   │   │   ├── embedding_service.py        # Chunking + ChromaDB upsert
-│   │   │   ├── rag_service.py              # RAG chain (retrieval + LLM)
-│   │   │   └── tool_router.py              # Semantic routing / tool calling
-│   │   └── tasks/
-│   │       └── process_document.py         # Celery async task
-│   ├── requirements.txt
-│   ├── .env
-│   └── docker/
-│       └── Dockerfile
-│
-├── 📁 react-widget/               # Chat Widget — TESTING ONLY (React.js)
+├── admin-frontend/         # Dashboard Manajemen & RAG Playground (React + Vite + Tailwind)
 │   ├── src/
-│   │   ├── App.jsx
-│   │   ├── components/
-│   │   │   ├── ChatWidget.jsx
-│   │   │   ├── MessageBubble.jsx
-│   │   │   └── SourceReference.jsx
-│   │   └── hooks/
-│   │       └── useStreamChat.js            # SSE stream handler
+│   │   ├── api/            # Client API (documents, categories, apiKeys, chatLogs, settings, mesin)
+│   │   ├── components/     # Layout, Modal, ManualCorrectionEditor, EmbedProgressModal, Settings
+│   │   ├── pages/          # Dashboard, DocumentDetail, Categories, ApiKeys, ChatLogs, Mesin, Settings
+│   │   └── services/       # SSE Stream singleton & persistent tracing state
 │   ├── package.json
 │   └── vite.config.js
-│   ⚠️ Folder ini TIDAK di-deploy ke produksi.
-│      Produksi menggunakan WhatsApp Business API webhook.
 │
-├── 📄 docker-compose.yml          # Orkestrasi semua service
-├── 📄 .env.example                # Template environment variables
-└── 📄 README.md
+├── laravel-admin/          # Backend Admin API, Auth Sanctum & API Gateway (Laravel 11)
+│   ├── app/
+│   │   ├── Http/Controllers/Api/
+│   │   │   ├── AuthController.php          # Login & Admin Token
+│   │   │   ├── DocumentController.php      # Upload, Sync, & Manage Documents
+│   │   │   ├── EkstraksiController.php     # Multi-step OCR Extraction Endpoints
+│   │   │   ├── ApiKeyController.php        # External API Key Management
+│   │   │   ├── ChatLogController.php       # Telemetry & Audit Logs
+│   │   │   ├── SettingController.php       # LLM Prompts, WhatsApp & System Settings
+│   │   │   ├── FastPathController.php      # Quick Responses / Shortcuts
+│   │   │   ├── DirectoryController.php     # Service Directory Lookup
+│   │   │   └── V1/                         # Public API Gateway Endpoints
+│   │   ├── Http/Middleware/
+│   │   │   └── ApiKeyMiddleware.php        # Otentikasi Public API Gateway
+│   │   ├── Models/
+│   │   │   ├── Document.php, DocumentLog.php
+│   │   │   ├── EkstraksiJob.php, EkstraksiHalaman.php
+│   │   │   ├── ApiKey.php, ChatLog.php
+│   │   │   └── ChatbotFastPath.php, ChatbotDirectory.php
+│   │   └── Services/
+│   │       ├── AiMicroserviceClient.php    # HTTP & SSE Client ke Python
+│   │       └── GracefulDegradationService.php # Fallback Handler saat AI Down
+│   ├── routes/
+│   │   └── api.php                         # Routing Sanctum, Admin, & V1 Gateway
+│   └── database/migrations/                # Skema Database MySQL
+│
+├── python-ai/              # AI Microservice RAG, Hybrid Search & OCR (FastAPI + Celery)
+│   ├── app/
+│   │   ├── main.py                         # FastAPI App & Middleware
+│   │   ├── config.py                       # Settings & Environment Variables
+│   │   ├── database.py                     # SQLAlchemy MySQL Connector
+│   │   ├── schemas.py                      # Pydantic Schemas
+│   │   ├── routers/
+│   │   │   ├── chat.py                     # Streaming & Synchronous Chat Endpoints
+│   │   │   ├── documents.py                # Direct Document Processing Endpoints
+│   │   │   └── ekstraksi.py                # Granular Page Extraction Endpoints
+│   │   ├── services/
+│   │   │   ├── rag_service.py              # Hybrid Search, RRF, Prompt Assembly & Guards
+│   │   │   ├── embedding_service.py        # BGE-M3 Embedder & ChromaDB Manager
+│   │   │   ├── pdf_processor.py            # PyMuPDF, Deskewing, & Qwen2.5-VL Vision OCR
+│   │   │   ├── ekstraksi_bertahap.py       # Page-by-page pipeline orchestrator
+│   │   │   ├── session_memory.py           # Multi-turn conversation buffer with TTL
+│   │   │   └── tool_router.py              # Semantic intent & fast-path dispatcher
+│   │   └── tasks/
+│   │       ├── process_document.py         # Celery Task: Legacy Document Ingestion
+│   │       └── ekstraksi.py                # Celery Task: Granular Step Extraction
+│   ├── requirements.txt
+│   └── reset_jobs.py                       # Pembersih status pekerjaan tertahan
+│
+├── docs/                   # Spesifikasi Teknis, Arsitektur, Panduan Integrasi, dan Telemetri
+├── start-all.sh            # Skrip orkestrasi peluncur seluruh layanan (Single Command)
+└── stop-all.sh             # Skrip penghentian seluruh layanan
 ```
 
 ---
 
-## 4. Skema Database (MySQL — Laravel)
+## 4. Skema Database Relasional (MySQL)
 
 ```mermaid
 erDiagram
@@ -273,121 +249,82 @@ erDiagram
 
     documents {
         bigint id PK
-        string title "Nama dokumen (SOP Jaringan 2026)"
-        string original_filename "file asli yang diupload"
-        string storage_path "path di storage Laravel"
+        string title
+        string original_name
+        string file_path
         enum status "pending | processing | completed | failed"
         enum pdf_type "text | scanned | mixed | unknown"
-        text error_message "nullable - pesan error jika gagal"
-        integer total_pages "nullable - jumlah halaman PDF"
-        integer total_chunks "nullable - jumlah chunk di ChromaDB"
-        bigint uploaded_by FK "FK ke users.id"
-        timestamp processed_at "nullable - waktu selesai proses"
+        text error_message
+        integer total_pages
+        integer total_chunks
+        bigint category_id FK
+        timestamp processed_at
         timestamp created_at
         timestamp updated_at
     }
 
-    document_logs {
-        bigint id PK
-        bigint document_id FK
-        enum action "uploaded | processing | ocr_started | embedding_started | completed | failed | replaced"
-        text details "nullable - detail log"
+    ekstraksi_job {
+        bigint document_id PK
+        enum status "antre | berjalan | jeda | menunggu_koreksi | selesai | gagal"
+        tinyint jeda_diminta
+        integer halaman_total
+        integer halaman_selesai
+        text petunjuk_format
+        text pesan
+        timestamp updated_at
+    }
+
+    ekstraksi_halaman {
+        bigint document_id PK
+        integer page_number PK
+        longtext text
+        tinyint diperiksa
         timestamp created_at
     }
 
-    users ||--o{ documents : "uploads"
-    documents ||--o{ document_logs : "has logs"
-```
+    api_keys {
+        bigint id PK
+        string name
+        string key_hash UK
+        string key_preview
+        json permissions
+        integer rate_limit
+        boolean is_active
+        timestamp last_used_at
+        timestamp expires_at
+        timestamp created_at
+    }
 
-### Penjelasan Kolom Penting
+    chat_logs {
+        bigint id PK
+        string session_id
+        text query
+        longtext response
+        string channel "widget | whatsapp | playground | api"
+        integer latency_ms
+        integer prompt_tokens
+        integer completion_tokens
+        boolean is_grounded
+        json source_references
+        integer user_rating
+        timestamp created_at
+    }
 
-| Kolom           | Fungsi                                                                                              |
-| --------------- | --------------------------------------------------------------------------------------------------- |
-| `status`        | Digunakan Laravel untuk menampilkan badge warna (kuning=processing, hijau=completed, merah=failed)  |
-| `pdf_type`      | Diisi Python setelah deteksi, memberi tahu admin apakah PDF nya text murni atau hasil scan          |
-| `total_chunks`  | Diisi Python setelah embedding selesai, membantu admin memahami seberapa "besar" dokumen di mata AI |
-| `error_message` | Jika proses OCR/embedding gagal, Python menyimpan pesan error agar admin tahu penyebabnya           |
-| `document_logs` | Tabel audit trail — mencatat riwayat setiap aksi pada dokumen                                       |
-
----
-
-## 5. Konfigurasi Environment (`.env`)
-
-### Python AI Microservice (`python-ai/.env`)
-
-```env
-# === LLM Configuration ===
-# Dua model dipakai TERPISAH dan itu disengaja:
-#   LLM_MODEL_NAME    -> model teks, menyusun jawaban chat
-#   VISION_MODEL_NAME -> model multimodal, membaca halaman pindai (OCR)
-# Memakai satu model multimodal untuk keduanya membuat chat jauh lebih lambat.
-LLM_MODEL_NAME=qwen2.5:7b
-VISION_MODEL_NAME=qwen2.5vl
-OLLAMA_BASE_URL=http://localhost:11434
-
-# === Embedding ===
-# Mengganti model ini menuntut ingest ulang seluruh dokumen —
-# vektor lama tidak sebanding dengan vektor model baru.
-EMBEDDING_MODEL_NAME=BAAI/bge-m3
-
-# === Vector DB ===
-CHROMA_PERSIST_DIR=./data/chromadb
-
-# === Database (Shared with Laravel) ===
-MYSQL_HOST=localhost
-MYSQL_PORT=3306
-MYSQL_DATABASE=agentic_copilot
-MYSQL_USER=root
-MYSQL_PASSWORD=secret
-
-# === Queue (Celery) ===
-CELERY_BROKER_URL=redis://localhost:6379/0
-CELERY_RESULT_BACKEND=redis://localhost:6379/1
-
-# === Security ===
-INTERNAL_API_TOKEN=your-secure-internal-token-here
-```
-
-### Laravel Admin (`laravel-admin/.env`)
-
-```env
-# === App ===
-APP_NAME="Agentic Copilot Admin"
-APP_URL=http://localhost:8000
-
-# === Database ===
-DB_CONNECTION=mysql
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_DATABASE=agentic_copilot
-DB_USERNAME=root
-DB_PASSWORD=secret
-
-# === Python Microservice ===
-AI_SERVICE_URL=http://localhost:8080
-AI_SERVICE_TOKEN=your-secure-internal-token-here
+    documents ||--|| ekstraksi_job : "tracked by"
+    documents ||--o{ ekstraksi_halaman : "contains"
 ```
 
 ---
 
-## 6. Tech Stack Summary
+## 5. Ringkasan Port dan Komunikasi Antar Servis
 
-| Layer                     | Teknologi                             | Versi / Catatan                  |
-| ------------------------- | ------------------------------------- | -------------------------------- |
-| **Dashboard Admin**       | Laravel (PHP)                         | v11.x                            |
-| **AI Microservice**       | Python + FastAPI                      | Python 3.11+                     |
-| **Chat Widget (Testing)** | React.js + Vite                       | v18+ — dev/demo only             |
-| **Channel Produksi**      | WhatsApp Business API                 | Webhook → POST /api/chat/message |
-| **LLM Runtime**           | Ollama                                | Latest                           |
-| **LLM Model (teks)**      | `qwen2.5:7b`                          | menyusun jawaban, `temperature=0` |
-| **LLM Model (vision)**    | `qwen2.5vl`                           | OCR halaman pindai via `/api/generate` |
-| **Embedding**             | `BAAI/bge-m3`                         | via SentenceTransformers         |
-| **Vector DB**             | ChromaDB                              | Persistent mode, jarak cosine    |
-| **Pencarian kata**        | `rank_bm25`                           | digabung dengan vektor lewat RRF |
-| **OCR**                   | Model vision (bukan Tesseract)        | perlu pelurusan halaman 0,25° lebih dulu |
-| **PDF Parsing**           | PyMuPDF (fitz)                        | Deteksi teks vs scan, render, pelurusan |
-| **Penilai evaluasi**      | DeepSeek (RAGAS) + penilai deterministik | model penjawab tidak menilai dirinya sendiri |
-| **AI Orchestration**      | LangChain                             | Latest                           |
-| **Task Queue**            | Celery + Redis                        | Async background jobs            |
-| **Database**              | MySQL                                 | v8.x                             |
-| **Containerization**      | Docker Compose                        | Multi-service                    |
+| Layanan | Host & Port | Protokol | Autentikasi | Konsumen |
+| :--- | :--- | :--- | :--- | :--- |
+| **Admin Frontend** | `http://localhost:5173` | HTTP / SSE | Browser Web | Administrator Sistem |
+| **Laravel Backend** | `http://localhost:8000` | HTTP REST / JSON | Bearer Sanctum Token | Admin Frontend |
+| **Public API Gateway** | `http://localhost:8000/api/v1` | HTTP / SSE | Bearer API Key (`sk_live_xxx`) | Portal Web, WhatsApp, CRM |
+| **Python AI Microservice** | `http://localhost:8080` | HTTP REST / SSE | Bearer Internal Secret | Laravel Gateway |
+| **Ollama LLM Engine** | `http://localhost:11434` | HTTP REST | Internal Localhost | Python AI Microservice |
+| **ChromaDB** | Local Embedded Path | Native Python API | Local File Lock | Python AI Microservice |
+| **Redis Broker** | `localhost:6379` | TCP Redis Protocol | Internal Localhost | Celery Worker & FastAPI |
+| **MySQL Server** | `localhost:3306` | TCP MySQL Protocol | User / Password | Laravel & Python AI |

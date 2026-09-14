@@ -6,6 +6,7 @@ dan ChromaDB sebagai vector store persisten.
 
 import logging
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -24,21 +25,29 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 # setelan itu tidak akan pernah terbaca.
 from app.config import settings  # noqa: I001
 
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import CrossEncoder, SentenceTransformer
 
 logger = logging.getLogger(__name__)
 
 # Variabel global untuk lazy loading (singleton pattern)
 _embedding_model: SentenceTransformer | None = None
+_reranker_model: CrossEncoder | None = None
 
 _chroma_collection: Collection | None = None
 
 # Nama koleksi di ChromaDB
 _COLLECTION_NAME = "documents"
 
-# Konfigurasi text splitter
-_CHUNK_SIZE = 500       # Ukuran chunk dalam karakter (~125 token)
-_CHUNK_OVERLAP = 50     # Overlap antar chunk untuk menjaga konteks
+
+# Perangkat tempat bge-m3 dijalankan. Lihat EMBEDDING_DEVICE di config.py untuk
+# alasan dan kapan perlu diubah.
+#
+# None diserahkan ke SentenceTransformer, yang berarti auto-detect (CUDA bila
+# tersedia) — perilaku bawaan pustakanya.
+_EMBEDDING_DEVICE = (
+    None if settings.EMBEDDING_DEVICE.strip().lower() == "auto"
+    else settings.EMBEDDING_DEVICE.strip().lower()
+)
 
 
 def get_embedding_model() -> SentenceTransformer:
@@ -60,9 +69,14 @@ def get_embedding_model() -> SentenceTransformer:
     if _embedding_model is not None:
         return _embedding_model
 
-    logger.info("Memuat model embedding: %s ...", settings.EMBEDDING_MODEL_NAME)
+    logger.info(
+        "Memuat model embedding: %s di %s ...",
+        settings.EMBEDDING_MODEL_NAME, settings.EMBEDDING_DEVICE,
+    )
     try:
-        _embedding_model = SentenceTransformer(settings.EMBEDDING_MODEL_NAME)
+        _embedding_model = SentenceTransformer(
+            settings.EMBEDDING_MODEL_NAME, device=_EMBEDDING_DEVICE
+        )
     except Exception as e:                                      # noqa: BLE001
         if type(e).__name__ != "OfflineModeIsEnabled":
             raise
@@ -75,10 +89,68 @@ def get_embedding_model() -> SentenceTransformer:
         konstanta = sys.modules.get("huggingface_hub.constants")
         if konstanta is not None:
             konstanta.HF_HUB_OFFLINE = False
-        _embedding_model = SentenceTransformer(settings.EMBEDDING_MODEL_NAME)
+        _embedding_model = SentenceTransformer(
+            settings.EMBEDDING_MODEL_NAME, device=_EMBEDDING_DEVICE
+        )
 
-    logger.info("Model embedding berhasil dimuat ✅")
+    logger.info("Model embedding berhasil dimuat")
     return _embedding_model
+
+
+def get_reranker_model() -> CrossEncoder | None:
+    """
+    Mendapatkan model CrossEncoder Reranker (lazy loading).
+    Model hanya dimuat sekali saat pertama kali dipanggil.
+    Dijalankan di CPU (device='cpu') agar 100% VRAM GPU 6 GB tetap dialokasikan
+    penuh untuk LLM (qwen3:8b) dengan context window besar tanpa OOM.
+
+    Returns:
+        Instance CrossEncoder yang sudah dimuat, atau None jika dinonaktifkan/gagal.
+    """
+    global _reranker_model
+    if not settings.RERANKER_ENABLED:
+        return None
+    if _reranker_model is not None:
+        return _reranker_model
+
+    logger.info(
+        "Memuat model Reranker: %s di %s ...",
+        settings.RERANKER_MODEL_NAME, settings.RERANKER_DEVICE,
+    )
+    try:
+        _reranker_model = CrossEncoder(
+            settings.RERANKER_MODEL_NAME,
+            device=settings.RERANKER_DEVICE,
+        )
+        logger.info("Model Reranker berhasil dimuat di %s", settings.RERANKER_DEVICE)
+    except Exception as e:                                      # noqa: BLE001
+        if type(e).__name__ == "OfflineModeIsEnabled":
+            logger.warning(
+                "Mode luring HuggingFace menggagalkan pemuatan reranker — dimatikan "
+                "lalu dicoba ulang."
+            )
+            os.environ.pop("HF_HUB_OFFLINE", None)
+            konstanta = sys.modules.get("huggingface_hub.constants")
+            if konstanta is not None:
+                konstanta.HF_HUB_OFFLINE = False
+            try:
+                _reranker_model = CrossEncoder(
+                    settings.RERANKER_MODEL_NAME,
+                    device=settings.RERANKER_DEVICE,
+                )
+                logger.info("Model Reranker berhasil dimuat di %s (setelah reset luring)", settings.RERANKER_DEVICE)
+                return _reranker_model
+            except Exception as retry_err:
+                logger.warning("Gagal memuat model Reranker (%s): %s", settings.RERANKER_MODEL_NAME, retry_err)
+                _reranker_model = None
+                return None
+        logger.warning(
+            "Gagal memuat model Reranker (%s), RAG akan berjalan dengan RRF standar: %s",
+            settings.RERANKER_MODEL_NAME, e,
+        )
+        _reranker_model = None
+
+    return _reranker_model
 
 
 def get_chroma_collection() -> Collection:
@@ -113,78 +185,13 @@ def get_chroma_collection() -> Collection:
             metadata={"hnsw:space": "cosine"},  # Gunakan cosine similarity
         )
         logger.info(
-            "Koleksi ChromaDB '%s' siap (total: %d dokumen) ✅",
+            "Koleksi ChromaDB '%s' siap (total: %d chunk vektor)",
             _COLLECTION_NAME,
             _chroma_collection.count(),
         )
     return _chroma_collection
 
 
-import re
-
-def chunk_text(pages: list[dict]) -> list[dict]:
-    """
-    Memecah teks per halaman menjadi chunk.
-    Prioritas: split per entri prosedur ("**No. X**") supaya satu entri
-    (Uraian, Pelaksana, Waktu, Output) tidak terpotong ke chunk berbeda.
-    Fallback ke character splitter untuk entri yang masih terlalu panjang
-    atau teks yang bukan format list bernomor.
-    """
-    # Splitter fallback untuk entri yang masih kepanjangan (>1200 karakter)
-    fallback_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1200,
-        chunk_overlap=150,
-        length_function=len,
-        separators=["\n\n", "\n", ". ", " ", ""],
-    )
-
-    chunks: list[dict] = []
-    chunk_index = 0
-
-    # Pola boundary entri: "**No. 1**", "**No.1**", "No. 1", dll
-    entry_pattern = re.compile(r"(?=\*\*No\.?\s*\d+\*\*)")
-
-    for page in pages:
-        page_number = page["page_number"]
-        text = page["text"]
-
-        # Coba split berdasarkan entri bernomor dulu
-        parts = entry_pattern.split(text)
-        parts = [p.strip() for p in parts if p.strip()]
-
-        # Kalau tidak ketemu pola "No. X" sama sekali, treat sebagai 1 blok teks biasa
-        if len(parts) <= 1:
-            parts = [text]
-
-        for part in parts:
-            if len(part) <= 1200:
-                # Entri utuh muat dalam satu chunk — JANGAN dipecah lagi
-                # Tambahkan prefix halaman ke teks chunk agar LLM punya konteks inline
-                text_with_meta = f"[Halaman {page_number}]\n{part}"
-                chunks.append({
-                    "text": text_with_meta,
-                    "page_number": page_number,
-                    "chunk_index": chunk_index,
-                })
-                chunk_index += 1
-            else:
-                # Entri kepanjangan, pecah dengan overlap besar
-                sub_chunks = fallback_splitter.split_text(part)
-                for sc in sub_chunks:
-                    text_with_meta = f"[Halaman {page_number}]\n{sc}"
-                    chunks.append({
-                        "text": text_with_meta,
-                        "page_number": page_number,
-                        "chunk_index": chunk_index,
-                    })
-                    chunk_index += 1
-
-    logger.info(
-        "Teks dipecah menjadi %d chunk dari %d halaman",
-        len(chunks),
-        len(pages),
-    )
-    return chunks
 
 
 # ── Konfigurasi Parent-Child Chunking ─────────────────────────────
@@ -377,24 +384,20 @@ def derive_page_context(
 def chunk_text_hierarchical(
     pages: list[dict],
     document_title: str | None = None,
+    parent_chunk_size: int = _PARENT_CHUNK_SIZE,
+    parent_chunk_overlap: int = _PARENT_CHUNK_OVERLAP,
+    child_chunk_size: int = _CHILD_CHUNK_SIZE,
+    child_chunk_overlap: int = _CHILD_CHUNK_OVERLAP,
+    strategy: str = "auto",
 ) -> tuple[list[dict], list[dict]]:
     """
     Memecah teks menjadi parent chunks (besar) dan child chunks (kecil).
 
-    - Parent chunks (~1500 char): Dikirim ke LLM sebagai konteks yang lengkap.
-    - Child chunks (~300 char): Di-embed untuk pencarian semantik yang presisi.
+    - Parent chunks: Dikirim ke LLM sebagai konteks yang lengkap.
+    - Child chunks: Di-embed untuk pencarian semantik yang presisi.
     - Setiap child memiliki 'parent_index' yang menunjuk ke parent-nya.
 
-    Untuk dokumen SOP yang memiliki format "**No. X**", setiap entri prosedur
-    dijadikan satu parent chunk utuh agar tidak terpotong.
-
-    Args:
-        pages: List halaman hasil ekstraksi PDF.
-        document_title: Judul dokumen untuk konteks global tiap chunk. Bila None,
-            diturunkan otomatis dari halaman pertama lewat derive_document_title().
-
-    Returns:
-        Tuple of (parent_chunks, child_chunks).
+    Parameter ukuran dan tumpang tindih dapat dikustomisasi secara dinamis dari API / UI.
     """
     if document_title is None:
         document_title = derive_document_title(pages)
@@ -402,15 +405,16 @@ def chunk_text_hierarchical(
         logger.info("Judul dokumen (konteks global chunk): '%s'", document_title)
     else:
         logger.info("Judul dokumen tidak bisa diturunkan — chunk tanpa prefix topik")
+
     parent_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=_PARENT_CHUNK_SIZE,
-        chunk_overlap=_PARENT_CHUNK_OVERLAP,
+        chunk_size=parent_chunk_size,
+        chunk_overlap=parent_chunk_overlap,
         length_function=len,
         separators=["\n\n", "\n", ". ", " ", ""],
     )
     child_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=_CHILD_CHUNK_SIZE,
-        chunk_overlap=_CHILD_CHUNK_OVERLAP,
+        chunk_size=child_chunk_size,
+        chunk_overlap=child_chunk_overlap,
         length_function=len,
         separators=["\n\n", "\n", ". ", " ", ""],
     )
@@ -665,78 +669,6 @@ def delete_document_vectors(document_id: int) -> int:
         raise
 
 
-def embed_and_store(document_id: int, chunks: list[dict]) -> int:
-    """
-    Menghasilkan embedding untuk setiap chunk dan menyimpannya di ChromaDB.
-    (Fungsi flat/lama — dipertahankan untuk backward compatibility dengan Celery task.)
-
-    Args:
-        document_id: ID dokumen sumber.
-        chunks: List of dict dari chunk_text():
-                [{"text": "...", "page_number": 1, "chunk_index": 0}]
-
-    Returns:
-        Jumlah vektor yang berhasil disimpan.
-    """
-    if not chunks:
-        logger.warning("Tidak ada chunk untuk di-embed (dokumen %d)", document_id)
-        return 0
-
-    model = get_embedding_model()
-    collection = get_chroma_collection()
-
-    try:
-        # Siapkan data untuk batch insert
-        texts: list[str] = []
-        ids: list[str] = []
-        metadatas: list[dict[str, Any]] = []
-
-        for chunk in chunks:
-            chunk_id = f"doc_{document_id}_chunk_{chunk['chunk_index']}"
-            ids.append(chunk_id)
-            texts.append(chunk["text"])
-            metadatas.append({
-                "document_id": document_id,
-                "page_number": chunk["page_number"],
-                "chunk_index": chunk["chunk_index"],
-            })
-
-        # Generate embedding untuk semua teks sekaligus (batch processing)
-        logger.info(
-            "Menghasilkan embedding untuk %d chunk (dokumen %d)...",
-            len(texts),
-            document_id,
-        )
-        embeddings = model.encode(texts, show_progress_bar=False).tolist()
-
-        # Simpan ke ChromaDB (batch upsert untuk menghindari duplikasi)
-        batch_size = 100
-        for i in range(0, len(ids), batch_size):
-            batch_end = min(i + batch_size, len(ids))
-            collection.upsert(
-                ids=ids[i:batch_end],
-                embeddings=embeddings[i:batch_end],
-                documents=texts[i:batch_end],
-                metadatas=metadatas[i:batch_end],
-            )
-
-        _invalidate_search_index()
-
-        logger.info(
-            "Berhasil menyimpan %d vektor ke ChromaDB (dokumen %d)",
-            len(ids),
-            document_id,
-        )
-
-        return len(ids)
-
-    except Exception as e:
-        logger.error(
-            "Gagal meng-embed dan menyimpan chunk (dokumen %d): %s",
-            document_id,
-            str(e),
-        )
-        raise
 
 def get_document_chunks(document_id: int) -> list[dict]:
     """
@@ -776,6 +708,7 @@ def embed_and_store_hierarchical(
     document_id: int,
     parent_chunks: list[dict],
     child_chunks: list[dict],
+    progress_callback: Callable[[int, str], None] | None = None,
 ) -> int:
     """
     Menyimpan parent dan child chunks ke ChromaDB.
@@ -788,6 +721,7 @@ def embed_and_store_hierarchical(
         document_id: ID dokumen sumber.
         parent_chunks: List parent chunks dari chunk_text_hierarchical().
         child_chunks: List child chunks dari chunk_text_hierarchical().
+        progress_callback: Callback opsional (persen: int, pesan: str) untuk progres live.
 
     Returns:
         Jumlah total vektor yang berhasil disimpan (parent + child).
@@ -796,11 +730,14 @@ def embed_and_store_hierarchical(
         logger.warning("Tidak ada chunk untuk di-embed (dokumen %d)", document_id)
         return 0
 
+    if progress_callback:
+        progress_callback(35, "Memuat model embedding BAAI/bge-m3...")
+
     model = get_embedding_model()
     collection = get_chroma_collection()
 
     try:
-        batch_size = 100
+        batch_size = 50
 
         # ── Simpan Parent Chunks ──
         parent_texts: list[str] = []
@@ -817,6 +754,9 @@ def embed_and_store_hierarchical(
                 "chunk_index": c["chunk_index"],
                 "chunk_type": "parent",
             })
+
+        if progress_callback:
+            progress_callback(45, f"Menghitung embedding {len(parent_texts)} potongan induk...")
 
         logger.info(
             "Menghasilkan embedding untuk %d parent chunks (dokumen %d)...",
@@ -852,26 +792,34 @@ def embed_and_store_hierarchical(
                 "parent_id": f"doc_{document_id}_parent_{c['parent_index']}",
             })
 
-        logger.info(
-            "Menghasilkan embedding untuk %d child chunks (dokumen %d)...",
-            len(child_texts), document_id,
-        )
-        child_embeddings = model.encode(child_texts, show_progress_bar=False).tolist()
+        total_children = len(child_texts)
+        child_embeddings: list[list[float]] = []
 
-        for i in range(0, len(child_ids), batch_size):
-            end = min(i + batch_size, len(child_ids))
+        for i in range(0, total_children, batch_size):
+            end = min(i + batch_size, total_children)
+            batch_texts = child_texts[i:end]
+            if progress_callback:
+                pct = 55 + int((i / max(1, total_children)) * 35)
+                progress_callback(pct, f"Menghitung embedding potongan anak ({end}/{total_children})...")
+            batch_emb = model.encode(batch_texts, show_progress_bar=False).tolist()
             collection.upsert(
                 ids=child_ids[i:end],
-                embeddings=child_embeddings[i:end],
-                documents=child_texts[i:end],
+                embeddings=batch_emb,
+                documents=batch_texts,
                 metadatas=child_metadatas[i:end],
             )
+
+        if progress_callback:
+            progress_callback(95, "Memperbarui indeks pencarian ChromaDB...")
 
         logger.info("Disimpan %d child chunks (dokumen %d)", len(child_ids), document_id)
 
         _invalidate_search_index()
 
         total = len(parent_ids) + len(child_ids)
+        if progress_callback:
+            progress_callback(100, f"Selesai! {total} vektor berhasil disimpan.")
+
         logger.info(
             "Total %d vektor hierarchical disimpan ke ChromaDB (dokumen %d)",
             total, document_id,

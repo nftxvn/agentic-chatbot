@@ -8,13 +8,16 @@ import ResetPasswordPage from './pages/ResetPasswordPage'
 import DashboardPage from './pages/DashboardPage'
 import CategoriesPage from './pages/CategoriesPage'
 import DocumentDetailPage from './pages/DocumentDetailPage'
-import WhatsappSettingsPage from './pages/WhatsappSettingsPage'
+import ChatbotSettingsPage from './pages/ChatbotSettingsPage'
+import IntegrationsPage from './pages/IntegrationsPage'
+import ChatLogsPage from './pages/ChatLogsPage'
+import MesinPage from './pages/MesinPage'
 
 function AppLoader() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-[var(--bg-main)]">
       <div className="flex flex-col items-center gap-3">
-        <div className="w-10 h-10 border-4 border-sky-500/30 border-t-sky-500 rounded-full animate-spin" />
+        <div className="w-10 h-10 border-4 border-[var(--border-color)] border-t-sky-500 rounded-full animate-spin" />
       </div>
     </div>
   )
@@ -49,7 +52,7 @@ function AdminLayoutSkeleton() {
         <div className="flex-1 px-3 py-4 space-y-3">
           <div className="skeleton h-3 w-20 rounded-md mb-4 ml-2" />
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-3 px-3.5 py-3 rounded-xl bg-[var(--bg-input)]/40 border border-[var(--border-color)]/30">
+            <div key={i} className="flex items-center gap-3 px-3.5 py-3 rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)]">
               <div className="skeleton w-5 h-5 rounded-md shrink-0" />
               <div className="skeleton h-4 w-32 rounded-md" />
             </div>
@@ -128,7 +131,13 @@ export default function App() {
             <Route path="/dashboard"          element={<DashboardPage />} />
             <Route path="/categories"         element={<CategoriesPage />} />
             <Route path="/documents/:id"      element={<DocumentDetailPage />} />
-            <Route path="/settings/whatsapp"  element={<WhatsappSettingsPage />} />
+            <Route path="/settings/chatbot"   element={<ChatbotSettingsPage />} />
+            <Route path="/integrations"       element={<IntegrationsPage />} />
+            <Route path="/chat-logs"          element={<ChatLogsPage />} />
+            <Route path="/mesin"              element={<MesinPage />} />
+            {/* Backward compatibility redirects */}
+            <Route path="/settings/whatsapp"  element={<Navigate to="/integrations" replace />} />
+            <Route path="/settings/api-keys"  element={<Navigate to="/integrations" replace />} />
           </Route>
         </Routes>
       </BrowserRouter>
