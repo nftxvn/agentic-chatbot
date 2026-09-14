@@ -1,11 +1,11 @@
-﻿#!/bin/sh
+#!/bin/sh
 set -e
 
-# Jika node_modules belum ada di volume container, pasang otomatis
-if [ ! -d "/app/node_modules/vite" ]; then
+# Jika binary vite belum ada di volume container, pasang otomatis
+if [ ! -f "/app/node_modules/.bin/vite" ]; then
     echo "[Frontend Entrypoint] Memasang dependensi frontend..."
     npm install
 fi
 
 echo "[Frontend Entrypoint] Memulai Vite dev server pada port 5173..."
-exec node ./node_modules/vite/bin/vite.js --host 0.0.0.0 --port 5173
+exec npx vite --host 0.0.0.0 --port 5173
