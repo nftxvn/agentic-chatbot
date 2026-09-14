@@ -32,9 +32,10 @@ until php -r "try { new PDO('mysql:host=' . getenv('DB_HOST') . ';port=' . (gete
 done
 echo "[Laravel Entrypoint] Database MySQL berhasil terhubung!"
 
-# Jalankan migrasi database
-echo "[Laravel Entrypoint] Menjalankan migrasi database..."
+# Jalankan migrasi database & seeding awal
+echo "[Laravel Entrypoint] Menjalankan migrasi database & seeding awal..."
 php artisan migrate --force || true
+php artisan db:seed --force || true
 
 echo "[Laravel Entrypoint] Memulai server Laravel pada port 8000..."
 exec php artisan serve --host=0.0.0.0 --port=8000

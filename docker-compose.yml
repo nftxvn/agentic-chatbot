@@ -70,7 +70,6 @@ services:
       - CORS_ALLOW_ORIGINS=http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173
     volumes:
       - ./python-ai:/app
-      - python_chroma:/app/data/chromadb
       - /app/__pycache__
     networks:
       - agentic-net
@@ -115,7 +114,6 @@ services:
       - INTERNAL_API_TOKEN=dev-internal-token-secret-1234567890
     volumes:
       - ./python-ai:/app
-      - python_chroma:/app/data/chromadb
       - /app/__pycache__
     networks:
       - agentic-net
@@ -191,6 +189,7 @@ services:
     environment:
       - VITE_LARAVEL_URL=http://laravel-backend:8000
       - VITE_AI_URL=http://python-ai:8080
+      - INTERNAL_API_TOKEN=dev-internal-token-secret-1234567890
     stdin_open: true
     tty: true
     volumes:
@@ -208,7 +207,6 @@ services:
 volumes:
   mysql_data:
   redis_data:
-  python_chroma:
 
 networks:
   agentic-net:

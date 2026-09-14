@@ -24,7 +24,7 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/ai/, '/api'),
         headers: {
-          Authorization: 'Bearer 00a0fb9911bd594f2427853a52adbd094e0654326a47ec69128c3ebfe2195ea0',
+          Authorization: `Bearer ${process.env.INTERNAL_API_TOKEN || process.env.AI_SERVICE_TOKEN || 'dev-internal-token-secret-1234567890'}`,
         },
       },
       // Proxy API requests ke Laravel backend (port 8000 / container laravel-backend)
