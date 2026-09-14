@@ -1,4 +1,4 @@
-services:
+﻿services:
   # ==============================================================================
   # 1. DATABASE & CACHE
   # ==============================================================================
@@ -40,31 +40,7 @@ services:
       retries: 5
 
   # ==============================================================================
-  # 2. OLLAMA (LLM ENGINE & GPU SUPPORT)
-  # ==============================================================================
-  ollama:
-    image: ollama/ollama:latest
-    container_name: agentic-ollama
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    environment:
-      - OLLAMA_FLASH_ATTENTION=1
-      - OLLAMA_KV_CACHE_TYPE=q8_0
-    volumes:
-      - ollama_models:/root/.ollama
-    networks:
-      - agentic-net
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-
-  # ==============================================================================
-  # 3. PYTHON AI MICROSERVICE (FASTAPI)
+  # 2. PYTHON AI MICROSERVICE (FASTAPI)
   # ==============================================================================
   python-ai:
     build:
@@ -72,6 +48,8 @@ services:
       dockerfile: Dockerfile
     container_name: agentic-python-ai
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8080:8080"
     environment:
@@ -82,7 +60,7 @@ services:
       - MYSQL_PASSWORD=agentic_password
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
-      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - LLM_MODEL_NAME=${LLM_MODEL_NAME:-qwen2.5:7b}
       - VISION_MODEL_NAME=${VISION_MODEL_NAME:-qwen2.5vl:7b-q4_K_M}
       - EMBEDDING_MODEL_NAME=BAAI/bge-m3
@@ -101,8 +79,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      ollama:
-        condition: service_started
     deploy:
       resources:
         reservations:
@@ -112,7 +88,7 @@ services:
               capabilities: [gpu]
 
   # ==============================================================================
-  # 4. CELERY WORKER (BACKGROUND EXTRACTION & OCR QUEUE)
+  # 3. CELERY WORKER (BACKGROUND EXTRACTION & OCR QUEUE)
   # ==============================================================================
   celery-worker:
     build:
@@ -120,6 +96,8 @@ services:
       dockerfile: Dockerfile
     container_name: agentic-celery-worker
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: ["celery", "-A", "app.tasks.process_document.celery_app", "worker", "--loglevel=info"]
     environment:
       - MYSQL_HOST=mysql
@@ -129,7 +107,7 @@ services:
       - MYSQL_PASSWORD=agentic_password
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
-      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - LLM_MODEL_NAME=${LLM_MODEL_NAME:-qwen2.5:7b}
       - VISION_MODEL_NAME=${VISION_MODEL_NAME:-qwen2.5vl:7b-q4_K_M}
       - EMBEDDING_MODEL_NAME=BAAI/bge-m3
@@ -157,7 +135,7 @@ services:
               capabilities: [gpu]
 
   # ==============================================================================
-  # 5. LARAVEL BACKEND ADMIN API
+  # 4. LARAVEL BACKEND ADMIN API
   # ==============================================================================
   laravel-backend:
     build:
@@ -200,7 +178,7 @@ services:
         condition: service_started
 
   # ==============================================================================
-  # 6. ADMIN FRONTEND (VITE REACT SPA)
+  # 5. ADMIN FRONTEND (VITE REACT SPA)
   # ==============================================================================
   admin-frontend:
     build:
@@ -228,7 +206,6 @@ services:
 volumes:
   mysql_data:
   redis_data:
-  ollama_models:
   python_chroma:
 
 networks:
