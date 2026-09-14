@@ -72,24 +72,6 @@ python-dotenv==1.0.1
 requests==2.34.2
 
 
-# =============================================================================
-#  EVALUASI (RAGAS)  -  hanya untuk test_ragas_official.py
-#  Blok ini boleh dilewati di server produksi; layanan tetap jalan tanpanya.
-# =============================================================================
-#
-#  PERINGATAN KOMPATIBILITAS - jangan hapus keduanya:
-#  ragas 0.4.3 mengimpor `langchain_community.chat_models.vertexai`, modul yang
-#  sudah dibuang dari langchain-community 0.4.x. Tanpa penanganan khusus,
-#  `import ragas` gagal dengan ModuleNotFoundError. Penambalnya sudah ada di
-#  test_ragas_official.py (fungsi _patch_langchain_community_vertexai, baris
-#  139) dan berjalan sebelum ragas di-import. Skrip evaluasi baru yang memakai
-#  ragas HARUS memanggil penambal yang sama.
-#
-ragas==0.4.3
-langchain-community==0.4.2   # dibutuhkan ragas, bukan oleh app/
-litellm==1.96.0              # jalur ke juri Gemini
-instructor==1.15.4
-
 
 # =============================================================================
 #  CATATAN
