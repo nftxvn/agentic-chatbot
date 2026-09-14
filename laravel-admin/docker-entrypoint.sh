@@ -1,4 +1,4 @@
-﻿#!/bin/sh
+#!/bin/sh
 set -e
 
 echo "[Laravel Entrypoint] Menyiapkan environment Laravel..."
@@ -19,14 +19,14 @@ if [ ! -f "/var/www/html/vendor/autoload.php" ]; then
 fi
 
 # Generate APP_KEY jika belum ada di .env
-if [ -z "" ] || [ "" = "" ]; then
+if [ -z "$APP_KEY" ]; then
     echo "[Laravel Entrypoint] Menghasilkan APP_KEY..."
     php artisan key:generate --force || true
 fi
 
 # Tunggu database MySQL siap
 echo "[Laravel Entrypoint] Menunggu database MySQL terhubung..."
-until php -r "try { new PDO('mysql:host=' . getenv('DB_HOST') . ';port=' . (getenv('DB_PORT') ?: '3306') . ';dbname=' . getenv('DB_DATABASE'), getenv('DB_USERNAME'), getenv('DB_PASSWORD')); exit(0); } catch (\Exception \) { exit(1); }"; do
+until php -r "try { new PDO('mysql:host=' . getenv('DB_HOST') . ';port=' . (getenv('DB_PORT') ?: '3306') . ';dbname=' . getenv('DB_DATABASE'), getenv('DB_USERNAME'), getenv('DB_PASSWORD')); exit(0); } catch (\Throwable \$e) { exit(1); }"; do
     echo "[Laravel Entrypoint] Database MySQL belum siap, menunggu 2 detik..."
     sleep 2
 done

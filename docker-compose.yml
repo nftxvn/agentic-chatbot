@@ -1,4 +1,4 @@
-﻿services:
+services:
   # ==============================================================================
   # 1. DATABASE & CACHE
   # ==============================================================================
@@ -191,6 +191,8 @@
     environment:
       - VITE_LARAVEL_URL=http://laravel-backend:8000
       - VITE_AI_URL=http://python-ai:8080
+    stdin_open: true
+    tty: true
     volumes:
       - ./admin-frontend:/app
       - /app/node_modules
