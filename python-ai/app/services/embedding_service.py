@@ -10,7 +10,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import chromadb
 from chromadb.api.models.Collection import Collection
