@@ -232,14 +232,21 @@ export default function DashboardPage() {
 
   const formatDate = (dateString) => {
     if (!dateString) return "-";
-    const localStr = dateString.replace("Z", "").replace("+00:00", "");
-    return new Date(localStr).toLocaleDateString("id-ID", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    try {
+      const str = typeof dateString === "string" ? dateString : String(dateString);
+      const localStr = str.replace("Z", "").replace("+00:00", "");
+      const d = new Date(localStr);
+      if (isNaN(d.getTime())) return "-";
+      return d.toLocaleDateString("id-ID", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return "-";
+    }
   };
 
   const renderStatus = (doc) => {

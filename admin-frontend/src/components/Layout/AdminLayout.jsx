@@ -755,7 +755,7 @@ export default function AdminLayout() {
     }
   }, [location.pathname]);
 
-  const initial = user?.name?.charAt(0).toUpperCase() ?? "A";
+  const initial = (user?.name?.charAt(0) || "A").toUpperCase();
 
   return (
     <>

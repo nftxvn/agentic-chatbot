@@ -1,0 +1,236 @@
+services:
+  # ==============================================================================
+  # 1. DATABASE & CACHE
+  # ==============================================================================
+  mysql:
+    image: mysql:8.0
+    container_name: agentic-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_secret
+      MYSQL_DATABASE: agentic_copilot
+      MYSQL_USER: agentic_user
+      MYSQL_PASSWORD: agentic_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - agentic-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_secret"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: agentic-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - agentic-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ==============================================================================
+  # 2. OLLAMA (LLM ENGINE & GPU SUPPORT)
+  # ==============================================================================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: agentic-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_FLASH_ATTENTION=1
+      - OLLAMA_KV_CACHE_TYPE=q8_0
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - agentic-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # ==============================================================================
+  # 3. PYTHON AI MICROSERVICE (FASTAPI)
+  # ==============================================================================
+  python-ai:
+    build:
+      context: ./python-ai
+      dockerfile: Dockerfile
+    container_name: agentic-python-ai
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=agentic_copilot
+      - MYSQL_USER=agentic_user
+      - MYSQL_PASSWORD=agentic_password
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - LLM_MODEL_NAME=${LLM_MODEL_NAME:-qwen2.5:7b}
+      - VISION_MODEL_NAME=${VISION_MODEL_NAME:-qwen2.5vl:7b-q4_K_M}
+      - EMBEDDING_MODEL_NAME=BAAI/bge-m3
+      - CHROMA_PERSIST_DIR=/app/data/chromadb
+      - INTERNAL_API_TOKEN=dev-internal-token-secret-1234567890
+      - CHAT_STREAM_REQUIRE_AUTH=false
+      - CORS_ALLOW_ORIGINS=http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173
+    volumes:
+      - ./python-ai:/app
+      - python_chroma:/app/data/chromadb
+      - /app/__pycache__
+    networks:
+      - agentic-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # ==============================================================================
+  # 4. CELERY WORKER (BACKGROUND EXTRACTION & OCR QUEUE)
+  # ==============================================================================
+  celery-worker:
+    build:
+      context: ./python-ai
+      dockerfile: Dockerfile
+    container_name: agentic-celery-worker
+    restart: unless-stopped
+    command: ["celery", "-A", "app.tasks.process_document.celery_app", "worker", "--loglevel=info"]
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=agentic_copilot
+      - MYSQL_USER=agentic_user
+      - MYSQL_PASSWORD=agentic_password
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - LLM_MODEL_NAME=${LLM_MODEL_NAME:-qwen2.5:7b}
+      - VISION_MODEL_NAME=${VISION_MODEL_NAME:-qwen2.5vl:7b-q4_K_M}
+      - EMBEDDING_MODEL_NAME=BAAI/bge-m3
+      - CHROMA_PERSIST_DIR=/app/data/chromadb
+      - INTERNAL_API_TOKEN=dev-internal-token-secret-1234567890
+    volumes:
+      - ./python-ai:/app
+      - python_chroma:/app/data/chromadb
+      - /app/__pycache__
+    networks:
+      - agentic-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      python-ai:
+        condition: service_started
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # ==============================================================================
+  # 5. LARAVEL BACKEND ADMIN API
+  # ==============================================================================
+  laravel-backend:
+    build:
+      context: ./laravel-admin
+      dockerfile: Dockerfile
+    container_name: agentic-laravel-admin
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_NAME=AgenticCopilot
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - APP_URL=http://localhost:8000
+      - APP_KEY=base64:WjB876q+T9o3qgZJg5zO+eS3tY7L8sK1vW2rQ3xZ4mU=
+      - DB_CONNECTION=mysql
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_DATABASE=agentic_copilot
+      - DB_USERNAME=agentic_user
+      - DB_PASSWORD=agentic_password
+      - SESSION_DRIVER=database
+      - QUEUE_CONNECTION=redis
+      - CACHE_STORE=redis
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - AI_SERVICE_URL=http://python-ai:8080
+      - AI_SERVICE_TOKEN=dev-internal-token-secret-1234567890
+    volumes:
+      - ./laravel-admin:/var/www/html
+      - /var/www/html/vendor
+    networks:
+      - agentic-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      python-ai:
+        condition: service_started
+
+  # ==============================================================================
+  # 6. ADMIN FRONTEND (VITE REACT SPA)
+  # ==============================================================================
+  admin-frontend:
+    build:
+      context: ./admin-frontend
+      dockerfile: Dockerfile
+    container_name: agentic-admin-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_LARAVEL_URL=http://laravel-backend:8000
+      - VITE_AI_URL=http://python-ai:8080
+    volumes:
+      - ./admin-frontend:/app
+      - /app/node_modules
+    networks:
+      - agentic-net
+    depends_on:
+      - laravel-backend
+      - python-ai
+
+# ==============================================================================
+# VOLUMES & NETWORKS
+# ==============================================================================
+volumes:
+  mysql_data:
+  redis_data:
+  ollama_models:
+  python_chroma:
+
+networks:
+  agentic-net:
+    driver: bridge

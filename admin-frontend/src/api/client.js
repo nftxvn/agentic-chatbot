@@ -32,13 +32,15 @@ export async function initCsrf() {
 client.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Jika 401 dan bukan di halaman login, redirect ke login
-    if (
-      error.response?.status === 401 &&
-      !window.location.pathname.startsWith('/login') &&
-      !window.location.pathname.startsWith('/forgot-password') &&
-      !window.location.pathname.startsWith('/reset-password')
-    ) {
+    const url = error.config?.url || ''
+    const isAuthCheck = url.includes('/api/auth/user')
+    const isAuthPage =
+      window.location.pathname.startsWith('/login') ||
+      window.location.pathname.startsWith('/forgot-password') ||
+      window.location.pathname.startsWith('/reset-password')
+
+    // Jika 401 pada request biasa (sesi habis saat sedang aktif), redirect ke login
+    if (error.response?.status === 401 && !isAuthCheck && !isAuthPage) {
       window.location.href = '/login'
     }
     return Promise.reject(error)

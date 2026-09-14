@@ -1,0 +1,13 @@
+﻿.git
+.gitignore
+.env
+*.log
+node_modules
+vendor
+venv
+.venv
+__pycache__
+*.pyc
+data/chromadb
+dist
+build
