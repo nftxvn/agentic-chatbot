@@ -1,6 +1,7 @@
 import logging
 import re
 from pathlib import Path
+from typing import Callable
 import pandas as pd
 import docx
 
@@ -52,7 +53,7 @@ def get_total_pages(file_path: str) -> int:
 def extract_document(
     file_path: str,
     page_num: int | None = None,
-    progress_callback: callable | None = None,
+    progress_callback: Callable | None = None,
 ) -> list[dict]:
     """
     Ekstrak konten dari berbagai jenis file.

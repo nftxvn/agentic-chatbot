@@ -7,6 +7,7 @@ import base64
 import logging
 import re
 from pathlib import Path
+from typing import Callable
 
 import fitz  # PyMuPDF
 import requests
@@ -808,7 +809,7 @@ def ekstrak_satu_halaman(
 def extract_text(
     file_path: str,
     page_num: int | None = None,
-    progress_callback: callable | None = None,
+    progress_callback: Callable | None = None,
 ) -> list[dict]:
     """
     Mengekstrak teks dari seluruh halaman PDF.
