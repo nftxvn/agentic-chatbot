@@ -462,11 +462,23 @@ class SettingController extends Controller
     }
 
     /**
+     * Resolve effective Ollama URL, ensuring Docker container translates localhost to host.docker.internal
+     */
+    private function resolveOllamaUrl(): string
+    {
+        $ollamaUrl = env('OLLAMA_BASE_URL', env('OLLAMA_URL', config('services.ai.ollama_url', 'http://host.docker.internal:11434')));
+        if (str_contains($ollamaUrl, 'localhost') || str_contains($ollamaUrl, '127.0.0.1')) {
+            $ollamaUrl = str_replace(['localhost', '127.0.0.1'], 'host.docker.internal', $ollamaUrl);
+        }
+        return rtrim($ollamaUrl, '/');
+    }
+
+    /**
      * Get list of all installed LLM models from Ollama with capacity recommendations
      */
     public function getAvailableModels()
     {
-        $ollamaUrl = env('OLLAMA_BASE_URL', env('OLLAMA_URL', config('services.ai.ollama_url', 'http://host.docker.internal:11434')));
+        $ollamaUrl = $this->resolveOllamaUrl();
         $models = [];
         $activeModel = AppSetting::getVal('llm_model_name', 'qwen2.5:3b');
 
@@ -609,7 +621,7 @@ class SettingController extends Controller
             'model' => 'nullable|string|max:100',
         ]);
 
-        $ollamaUrl = env('OLLAMA_BASE_URL', env('OLLAMA_URL', config('services.ai.ollama_url', 'http://host.docker.internal:11434')));
+        $ollamaUrl = $this->resolveOllamaUrl();
         $model = $request->input('model') ?: AppSetting::getVal('llm_model_name', 'qwen2.5:3b');
 
         try {
