@@ -30,20 +30,23 @@ def get_total_pages(file_path: str) -> int:
     """
     Menghitung total halaman / lembar dokumen tanpa mengekstrak seluruh teks.
     """
-    path = Path(file_path)
-    if not path.exists():
+    try:
+        resolved = pdf_processor._resolve_pdf_path(file_path)
+    except FileNotFoundError:
         return 1
+
+    path = Path(resolved)
     ext = path.suffix.lower()
     if ext == ".pdf":
         try:
             import fitz
-            with fitz.open(file_path) as doc:
+            with fitz.open(resolved) as doc:
                 return len(doc)
         except Exception:
             return 1
     elif ext in [".xlsx", ".xls"]:
         try:
-            dfs = pd.read_excel(file_path, sheet_name=None)
+            dfs = pd.read_excel(resolved, sheet_name=None)
             return max(len(dfs), 1)
         except Exception:
             return 1
@@ -59,34 +62,37 @@ def extract_document(
     Ekstrak konten dari berbagai jenis file.
     Mendukung PDF, DOCX, XLSX, XLS, CSV, TXT, MD, PNG, JPG, JPEG.
     """
-    path = Path(file_path)
-    if not path.exists():
-        raise FileNotFoundError(f"File tidak ditemukan: {file_path}")
-        
+    resolved = pdf_processor._resolve_pdf_path(file_path)
+    path = Path(resolved)
     ext = path.suffix.lower()
     
     if ext == ".pdf":
-        return pdf_processor.extract_text(file_path, page_num, progress_callback)
+        return pdf_processor.extract_text(resolved, page_num, progress_callback)
     elif ext == ".docx":
-        return _extract_docx(file_path)
+        return _extract_docx(resolved)
     elif ext in [".xlsx", ".xls"]:
-        return _extract_excel(file_path)
+        return _extract_excel(resolved)
     elif ext == ".csv":
-        return _extract_csv(file_path)
+        return _extract_csv(resolved)
     elif ext in [".txt", ".md"]:
-        return _extract_text_file(file_path)
+        return _extract_text_file(resolved)
     elif ext in [".png", ".jpg", ".jpeg"]:
-        return _extract_image(file_path)
+        return _extract_image(resolved)
     else:
         raise ValueError(f"Tipe file '{ext}' belum didukung.")
 
 
 def detect_document_type(file_path: str) -> str:
-    path = Path(file_path)
+    try:
+        resolved = pdf_processor._resolve_pdf_path(file_path)
+    except FileNotFoundError:
+        resolved = file_path
+
+    path = Path(resolved)
     ext = path.suffix.lower()
     
     if ext == ".pdf":
-        return pdf_processor.detect_pdf_type(file_path)
+        return pdf_processor.detect_pdf_type(resolved)
     elif ext in [".docx", ".txt", ".md"]:
         return "text"
     elif ext in [".xlsx", ".xls", ".csv"]:

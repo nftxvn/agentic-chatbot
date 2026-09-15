@@ -50,6 +50,40 @@ ZOOM_DIIZINKAN = (1.5, 2.0, 3.0, 4.0)
 _MUTU_JPEG = 80
 
 
+def _resolve_pdf_path(file_path: str) -> str:
+    """Mencari lokasi fisik berkas dokumen di berbagai kemungkinan path storage."""
+    if not file_path:
+        raise FileNotFoundError("Path berkas kosong")
+
+    p = Path(file_path)
+    if p.exists() and p.is_file():
+        return str(p)
+
+    filename = p.name
+    candidates = [
+        Path("/var/www/html/storage/app/private/documents") / filename,
+        Path("/var/www/html/storage/app/documents") / filename,
+        Path("/var/www/html/storage/app/private") / filename,
+        Path("/var/www/html/storage/app") / filename,
+        Path("/app/data/uploads") / filename,
+        Path("/app/uploads") / filename,
+        Path("./laravel-admin/storage/app/private/documents") / filename,
+        Path("./laravel-admin/storage/app/documents") / filename,
+    ]
+    for cand in candidates:
+        if cand.exists() and cand.is_file():
+            return str(cand)
+
+    norm = file_path.replace("\\", "/")
+    if "storage/" in norm:
+        rel = norm.split("storage/", 1)[1]
+        cand = Path("/var/www/html/storage") / rel
+        if cand.exists() and cand.is_file():
+            return str(cand)
+
+    raise FileNotFoundError(f"Berkas tidak ditemukan: {file_path}")
+
+
 def render_halaman(
     file_path: str, page_number: int, zoom: float = ZOOM_OCR
 ) -> tuple[bytes, int, int]:
@@ -77,8 +111,7 @@ def render_halaman(
             f"{', '.join(str(z) for z in ZOOM_DIIZINKAN)}"
         )
 
-    if not Path(file_path).exists():
-        raise FileNotFoundError(f"Berkas tidak ditemukan: {file_path}")
+    file_path = _resolve_pdf_path(file_path)
 
     with fitz.open(file_path) as doc:
         if not 1 <= page_number <= len(doc):
@@ -99,8 +132,7 @@ def ukuran_halaman(file_path: str) -> list[dict]:
     dan pada dokumen ini kedipannya nyata, karena 6 dari 171 halaman potret
     sementara sisanya lanskap.
     """
-    if not Path(file_path).exists():
-        raise FileNotFoundError(f"Berkas tidak ditemukan: {file_path}")
+    file_path = _resolve_pdf_path(file_path)
 
     with fitz.open(file_path) as doc:
         return [
@@ -119,8 +151,7 @@ def detect_pdf_type(file_path: str) -> str:
     """
     Mendeteksi tipe PDF berdasarkan konten setiap halaman.
     """
-    if not Path(file_path).exists():
-        raise FileNotFoundError(f"File tidak ditemukan: {file_path}")
+    file_path = _resolve_pdf_path(file_path)
 
     try:
         doc = fitz.open(file_path)
@@ -786,8 +817,7 @@ def ekstrak_satu_halaman(
     """
     Ekstrak satu halaman, membawa petunjuk format dari panggilan sebelumnya.
     """
-    if not Path(file_path).exists():
-        raise FileNotFoundError(f"File tidak ditemukan: {file_path}")
+    file_path = _resolve_pdf_path(file_path)
 
     with fitz.open(file_path) as doc:
         if not 1 <= page_number <= len(doc):
@@ -816,8 +846,7 @@ def extract_text(
     - Halaman teks: PyMuPDF langsung.
     - Halaman scan: Ekstrak menggunakan Ollama Vision Model secara umum.
     """
-    if not Path(file_path).exists():
-        raise FileNotFoundError(f"File tidak ditemukan: {file_path}")
+    file_path = _resolve_pdf_path(file_path)
 
     pages_content: list[dict] = []
 
