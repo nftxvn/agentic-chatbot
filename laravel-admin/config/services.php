@@ -49,4 +49,8 @@ return [
         'token' => env('AI_SERVICE_TOKEN', ''),
     ],
 
+    'ai' => [
+        'ollama_url' => env('OLLAMA_BASE_URL', env('OLLAMA_URL', 'http://host.docker.internal:11434')),
+    ],
+
 ];

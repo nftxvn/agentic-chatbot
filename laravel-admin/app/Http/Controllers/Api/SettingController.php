@@ -466,7 +466,7 @@ class SettingController extends Controller
      */
     public function getAvailableModels()
     {
-        $ollamaUrl = config('services.ai.ollama_url', 'http://localhost:11434');
+        $ollamaUrl = env('OLLAMA_BASE_URL', env('OLLAMA_URL', config('services.ai.ollama_url', 'http://host.docker.internal:11434')));
         $models = [];
         $activeModel = AppSetting::getVal('llm_model_name', 'qwen2.5:3b');
 
@@ -609,7 +609,7 @@ class SettingController extends Controller
             'model' => 'nullable|string|max:100',
         ]);
 
-        $ollamaUrl = config('services.ai.ollama_url', 'http://localhost:11434');
+        $ollamaUrl = env('OLLAMA_BASE_URL', env('OLLAMA_URL', config('services.ai.ollama_url', 'http://host.docker.internal:11434')));
         $model = $request->input('model') ?: AppSetting::getVal('llm_model_name', 'qwen2.5:3b');
 
         try {

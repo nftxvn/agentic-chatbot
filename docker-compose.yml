@@ -143,6 +143,8 @@ services:
       dockerfile: Dockerfile
     container_name: agentic-laravel-admin
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
     environment:
@@ -164,6 +166,8 @@ services:
       - REDIS_PORT=6379
       - AI_SERVICE_URL=http://python-ai:8080
       - AI_SERVICE_TOKEN=dev-internal-token-secret-1234567890
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
     volumes:
       - ./laravel-admin:/var/www/html
       - /var/www/html/vendor
