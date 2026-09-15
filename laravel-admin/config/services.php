@@ -45,11 +45,13 @@ return [
     |
     */
     'ai_microservice' => [
-        'url' => env('AI_SERVICE_URL', 'http://localhost:8080'),
-        'token' => env('AI_SERVICE_TOKEN', ''),
+        'url' => env('AI_SERVICE_URL', 'http://python-ai:8080'),
+        'token' => env('AI_SERVICE_TOKEN', env('INTERNAL_API_TOKEN', 'dev-internal-token-secret-1234567890')),
     ],
 
     'ai' => [
+        'url' => env('AI_SERVICE_URL', 'http://python-ai:8080'),
+        'token' => env('AI_SERVICE_TOKEN', env('INTERNAL_API_TOKEN', 'dev-internal-token-secret-1234567890')),
         'ollama_url' => env('OLLAMA_BASE_URL', env('OLLAMA_URL', 'http://host.docker.internal:11434')),
     ],
 

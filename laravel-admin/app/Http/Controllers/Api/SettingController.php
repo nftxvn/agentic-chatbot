@@ -584,8 +584,11 @@ class SettingController extends Controller
      */
     public function getHardwareStatus(Request $request)
     {
-        $aiUrl = config('services.ai.url', 'http://localhost:8080');
-        $token = (string) config('services.ai_microservice.token');
+        $aiUrl = env('AI_SERVICE_URL', config('services.ai.url', config('services.ai_microservice.url', 'http://python-ai:8080')));
+        if (str_contains($aiUrl, 'localhost') || str_contains($aiUrl, '127.0.0.1')) {
+            $aiUrl = str_replace(['localhost', '127.0.0.1'], 'python-ai', $aiUrl);
+        }
+        $token = (string) (env('AI_SERVICE_TOKEN', config('services.ai.token', config('services.ai_microservice.token', env('INTERNAL_API_TOKEN', 'dev-internal-token-secret-1234567890')))));
         $model = $request->query('model');
 
         try {
