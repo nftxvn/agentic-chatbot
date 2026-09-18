@@ -250,8 +250,10 @@ class DocumentController extends Controller
 
         $document->recordLog('resumed', 'Ekstraksi AI dilanjutkan kembali oleh ' . (Auth::user()?->name ?? 'Admin') . '.', 15);
 
+        $categoryOptions = $this->buildCategoryOptions($document);
+
         // Start / resume staged extraction in Python AI
-        $client->mulaiEkstraksi($document->id);
+        $client->mulaiEkstraksi($document->id, null, $categoryOptions);
 
         return response()->json([
             'success' => true,
@@ -272,23 +274,40 @@ class DocumentController extends Controller
             @unlink($filePath);
         }
 
-        $title = $document->title;
-        $docId = $document->id;
+        $document->recordLog('deleted', 'Dokumen dan seluruh vektor terkait dihapus permanen oleh ' . (Auth::user()?->name ?? 'Admin') . '.');
 
-        // Cascade delete ChromaDB vector embeddings via Python microservice
-        try {
-            $client = new AiMicroserviceClient();
-            $client->deleteDocument($docId);
-        } catch (\Exception $e) {
-            \Log::warning("Gagal menghapus vektor dokumen {$docId} dari ChromaDB: " . $e->getMessage());
-        }
+        // Delete vectors from ChromaDB via Python AI microservice
+        $client = new AiMicroserviceClient();
+        $client->deleteDocument($document->id);
 
         $document->delete();
 
         return response()->json([
             'success' => true,
-            'message' => "Dokumen \"{$title}\" dan seluruh vektor embedding berhasil dihapus.",
+            'message' => 'Dokumen berhasil dihapus.',
         ]);
+    }
+
+    /**
+     * Build category extraction options for Python AI.
+     */
+    protected function buildCategoryOptions(Document $document): array
+    {
+        $category = $document->category;
+        if (!$category && $document->category_id) {
+            $category = \App\Models\DocumentCategory::find($document->category_id);
+        }
+
+        $kataKunci = data_get($category, 'prompt_variables.kata_kunci')
+            ?? data_get($category, 'prompt_variables.job_titles', []);
+        $customPrompts = data_get($category, 'prompt_variables.custom_prompts', []);
+
+        return [
+            'category_prompt' => $category?->vision_prompt,
+            'job_titles'      => is_array($kataKunci) ? implode(', ', $kataKunci) : $kataKunci,
+            'vision_model'    => $category?->vision_model,
+            'custom_prompts'  => !empty($customPrompts) ? $customPrompts : null,
+        ];
     }
 
     /**
@@ -330,8 +349,10 @@ class DocumentController extends Controller
 
         $document->recordLog('processing', 'Dokumen dikirim ke antrean Ekstraksi AI bertahap.', 15);
 
+        $categoryOptions = $this->buildCategoryOptions($document);
+
         // Dispatch staged extraction: every page is saved to database immediately upon completion
-        $result = $client->mulaiEkstraksi($document->id);
+        $result = $client->mulaiEkstraksi($document->id, null, $categoryOptions);
 
         if (!$result['success']) {
             $document->recordLog('failed', $result['message'] ?? 'Gagal memulai ekstraksi', 10);

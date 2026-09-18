@@ -253,10 +253,15 @@ def get_document_by_id(document_id: int) -> dict[str, Any] | None:
     engine = get_engine()
 
     query = text(
-        "SELECT id, original_name, file_path, status, pdf_type, "
-        "total_pages, total_chunks, error_message, processed_at, "
-        "created_at, updated_at "
-        "FROM documents WHERE id = :document_id"
+        "SELECT d.id, d.original_name, d.file_path, d.status, d.pdf_type, "
+        "d.category_id, d.total_pages, d.total_chunks, d.error_message, d.processed_at, "
+        "d.created_at, d.updated_at, "
+        "c.vision_prompt AS category_vision_prompt, "
+        "c.vision_model AS category_vision_model, "
+        "c.prompt_variables AS category_prompt_variables "
+        "FROM documents d "
+        "LEFT JOIN document_categories c ON d.category_id = c.id "
+        "WHERE d.id = :document_id"
     )
 
     try:

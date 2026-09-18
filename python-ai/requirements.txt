@@ -52,13 +52,11 @@ pandas==2.3.3
 
 
 # --- RAG: embedding, penyimpanan vektor, pencarian ---------------------------
-# chromadb WAJIB tetap di 0.5.x. Isi data/chromadb ditulis oleh 0.5.5, dan
-# chromadb 1.x memakai format penyimpanan yang berbeda - menaikkannya berarti
-# harus ingest ulang seluruh dokumen.
-chromadb==0.5.5
-sentence-transformers==3.1.1  # menarik torch; lihat CATATAN di bawah
-rank-bm25==0.2.2              # komponen kata kunci pada retrieval hybrid
-numpy==1.26.4                 # tetap di 1.x; 2.x belum diuji dengan tumpukan ini
+# chromadb menggunakan versi 1.5.x sesuai format database vektor di data/chromadb
+chromadb==1.5.9
+sentence-transformers>=3.1.1  # menarik torch; lihat CATATAN di bawah
+rank-bm25>=0.2.2              # komponen kata kunci pada retrieval hybrid
+numpy>=1.26.4
 
 
 # --- LLM lokal via Ollama ----------------------------------------------------

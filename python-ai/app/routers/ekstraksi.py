@@ -78,23 +78,44 @@ async def mulai_ekstraksi(
     # Mulai atau lanjutkan ekstraksi
     dokumen = _dokumen_atau_404(document_id)
 
+    # Fallback to category settings from database if not explicitly passed in payload
+    category_prompt = payload.category_prompt or dokumen.get("category_vision_prompt")
+    vision_model = (payload.vision_model or dokumen.get("category_vision_model") or "").strip() or None
+
+    prompt_vars = dokumen.get("category_prompt_variables")
+    if isinstance(prompt_vars, str):
+        try:
+            prompt_vars = json.loads(prompt_vars)
+        except Exception:
+            prompt_vars = {}
+    elif not isinstance(prompt_vars, dict):
+        prompt_vars = {}
+
+    job_titles = payload.job_titles
+    if not job_titles and prompt_vars:
+        daftar = prompt_vars.get("kata_kunci") or prompt_vars.get("job_titles") or []
+        job_titles = ", ".join(daftar) if isinstance(daftar, list) else str(daftar) if daftar else None
+
+    custom_prompts = payload.custom_prompts or prompt_vars.get("custom_prompts")
+
     from app.tasks.ekstraksi import ekstrak_dokumen_task
 
     ekstrak_dokumen_task.delay(
         document_id,
         dokumen["file_path"],
         payload.maks_halaman,
-        category_prompt=payload.category_prompt,
-        job_titles=payload.job_titles,
-        vision_model=payload.vision_model,
-        custom_prompts=payload.custom_prompts,
+        category_prompt=category_prompt,
+        job_titles=job_titles,
+        vision_model=vision_model,
+        custom_prompts=custom_prompts,
     )
     logger.info(
-        "Dokumen %d: ekstraksi diantrekan (maks_halaman=%s, has_cat_prompt=%s, has_custom_prompts=%s)",
+        "Dokumen %d: ekstraksi diantrekan (maks_halaman=%s, vision_model=%s, has_cat_prompt=%s, has_custom_prompts=%s)",
         document_id,
         payload.maks_halaman,
-        bool(payload.category_prompt),
-        bool(payload.custom_prompts),
+        vision_model,
+        bool(category_prompt),
+        bool(custom_prompts),
     )
 
     return {"document_id": document_id, "status": eb.STATUS_ANTRE}

@@ -546,11 +546,14 @@ def diagnostik_mesin(
     os_name = _deteksi_os_platform()
     env_label = "WSL2 (Windows Hyper-V vGPU D3D12)" if is_wsl else f"{os_name} (Native GPU Bare-Metal)"
 
+    from app.services.pdf_processor import resolve_vision_model
+
     payload = {
         "konfigurasi": {
             "llm_model": active_model,
             "llm_model_default": settings.LLM_MODEL_NAME,
-            "vision_model": settings.VISION_MODEL_NAME,
+            "vision_model": resolve_vision_model(),
+            "vision_model_default": settings.VISION_MODEL_NAME,
             "embedding_model": settings.EMBEDDING_MODEL_NAME,
             "embedding_device": settings.EMBEDDING_DEVICE,
             "num_ctx": active_ctx,

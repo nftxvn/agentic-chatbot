@@ -147,7 +147,15 @@ def ekstrak_dokumen_task(
     if hasil.status == eb.STATUS_BERJALAN:
         # Batas halaman tercapai tapi pekerjaan belum tuntas — antre lagi
         # alih-alih meneruskan di tugas yang sama.
-        ekstrak_dokumen_task.delay(document_id, file_path, maks_halaman)
+        ekstrak_dokumen_task.delay(
+            document_id,
+            file_path,
+            maks_halaman,
+            category_prompt=category_prompt,
+            job_titles=job_titles,
+            vision_model=vision_model,
+            custom_prompts=custom_prompts,
+        )
 
     return {
         "status": hasil.status,

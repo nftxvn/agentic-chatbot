@@ -68,7 +68,7 @@ SEMUA_STATUS = (
 _FLUSH_CACHE_INTERVAL = 12
 
 
-def flush_ollama_cache() -> None:
+def flush_ollama_cache(model_name: str | None = None) -> None:
     """
     Membebaskan akumulasi prompt/KV cache Ollama dari RAM/VRAM.
 
@@ -80,13 +80,15 @@ def flush_ollama_cache() -> None:
     try:
         import requests
         from app.config import settings
+        from app.services.pdf_processor import resolve_vision_model
 
+        target_model = resolve_vision_model(model_name)
         requests.post(
             f"{settings.OLLAMA_BASE_URL}/api/generate",
-            json={"model": settings.VISION_MODEL_NAME, "keep_alive": 0},
+            json={"model": target_model, "keep_alive": 0},
             timeout=5,
         )
-        logger.info("Prompt cache Ollama berhasil dibersihkan (VRAM/RAM dilepas).")
+        logger.info("Prompt cache Ollama (%s) berhasil dibersihkan (VRAM/RAM dilepas).", target_model)
     except Exception as e:
         logger.warning("Gagal flush cache Ollama: %s", e)
 

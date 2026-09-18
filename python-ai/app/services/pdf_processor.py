@@ -370,6 +370,90 @@ def _terlihat_formulir_sop(text: str) -> bool:
 # sudah memakainya — mengganti nama tidak boleh mematikan data yang sudah ada.
 _POLA_KATA_KUNCI = ("{kata_kunci}", "{job_titles}")
 
+_VISION_KEYWORDS = (
+    "vision",
+    "vl",
+    "llava",
+    "minicpm",
+    "bakllava",
+    "moondream",
+    "pixtral",
+    "glm-4v",
+    "deepseek-vl",
+    "omnilmm",
+    "cogvlm",
+    "internvl",
+)
+
+_CACHED_AUTO_VISION_MODEL: tuple[str, float] | None = None
+
+
+def get_installed_vision_models() -> list[str]:
+    """
+    Mengambil daftar nama model vision yang terpasang di server Ollama secara live.
+    Mencari model yang namanya mengandung penanda model visual (vision, vl, llava, minicpm, dll).
+    """
+    try:
+        r = requests.get(f"{settings.OLLAMA_BASE_URL}/api/tags", timeout=3)
+        if r.status_code != 200:
+            return []
+        data = r.json()
+        models = data.get("models", [])
+        found: list[str] = []
+        for m in models:
+            name = m.get("name", "")
+            if not name:
+                continue
+            name_lower = name.lower()
+            if any(kw in name_lower for kw in _VISION_KEYWORDS):
+                found.append(name)
+        return found
+    except Exception as e:
+        logger.debug("Gagal menghubungi Ollama untuk deteksi model vision: %s", e)
+        return []
+
+
+def resolve_vision_model(custom_model: str | None = None) -> str:
+    """
+    Menentukan model vision yang akan digunakan secara cerdas (Zero-Knowledge):
+
+    1. Prioritas 1: Model eksplisit dari Kategori atau Payload (bila disetel pengguna via UI).
+    2. Prioritas 2: Model vision global yang tersimpan di basis data `app_settings` (jika ada).
+    3. Prioritas 3: Auto-detect cerdas ke Ollama (mencari model vision pertama yang aktif terpasang).
+    4. Prioritas 4: Fallback aman ke `settings.VISION_MODEL_NAME` / 'qwen2.5vl'.
+    """
+    global _CACHED_AUTO_VISION_MODEL
+
+    if custom_model and str(custom_model).strip():
+        return str(custom_model).strip()
+
+    # Cek apakah ada pengaturan global di app_settings (opsional)
+    try:
+        from app.database import get_app_setting
+
+        global_vision = get_app_setting("vision_model_name") or get_app_setting("default_vision_model")
+        if global_vision and str(global_vision).strip():
+            return str(global_vision).strip()
+    except Exception:
+        pass
+
+    # Cek cache deteksi otomatis (TTL 60 detik agar tidak spam Ollama di tiap halaman)
+    now = time.time()
+    if _CACHED_AUTO_VISION_MODEL and (now - _CACHED_AUTO_VISION_MODEL[1]) < 60:
+        return _CACHED_AUTO_VISION_MODEL[0]
+
+    # Auto-detect dari Ollama tags
+    installed = get_installed_vision_models()
+    if installed:
+        detected = installed[0]
+        _CACHED_AUTO_VISION_MODEL = (detected, now)
+        logger.info("Auto-detect cerdas Vision Model dari Ollama: '%s'", detected)
+        return detected
+
+    # Fallback terakhir (jika Ollama offline atau belum ada model terpasang)
+    fallback = (getattr(settings, "VISION_MODEL_NAME", None) or "qwen2.5vl").strip()
+    return fallback
+
 
 def _sisipkan_kata_kunci(prompt: str, kata_kunci: str) -> str:
     """
@@ -432,7 +516,8 @@ def vision_extract_general(
         vision_model: Model vision spesifik kategori (opsional).
         custom_prompts: Kamus prompt kustom untuk menimpa aturan bawaan secara dinamis.
     """
-    logger.info("Using general vision extraction pipeline...")
+    model_to_use = resolve_vision_model(vision_model)
+    logger.info("Using general vision extraction pipeline with model: '%s'...", model_to_use)
 
     prompt_dasar = (custom_prompts.get("dasar") if custom_prompts else None) or _PROMPT_OCR_DASAR
     prompt = prompt_dasar
@@ -441,8 +526,6 @@ def vision_extract_general(
     prompt = _sisipkan_kata_kunci(prompt, job_titles or "")
     if petunjuk:
         prompt += f"\n{petunjuk}"
-
-    model_to_use = vision_model or settings.VISION_MODEL_NAME
 
     payload = {
         "model": model_to_use,
