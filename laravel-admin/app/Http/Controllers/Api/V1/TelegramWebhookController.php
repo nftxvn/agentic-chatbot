@@ -245,15 +245,15 @@ class TelegramWebhookController extends Controller
                 'session_id' => 'telegram-' . $chatId,
                 'channel' => 'telegram',
                 'api_key_id' => null,
-                'sender_identifier' => $senderIdentifier,
-                'query' => $text,
-                'answer' => $accumulated,
+                'sender_identifier' => 'Pengguna Telegram',
+                'query' => null,
+                'answer' => null,
                 'sources_json' => null,
                 'is_fallback' => $isFallback,
                 'response_time_ms' => $elapsedMs,
             ]);
         } catch (\Exception $e) {
-            Log::error('Gagal mencatat audit log Telegram ke ChatLog: ' . $e->getMessage());
+            Log::error('Gagal mencatat telemetri Telegram ke ChatLog: ' . $e->getMessage());
         }
     }
 }

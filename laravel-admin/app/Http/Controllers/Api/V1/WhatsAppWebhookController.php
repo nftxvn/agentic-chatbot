@@ -143,16 +143,16 @@ class WhatsAppWebhookController extends Controller
             // 5. Kirim balasan ke WhatsApp Gateway jika API URL & Token terpasang
             $this->sendWhatsAppMessage($from, $formattedReply);
 
-            // 6. Catat audit log percakapan WhatsApp
+            // 6. Catat telemetri interaksi WhatsApp (Privasi warga terlindungi: tanpa nomor HP dan tanpa isi pesan)
             $isFallback = empty($sources) || str_contains($replyText, 'tidak ditemukan');
             \App\Models\ChatLog::create([
                 'session_id' => $sessionId,
                 'channel' => 'whatsapp',
                 'api_key_id' => null,
-                'sender_identifier' => $from,
-                'query' => $messageText,
-                'answer' => $formattedReply,
-                'sources_json' => $sources,
+                'sender_identifier' => 'Pengguna WhatsApp',
+                'query' => null,
+                'answer' => null,
+                'sources_json' => !empty($sources) ? ['count' => count($sources)] : null,
                 'is_fallback' => $isFallback,
                 'response_time_ms' => null,
             ]);

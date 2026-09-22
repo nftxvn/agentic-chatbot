@@ -34,5 +34,6 @@ use App\Http\Controllers\Api\EkstraksiController;
 
 Route::middleware('auth:sanctum,web')->prefix('api/documents')->group(function () {
     Route::get('/{id}/pdf', [DocumentController::class, 'servePdf'])->name('api.documents.pdf');
+    Route::get('/{id}/pages/{pageNumber}/image', [EkstraksiController::class, 'citraHalaman'])->name('api.documents.pages.image');
     Route::get('/{id}/halaman/{pageNumber}/citra', [EkstraksiController::class, 'citraHalaman'])->name('api.documents.halaman.citra');
 });

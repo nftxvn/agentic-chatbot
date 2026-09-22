@@ -124,16 +124,16 @@ class ChatController extends Controller
             // Detect fallback if no sources or fallback phrasing
             $isFallback = empty($sources) || str_contains($answer, 'tidak ditemukan');
 
-            // Record audit log
+            // Record telemetry log (Privacy compliant: no raw query/answer text stored)
             $apiKey = $request->attributes->get('authenticated_api_key');
             \App\Models\ChatLog::create([
                 'session_id' => $sessionId,
                 'channel' => 'api_v1',
                 'api_key_id' => $apiKey?->id,
                 'sender_identifier' => $apiKey?->name ?? 'API Client',
-                'query' => $validated['query'],
-                'answer' => $answer,
-                'sources_json' => $sources,
+                'query' => null,
+                'answer' => null,
+                'sources_json' => !empty($sources) ? ['count' => count($sources)] : null,
                 'is_fallback' => $isFallback,
                 'response_time_ms' => $elapsedMs,
             ]);

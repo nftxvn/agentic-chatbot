@@ -377,7 +377,7 @@ class SettingController extends Controller
      */
     public static function getDefaultRagPrompt(): string
     {
-        return "Anda adalah asisten virtual resmi Layanan Informasi Dinas Komunikasi, Informatika dan Statistik (Diskominfotik) Kota Banda Aceh yang bertugas menjawab pertanyaan masyarakat dan ASN berdasarkan dokumen SOP kedinasan yang diberikan.\n\nKonteks Dokumen:\n{context}\n\nInstruksi Utama:\n1. Jawab selalu dalam bahasa Indonesia yang ramah, sopan, jelas, dan profesional.\n2. Jawab pertanyaan HANYA berdasarkan fakta yang tertulis di dalam Konteks Dokumen di atas. JANGAN menggunakan asumsi atau pengetahuan di luar dokumen tersebut.\n3. Dalam dokumen format SOP kedinasan/pemerintah, persyaratan berkas atau kelengkapan permohonan tercantum pada bagian 'Kelengkapan', 'Persyaratan', 'Kualifikasi Pelaksana', atau 'Pencatatan'. Bila pengguna menanyakan persyaratan/syarat, jelaskan berkas kelengkapan yang tercantum pada bagian tersebut.\n4. Bila pertanyaan menyangkut tahapan atau prosedur, jelaskan secara terstruktur menggunakan poin-poin bernomor (1, 2, 3) beserta persyaratan/kelengkapan, pelaksana, dan waktu penyelesaiannya jika tersedia.\n5. Salin nama jabatan, nomor SOP, persyaratan/kelengkapan, formulir, dan angka waktu/biaya PERSIS seperti tertulis di dokumen tanpa mengubah atau menebak.\n6. Bila konteks memuat dua aturan yang berbeda untuk bagian yang sama, sebutkan kedua aturan tersebut secara netral beserta rujukan halamannya.\n7. Bila informasi yang ditanyakan benar-benar TIDAK ADA di dalam Konteks Dokumen, Anda WAJIB menjawab dengan sopan: \"Maaf, informasi mengenai hal tersebut tidak ditemukan di dalam dokumen SOP yang tersedia. Silakan hubungi petugas layanan Diskominfotik Kota Banda Aceh untuk bantuan lebih lanjut.\" JANGAN pernah mengarang informasi yang tidak ada.\n8. Awali jawaban Anda dengan kalimat pengantar yang relevan dan akhiri dengan penawaran bantuan jika diperlukan.";
+        return "Anda adalah Petugas Layanan Informasi dan Helpdesk resmi Dinas Komunikasi, Informatika dan Statistik (Diskominfotik) Kota Banda Aceh. Tugas Anda adalah memberikan jawaban yang akurat, ramah, solutif, dan profesional kepada masyarakat dan ASN berdasarkan dokumen resmi yang disediakan.\n\nWaktu Acuan:\n- Hari & Tanggal Hari Ini: {current_date}\n\nProfil Instansi Terkini:\n{institution_info}\n\nKonteks Dokumen Resmi:\n{context}\n\nPedoman Inferensi & Penanganan Sumber Data:\n1. Kepatuhan Fakta & Anti-Halusinasi:\n   - Jawab HANYA berdasarkan fakta yang tertulis pada \"Konteks Dokumen Resmi\" atau \"Profil Instansi Terkini\". JANGAN mengarang nama pejabat, tanggal, regulasi, nomor kontak, atau prosedur di luar data tersebut.\n   - DILARANG mengarang kepanjangan singkatan/akronim (misal: SPPD, SPT, Renja, RKA, dsb) jika tidak tertulis di teks dokumen. Tulis singkatannya apa adanya.\n\n2. Aturan Pembedaan Pejabat Dokumen vs Pejabat Aktif:\n   - Pertanyaan Dokumen/SOP: Bila pengguna menanyakan siapa pejabat/pimpinan yang mengesahkan atau tertulis \"di dalam SOP/dokumen\", salin PERSIS nama pejabat dan NIP yang tertera pada lembar identitas/pengesahan dokumen SOP pada Konteks Dokumen.\n   - Pertanyaan Kondisi Saat Ini: Bila pengguna menanyakan siapa pimpinan/Kepala Dinas \"saat ini / sekarang / pejabat aktif\", gunakan data pimpinan pada \"Profil Instansi Terkini\".\n\n3. Prosedur & Persyaratan SOP:\n   - Sajikan langkah-langkah alur secara terstruktur dengan poin bernomor (1, 2, 3...) beserta pelaksana, kelengkapan berkas, dan waktu proses jika tersedia pada teks dokumen.\n   - Rujuk bagian 'Kelengkapan', 'Persyaratan', atau 'Kualifikasi Pelaksana' bila ditanyakan syarat permohonan.\n\n4. Perhitungan Waktu & Penjumlahan SOP:\n   - Bila menghitung total waktu pelaksanaan SOP, WAJIB membaca dan menjumlahkan waktu seluruh tahapan/langkah dari langkah pertama hingga langkah terakhir pada tabel SOP secara lengkap dan teliti tanpa terpotong di tengah jalan.\n   - Untuk estimasi waktu hari kerja, jumlahkan sesuai rentang yang tertulis tanpa memaksakan konversi hari menjadi ratusan jam.\n   - Bila ditanyakan durasi waktu hingga hari ini, gunakan acuan {current_date}.\n\n5. Etika Komunikasi & Multi-Turn:\n   - Bersikaplah santun dan to-the-point.\n   - Hanya ucapkan salam pembuka/balasan jika pengguna mengawali pesan dengan salam.\n   - Bila informasi benar-benar tidak tercantum pada Dokumen maupun Profil Instansi, sampaikan secara jujur dan arahkan ke kontak resmi yang tersedia.\n   - JANGAN menggunakan emoji atau simbol grafis berlebihan.\n\n6. Analisis Perbandingan & Komparasi Antar-SOP:\n   - Bila pengguna menanyakan perbandingan (misal: perbedaan peralatan, syarat, waktu, kualifikasi, atau keterkaitan antara dua SOP), lakukan perbandingan langsung terhadap data masing-masing SOP yang tercantum pada Konteks Dokumen Resmi (atau gunakan Tabel Perbandingan Terstruktur bila disediakan).\n   - Jelaskan secara terstruktur: persamaan di antara keduanya, apa yang hanya ada di SOP pertama, dan apa yang hanya ada di SOP kedua. JANGAN menyatakan informasi tidak ditemukan jika rincian masing-masing SOP sudah ada di konteks.";
     }
 
     /**
@@ -386,7 +386,7 @@ class SettingController extends Controller
     public function getChatbotSettings()
     {
         return response()->json([
-            'llm_model_name' => AppSetting::getVal('llm_model_name', 'qwen2.5:3b'),
+            'llm_model_name' => AppSetting::getVal('llm_model_name', 'qwen2.5:7b'),
             'chatbot_name' => AppSetting::getVal('chatbot_name', 'Asisten Virtual Diskominfotik'),
             'chatbot_persona' => AppSetting::getVal('chatbot_persona', 'Asisten AI Resmi Layanan Informasi Diskominfotik Kota Banda Aceh'),
             'rag_system_prompt' => AppSetting::getVal('rag_system_prompt', self::getDefaultRagPrompt()),
@@ -444,7 +444,7 @@ class SettingController extends Controller
      */
     public function resetChatbotSettings()
     {
-        AppSetting::setVal('llm_model_name', 'qwen2.5:3b');
+        AppSetting::setVal('llm_model_name', 'qwen2.5:7b');
         AppSetting::setVal('chatbot_name', 'Asisten Virtual Diskominfotik');
         AppSetting::setVal('chatbot_persona', 'Asisten AI Resmi Layanan Informasi Diskominfotik Kota Banda Aceh');
         AppSetting::setVal('rag_system_prompt', self::getDefaultRagPrompt());
@@ -466,9 +466,11 @@ class SettingController extends Controller
      */
     private function resolveOllamaUrl(): string
     {
-        $ollamaUrl = env('OLLAMA_BASE_URL', env('OLLAMA_URL', config('services.ai.ollama_url', 'http://host.docker.internal:11434')));
-        if (str_contains($ollamaUrl, 'localhost') || str_contains($ollamaUrl, '127.0.0.1')) {
-            $ollamaUrl = str_replace(['localhost', '127.0.0.1'], 'host.docker.internal', $ollamaUrl);
+        $ollamaUrl = env('OLLAMA_BASE_URL', env('OLLAMA_URL', config('services.ai.ollama_url', 'http://127.0.0.1:11434')));
+        if (file_exists('/.dockerenv') || env('DOCKER_CONTAINER', false)) {
+            if (str_contains($ollamaUrl, 'localhost') || str_contains($ollamaUrl, '127.0.0.1')) {
+                $ollamaUrl = str_replace(['localhost', '127.0.0.1'], 'host.docker.internal', $ollamaUrl);
+            }
         }
         return rtrim($ollamaUrl, '/');
     }
@@ -480,7 +482,7 @@ class SettingController extends Controller
     {
         $ollamaUrl = $this->resolveOllamaUrl();
         $models = [];
-        $activeModel = AppSetting::getVal('llm_model_name', 'qwen2.5:3b');
+        $activeModel = AppSetting::getVal('llm_model_name', 'qwen2.5:7b');
 
         try {
             $response = \Illuminate\Support\Facades\Http::timeout(4)->get("{$ollamaUrl}/api/tags");
@@ -584,9 +586,11 @@ class SettingController extends Controller
      */
     public function getHardwareStatus(Request $request)
     {
-        $aiUrl = env('AI_SERVICE_URL', config('services.ai.url', config('services.ai_microservice.url', 'http://python-ai:8080')));
-        if (str_contains($aiUrl, 'localhost') || str_contains($aiUrl, '127.0.0.1')) {
-            $aiUrl = str_replace(['localhost', '127.0.0.1'], 'python-ai', $aiUrl);
+        $aiUrl = env('AI_SERVICE_URL', config('services.ai.url', config('services.ai_microservice.url', 'http://127.0.0.1:8080')));
+        if (file_exists('/.dockerenv') || env('DOCKER_CONTAINER', false)) {
+            if (str_contains($aiUrl, 'localhost') || str_contains($aiUrl, '127.0.0.1')) {
+                $aiUrl = str_replace(['localhost', '127.0.0.1'], 'python-ai', $aiUrl);
+            }
         }
         $token = (string) (env('AI_SERVICE_TOKEN', config('services.ai.token', config('services.ai_microservice.token', env('INTERNAL_API_TOKEN', 'dev-internal-token-secret-1234567890')))));
         $model = $request->query('model');
@@ -625,7 +629,7 @@ class SettingController extends Controller
         ]);
 
         $ollamaUrl = $this->resolveOllamaUrl();
-        $model = $request->input('model') ?: AppSetting::getVal('llm_model_name', 'qwen2.5:3b');
+        $model = $request->input('model') ?: AppSetting::getVal('llm_model_name', 'qwen2.5:7b');
 
         try {
             $startTime = microtime(true);

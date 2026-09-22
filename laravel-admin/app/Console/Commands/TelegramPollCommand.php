@@ -383,20 +383,20 @@ class TelegramPollCommand extends Command
                 'session_id' => 'telegram-' . $chatId,
                 'channel' => 'telegram',
                 'api_key_id' => null,
-                'sender_identifier' => $senderIdentifier,
-                'query' => $text,
-                'answer' => $accumulated,
+                'sender_identifier' => 'Pengguna Telegram',
+                'query' => null,
+                'answer' => null,
                 'sources_json' => null,
                 'is_fallback' => $isFallback,
                 'response_time_ms' => $elapsedMs,
             ]);
             if ($logger) {
-                $logger('info', "Riwayat percakapan tercatat di database ChatLog (durasi: {$elapsedMs} ms).");
+                $logger('info', "Telemetri interaksi tercatat di database (durasi: {$elapsedMs} ms, privasi aman).");
             }
         } catch (\Exception $e) {
-            Log::error('Gagal mencatat riwayat Telegram ke ChatLog: ' . $e->getMessage());
+            Log::error('Gagal mencatat telemetri Telegram ke ChatLog: ' . $e->getMessage());
             if ($logger) {
-                $logger('warn', 'Gagal mencatat log percakapan: ' . $e->getMessage());
+                $logger('warn', 'Gagal mencatat telemetri: ' . $e->getMessage());
             }
         }
     }

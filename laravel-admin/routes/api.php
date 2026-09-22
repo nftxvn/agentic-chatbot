@@ -56,6 +56,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{id}',        [DocumentController::class, 'destroy'])->name('api.documents.destroy');
 
         // Staged Extraction & Manual Correction (Python-AI sync)
+        Route::post('/{id}/extraction',                   [EkstraksiController::class, 'mulai'])->name('api.documents.extraction.start');
+        Route::post('/{id}/extraction/pause',             [EkstraksiController::class, 'jeda'])->name('api.documents.extraction.pause');
+        Route::get('/{id}/extraction',                    [EkstraksiController::class, 'status'])->name('api.documents.extraction.status');
+        Route::get('/{id}/pages',                         [EkstraksiController::class, 'halaman'])->name('api.documents.pages.index');
+        Route::put('/{id}/pages/{pageNumber}',            [EkstraksiController::class, 'simpanHalaman'])->name('api.documents.pages.update');
+        Route::get('/{id}/pages/dimensions',              [EkstraksiController::class, 'ukuranHalaman'])->name('api.documents.pages.dimensions');
+        Route::match(['get', 'post'], '/{id}/chunks/preview', [EkstraksiController::class, 'potongan'])->name('api.documents.chunks.preview');
+        Route::post('/{id}/embed',                        [EkstraksiController::class, 'simpanKorpus'])->name('api.documents.embed');
+
+        // Aliases for backward compatibility
         Route::post('/{id}/ekstraksi',                    [EkstraksiController::class, 'mulai'])->name('api.documents.ekstraksi.mulai');
         Route::post('/{id}/ekstraksi/jeda',               [EkstraksiController::class, 'jeda'])->name('api.documents.ekstraksi.jeda');
         Route::get('/{id}/ekstraksi',                     [EkstraksiController::class, 'status'])->name('api.documents.ekstraksi.status');

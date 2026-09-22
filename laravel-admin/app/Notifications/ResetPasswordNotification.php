@@ -22,4 +22,17 @@ class ResetPasswordNotification extends BaseResetPassword
                 'expireIn' => config('auth.passwords.'.config('auth.defaults.passwords').'.expire'),
             ]);
     }
+
+    /**
+     * Get the reset URL for the given notifiable.
+     */
+    protected function resetUrl(mixed $notifiable): string
+    {
+        $frontendUrl = rtrim(config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:5173')), '/');
+
+        return $frontendUrl . '/reset-password?' . http_build_query([
+            'token' => $this->token,
+            'email' => $notifiable->getEmailForPasswordReset(),
+        ]);
+    }
 }

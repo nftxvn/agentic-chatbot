@@ -5,15 +5,18 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ChatLog;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ChatLogController extends Controller
 {
     /**
-     * GET /api/chat-logs — Paginated list of chat logs with search & filters
+     * GET /api/chat-logs — Telemetry transaction logs (Privacy-first: zero citizen text stored)
      */
     public function index(Request $request)
     {
-        $query = ChatLog::with('apiKey:id,name')->orderBy('created_at', 'desc');
+        $query = ChatLog::with('apiKey:id,name')
+            ->select(['id', 'created_at', 'channel', 'sender_identifier', 'api_key_id', 'is_fallback', 'response_time_ms'])
+            ->orderBy('created_at', 'desc');
 
         // Filter channel
         if ($request->filled('channel') && $request->channel !== 'all') {
@@ -28,13 +31,12 @@ class ChatLogController extends Controller
             }
         }
 
-        // Search text in query or answer
+        // Filter by sender / client name
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('query', 'like', "%{$search}%")
-                  ->orWhere('answer', 'like', "%{$search}%")
-                  ->orWhere('sender_identifier', 'like', "%{$search}%");
+                $q->where('sender_identifier', 'like', "%{$search}%")
+                  ->orWhere('channel', 'like', "%{$search}%");
             });
         }
 
@@ -54,7 +56,7 @@ class ChatLogController extends Controller
     }
 
     /**
-     * GET /api/chat-logs/analytics — Aggregate metrics & top unanswered questions
+     * GET /api/chat-logs/analytics — Aggregate metrics & volume telemetry
      */
     public function analytics()
     {
@@ -67,10 +69,16 @@ class ChatLogController extends Controller
         $fallbackRate = $totalQueries > 0 ? round(($fallbackCount / $totalQueries) * 100, 1) : 0;
         $avgResponseTime = (int) round(ChatLog::whereNotNull('response_time_ms')->avg('response_time_ms') ?? 0);
 
-        $recentFallbacks = ChatLog::where('is_fallback', true)
-            ->orderBy('created_at', 'desc')
-            ->limit(6)
-            ->get(['id', 'query', 'channel', 'created_at']);
+        // Daily volume breakdown for the last 7 days (Privacy-safe aggregated counts)
+        $dailyVolume = ChatLog::select(
+            DB::raw('DATE(created_at) as date'),
+            DB::raw('count(*) as total'),
+            DB::raw('sum(case when is_fallback = 1 then 1 else 0 end) as fallbacks')
+        )
+            ->where('created_at', '>=', now()->subDays(7))
+            ->groupBy(DB::raw('DATE(created_at)'))
+            ->orderBy('date', 'asc')
+            ->get();
 
         return response()->json([
             'success' => true,
@@ -82,13 +90,13 @@ class ChatLogController extends Controller
                 'fallback_count' => $fallbackCount,
                 'fallback_rate_pct' => $fallbackRate,
                 'avg_response_time_ms' => $avgResponseTime,
-                'recent_fallbacks' => $recentFallbacks,
+                'daily_volume' => $dailyVolume,
             ],
         ]);
     }
 
     /**
-     * DELETE /api/chat-logs/{id} — Delete single log entry
+     * DELETE /api/chat-logs/{id} — Delete single telemetry log entry
      */
     public function destroy($id)
     {
@@ -97,12 +105,12 @@ class ChatLogController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Log riwayat percakapan berhasil dihapus.',
+            'message' => 'Catatan telemetri berhasil dihapus.',
         ]);
     }
 
     /**
-     * DELETE /api/chat-logs — Purge all logs
+     * DELETE /api/chat-logs/purge — Purge all telemetry logs
      */
     public function purge()
     {
@@ -110,7 +118,7 @@ class ChatLogController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Seluruh riwayat percakapan berhasil dibersihkan.',
+            'message' => 'Seluruh data telemetri interaksi berhasil dibersihkan.',
         ]);
     }
 }

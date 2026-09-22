@@ -188,6 +188,8 @@ class Document extends Model
         return match ($this->pdf_type) {
             'text' => 'Teks',
             'scanned' => 'Scan/Gambar',
+            'image' => 'Gambar (OCR/Vision)',
+            'spreadsheet' => 'Spreadsheet',
             'mixed' => 'Campuran',
             default => 'Belum Diketahui',
         };

@@ -22,14 +22,9 @@ class DocumentCategoryController extends Controller
             'name' => 'required|string|unique:document_categories,name',
             'description' => 'nullable|string',
             'vision_prompt' => 'nullable|string',
-            'llm_prompt' => 'nullable|string',
             'prompt_variables' => 'nullable',
             'ui_layout' => 'required|string',
             'vision_model' => 'nullable|string',
-            'llm_model' => 'nullable|string',
-            'temperature' => 'nullable|numeric|min:0|max:2',
-            'chunk_size' => 'nullable|integer|min:100',
-            'chunk_overlap' => 'nullable|integer|min:0',
         ]);
 
         $category = \App\Models\DocumentCategory::create($validated);
@@ -44,14 +39,9 @@ class DocumentCategoryController extends Controller
             'name' => 'required|string|unique:document_categories,name,'.$id,
             'description' => 'nullable|string',
             'vision_prompt' => 'nullable|string',
-            'llm_prompt' => 'nullable|string',
             'prompt_variables' => 'nullable',
             'ui_layout' => 'required|string',
             'vision_model' => 'nullable|string',
-            'llm_model' => 'nullable|string',
-            'temperature' => 'nullable|numeric|min:0|max:2',
-            'chunk_size' => 'nullable|integer|min:100',
-            'chunk_overlap' => 'nullable|integer|min:0',
         ]);
 
         $category->update($validated);

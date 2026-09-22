@@ -43,59 +43,7 @@ class AiMicroserviceClient
         }
     }
 
-    /**
-     * Send a document for full processing pipeline (legacy/batch process).
-     *
-     * @param int    $documentId  The document ID in the database
-     * @param string $filePath    Absolute path to the PDF file
-     * @param string $action      Processing action: 'overwrite' or 'new'
-     *
-     * @return array{success: bool, message: string, data: mixed}
-     */
-    public function processDocument(int $documentId, string $filePath, string $action = 'overwrite'): array
-    {
-        try {
-            $response = Http::withToken($this->token)
-                ->timeout(30)
-                ->connectTimeout(10)
-                ->post("{$this->baseUrl}/api/docs/process", [
-                    'document_id' => $documentId,
-                    'file_path'   => $filePath,
-                    'action'      => $action,
-                ]);
 
-            if ($response->successful()) {
-                return [
-                    'success' => true,
-                    'message' => 'Dokumen berhasil dikirim untuk diproses.',
-                    'data'    => $response->json(),
-                ];
-            }
-
-            Log::warning('AI Microservice returned error on processDocument', [
-                'status'      => $response->status(),
-                'body'        => $response->body(),
-                'document_id' => $documentId,
-            ]);
-
-            return [
-                'success' => false,
-                'message' => 'AI Service mengembalikan error: ' . $response->status(),
-                'data'    => $response->json(),
-            ];
-        } catch (\Exception $e) {
-            Log::error('AI Microservice connection failed on processDocument', [
-                'error'       => $e->getMessage(),
-                'document_id' => $documentId,
-            ]);
-
-            return [
-                'success' => false,
-                'message' => 'Tidak dapat terhubung ke AI Service: ' . $e->getMessage(),
-                'data'    => null,
-            ];
-        }
-    }
 
     /**
      * Cancel an active document processing and release system resources.
@@ -166,7 +114,7 @@ class AiMicroserviceClient
             $response = Http::withToken($this->token)
                 ->timeout(30)
                 ->connectTimeout(10)
-                ->post("{$this->baseUrl}/api/docs/{$documentId}/ekstraksi", !empty($payload) ? $payload : (object)[]);
+                ->post("{$this->baseUrl}/api/docs/{$documentId}/extraction", !empty($payload) ? $payload : (object)[]);
 
             if ($response->successful()) {
                 return [
@@ -195,7 +143,7 @@ class AiMicroserviceClient
             $response = Http::withToken($this->token)
                 ->timeout(15)
                 ->connectTimeout(5)
-                ->post("{$this->baseUrl}/api/docs/{$documentId}/ekstraksi/jeda");
+                ->post("{$this->baseUrl}/api/docs/{$documentId}/extraction/pause");
 
             if ($response->successful()) {
                 return [
@@ -223,7 +171,7 @@ class AiMicroserviceClient
         try {
             $response = Http::withToken($this->token)
                 ->timeout(15)
-                ->get("{$this->baseUrl}/api/docs/{$documentId}/ekstraksi");
+                ->get("{$this->baseUrl}/api/docs/{$documentId}/extraction");
 
             if ($response->successful()) {
                 return [
@@ -251,7 +199,7 @@ class AiMicroserviceClient
         try {
             $response = Http::withToken($this->token)
                 ->timeout(30)
-                ->get("{$this->baseUrl}/api/docs/{$documentId}/halaman", [
+                ->get("{$this->baseUrl}/api/docs/{$documentId}/pages", [
                     'perlu_diperiksa' => $perluDiperiksa ? 1 : 0,
                 ]);
 
@@ -281,7 +229,7 @@ class AiMicroserviceClient
         try {
             $response = Http::withToken($this->token)
                 ->timeout(30)
-                ->put("{$this->baseUrl}/api/docs/{$documentId}/halaman/{$pageNumber}", [
+                ->put("{$this->baseUrl}/api/docs/{$documentId}/pages/{$pageNumber}", [
                     'text' => $text,
                 ]);
 
@@ -311,7 +259,7 @@ class AiMicroserviceClient
         try {
             $response = Http::withToken($this->token)
                 ->timeout(15)
-                ->get("{$this->baseUrl}/api/docs/{$documentId}/halaman/ukuran");
+                ->get("{$this->baseUrl}/api/docs/{$documentId}/pages/dimensions");
 
             if ($response->successful()) {
                 return [
@@ -339,7 +287,7 @@ class AiMicroserviceClient
         try {
             $response = Http::withToken($this->token)
                 ->timeout(30)
-                ->get("{$this->baseUrl}/api/docs/{$documentId}/halaman/{$pageNumber}/citra", [
+                ->get("{$this->baseUrl}/api/docs/{$documentId}/pages/{$pageNumber}/image", [
                     'zoom' => $zoom,
                 ]);
 
@@ -362,9 +310,9 @@ class AiMicroserviceClient
         try {
             $req = Http::withToken($this->token)->timeout(30);
             if (!empty($params)) {
-                $response = $req->post("{$this->baseUrl}/api/docs/{$documentId}/potongan", $params);
+                $response = $req->post("{$this->baseUrl}/api/docs/{$documentId}/chunks/preview", $params);
             } else {
-                $response = $req->get("{$this->baseUrl}/api/docs/{$documentId}/potongan");
+                $response = $req->get("{$this->baseUrl}/api/docs/{$documentId}/chunks/preview");
             }
 
             if ($response->successful()) {
@@ -394,7 +342,7 @@ class AiMicroserviceClient
             $response = Http::withToken($this->token)
                 ->timeout(30)
                 ->connectTimeout(10)
-                ->post("{$this->baseUrl}/api/docs/{$documentId}/simpan", !empty($params) ? $params : (object)[]);
+                ->post("{$this->baseUrl}/api/docs/{$documentId}/embed", !empty($params) ? $params : (object)[]);
 
             if ($response->successful()) {
                 return [

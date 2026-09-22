@@ -82,19 +82,19 @@ class DocumentController extends Controller
     }
 
     /**
-     * Handle a new document upload (supports PDF, DOCX, XLSX, CSV, TXT, MD).
+     * Handle a new document upload (supports PDF, DOCX, XLSX, CSV, TXT, MD, PNG, JPG, JPEG, WEBP).
      */
     public function upload(Request $request): JsonResponse
     {
         $request->validate([
             'title'       => ['required', 'string', 'max:255'],
-            'pdf_file'    => ['required', 'file', 'mimes:pdf,docx,xlsx,csv,txt,md', 'max:51200'],
+            'pdf_file'    => ['required', 'file', 'mimes:pdf,docx,xlsx,csv,txt,md,png,jpg,jpeg,webp', 'max:51200'],
             'category_id' => ['nullable', 'integer', 'exists:document_categories,id'],
         ], [
             'title.required'    => 'Judul dokumen wajib diisi.',
             'title.max'         => 'Judul dokumen maksimal 255 karakter.',
             'pdf_file.required' => 'File dokumen wajib diunggah.',
-            'pdf_file.mimes'    => 'Format file tidak diizinkan. Gunakan format: PDF, DOCX, XLSX, CSV, TXT, atau MD.',
+            'pdf_file.mimes'    => 'Format file tidak diizinkan. Gunakan format: PDF, DOCX, XLSX, CSV, TXT, MD, PNG, JPG, JPEG, atau WEBP.',
             'pdf_file.max'      => 'Ukuran file maksimal 50MB.',
         ]);
 
@@ -153,10 +153,10 @@ class DocumentController extends Controller
         $document = Document::findOrFail($id);
 
         $request->validate([
-            'pdf_file' => ['required', 'file', 'mimes:pdf,docx,xlsx,csv,txt,md', 'max:51200'],
+            'pdf_file' => ['required', 'file', 'mimes:pdf,docx,xlsx,csv,txt,md,png,jpg,jpeg,webp', 'max:51200'],
         ], [
             'pdf_file.required' => 'File dokumen wajib diunggah.',
-            'pdf_file.mimes'    => 'Format file tidak diizinkan. Gunakan format: PDF, DOCX, XLSX, CSV, TXT, atau MD.',
+            'pdf_file.mimes'    => 'Format file tidak diizinkan. Gunakan format: PDF, DOCX, XLSX, CSV, TXT, MD, PNG, JPG, JPEG, atau WEBP.',
             'pdf_file.max'      => 'Ukuran file maksimal 50MB.',
         ]);
 

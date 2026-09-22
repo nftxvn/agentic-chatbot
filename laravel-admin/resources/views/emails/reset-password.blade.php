@@ -15,57 +15,58 @@
     </noscript>
     <![endif]-->
 </head>
-<body style="margin:0;padding:0;background-color:#f0f2f5;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+<body style="margin:0;padding:0;background-color:#0b0f19;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;font-family:'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
 
 <!-- ===== OUTER WRAPPER ===== -->
 <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
-       style="background-color:#f0f2f5;">
+       style="background-color:#0b0f19;background:linear-gradient(180deg, #0b0f19 0%, #0f172a 100%);">
     <tr>
-        <td align="center" style="padding:40px 16px;">
+        <td align="center" style="padding:48px 16px;">
 
-            <!-- ===== INNER CARD (600px) ===== -->
-            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="600"
-                   style="max-width:600px;width:100%;">
+            <!-- ===== INNER CARD (580px) ===== -->
+            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="580"
+                   style="max-width:580px;width:100%;border-collapse:separate;border-spacing:0;">
 
-                <!-- ── HEADER ── -->
+                <!-- ── HEADER (Dark Modern Slate with Sky Glow) ── -->
                 <tr>
-                    <td align="center" bgcolor="#4f46e5"
-                        style="background-color:#4f46e5;
-                               padding:36px 48px 32px 48px;
-                               border-radius:16px 16px 0 0;">
+                    <td align="center" bgcolor="#0f172a"
+                        style="background-color:#0f172a;background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+                               padding:38px 40px 32px 40px;
+                               border-radius:20px 20px 0 0;
+                               border:1px solid rgba(56, 189, 248, 0.2);
+                               border-bottom:none;">
 
-                        <!-- Icon box -->
+                        <!-- Logo / Icon Box -->
                         <table role="presentation" border="0" cellpadding="0" cellspacing="0">
                             <tr>
-                                <td align="center" width="56" height="56" bgcolor="#ffffff"
-                                    style="background-color:rgba(255,255,255,0.15);
+                                <td align="center" width="56" height="56" bgcolor="#1e293b"
+                                    style="background-color:#1e293b;
                                            border-radius:14px;
+                                           border:1px solid rgba(56, 189, 248, 0.4);
                                            width:56px;height:56px;
-                                           padding:14px;">
-                                    <!--[if mso]><v:roundrect xmlns:v="urn:schemas-microsoft-com:vml"
-                                        style="width:56px;height:56px;" arcsize="25%" fillcolor="#8080ff">
-                                        <v:textbox inset="14px,14px,14px,14px"><![endif]-->
-                                    <img src="https://img.icons8.com/ios-filled/50/ffffff/monitor.png"
-                                         alt="Agentic" width="28" height="28"
-                                         style="display:block;border:0;outline:none;
-                                                max-width:28px;height:auto;">
-                                    <!--[if mso]></v:textbox></v:roundrect><![endif]-->
+                                           padding:12px;
+                                           box-shadow:0 0 20px rgba(14, 165, 233, 0.25);">
+                                    <!-- Lock/Key Icon -->
+                                    <img src="https://img.icons8.com/ios-filled/50/38bdf8/password.png"
+                                         alt="Agentic Security" width="30" height="30"
+                                         style="display:block;border:0;outline:none;max-width:30px;height:auto;">
                                 </td>
                             </tr>
                         </table>
 
-                        <!-- Brand name -->
+                        <!-- Brand Title & Tagline -->
                         <table role="presentation" border="0" cellpadding="0" cellspacing="0">
                             <tr>
                                 <td align="center" style="padding-top:16px;">
-                                    <p style="margin:0;font-family:Arial,Helvetica,sans-serif;
-                                               font-size:20px;font-weight:bold;color:#ffffff;
-                                               letter-spacing:0.3px;">
-                                        Agentic Copilot
+                                    <p style="margin:0;font-family:'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+                                               font-size:21px;font-weight:800;color:#ffffff;
+                                               letter-spacing:-0.4px;">
+                                        AGENTIC <span style="color:#38bdf8;">COPILOT</span>
                                     </p>
-                                    <p style="margin:6px 0 0 0;font-family:Arial,Helvetica,sans-serif;
-                                               font-size:13px;color:#c7d2fe;">
-                                        Admin Dashboard &middot; Diskominfotik
+                                    <p style="margin:4px 0 0 0;font-family:'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+                                               font-size:12px;font-weight:600;color:#94a3b8;
+                                               letter-spacing:0.5px;text-transform:uppercase;">
+                                        Diskominfotik Kota Banda Aceh
                                     </p>
                                 </td>
                             </tr>
@@ -73,124 +74,122 @@
                     </td>
                 </tr>
 
-                <!-- ── BODY ── -->
+                <!-- ── BODY CARD (Clean Bright Card) ── -->
                 <tr>
                     <td bgcolor="#ffffff"
-                        style="background-color:#ffffff;padding:44px 48px 40px 48px;">
+                        style="background-color:#ffffff;
+                               padding:40px 44px 36px 44px;
+                               border-left:1px solid #e2e8f0;
+                               border-right:1px solid #e2e8f0;">
 
-                        <!-- Greeting -->
+                        <!-- Heading -->
                         <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
                             <tr>
                                 <td>
-                                    <p style="margin:0 0 8px 0;
-                                               font-family:Arial,Helvetica,sans-serif;
-                                               font-size:22px;font-weight:bold;
-                                               color:#111827;line-height:1.3;">
-                                        Halo, {{ $name }}!
-                                    </p>
-                                    <p style="margin:0 0 32px 0;
-                                               font-family:Arial,Helvetica,sans-serif;
-                                               font-size:15px;color:#6b7280;
-                                               line-height:1.7;">
-                                        Kami menerima permintaan untuk mereset password akun Anda
-                                        di <strong style="color:#374151;">Agentic Copilot Admin Dashboard</strong>.
-                                        Klik tombol di bawah untuk melanjutkan proses reset password.
+                                    <h1 style="margin:0 0 10px 0;
+                                               font-family:'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+                                               font-size:22px;font-weight:700;
+                                               color:#0f172a;letter-spacing:-0.3px;line-height:1.3;">
+                                        Permintaan Reset Password
+                                    </h1>
+                                    <p style="margin:0 0 24px 0;
+                                               font-family:'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+                                               font-size:14px;color:#475569;
+                                               line-height:1.65;">
+                                        Halo <strong style="color:#0f172a;">{{ $name }}</strong>, kami menerima permintaan untuk mengatur ulang kata sandi akun Admin Dashboard Anda di sistem <strong>Agentic Copilot</strong>.
                                     </p>
                                 </td>
                             </tr>
                         </table>
 
-                        <!-- CTA Button -->
-                        <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+                        <!-- CTA Button (Sky Theme) -->
+                        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
                             <tr>
-                                <td align="center" bgcolor="#4f46e5"
-                                    style="background-color:#4f46e5;border-radius:10px;
-                                           mso-padding-alt:0;">
+                                <td align="center" style="padding:10px 0 28px 0;">
                                     <!--[if mso]>
                                     <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml"
                                         xmlns:w="urn:schemas-microsoft-com:office:word"
                                         href="{{ $url }}"
-                                        style="height:52px;v-text-anchor:middle;width:240px;"
-                                        arcsize="10%" fillcolor="#4f46e5" strokecolor="#4f46e5">
+                                        style="height:48px;v-text-anchor:middle;width:260px;"
+                                        arcsize="24%" fillcolor="#0284c7" strokecolor="#0284c7">
                                         <w:anchorlock/>
-                                        <center style="color:#ffffff;font-family:Arial,Helvetica,sans-serif;
-                                                       font-size:15px;font-weight:bold;">
-                                            Reset Password Saya
+                                        <center style="color:#ffffff;font-family:sans-serif;
+                                                       font-size:14px;font-weight:bold;">
+                                            Buat Password Baru &rarr;
                                         </center>
                                     </v:roundrect>
                                     <![endif]-->
                                     <!--[if !mso]><!-->
                                     <a href="{{ $url }}"
-                                       style="display:inline-block;padding:15px 32px;
-                                              font-family:Arial,Helvetica,sans-serif;
-                                              font-size:15px;font-weight:bold;
+                                       style="display:inline-block;padding:14px 34px;
+                                              font-family:'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+                                              font-size:14px;font-weight:700;
                                               color:#ffffff;text-decoration:none;
-                                              background-color:#4f46e5;border-radius:10px;
-                                              mso-hide:all;">
-                                        Reset Password Saya
+                                              background-color:#0284c7;background:linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%);
+                                              border-radius:12px;
+                                              box-shadow:0 4px 12px rgba(2, 132, 199, 0.35);
+                                              letter-spacing:0.2px;">
+                                        Buat Password Baru &rarr;
                                     </a>
                                     <!--<![endif]-->
                                 </td>
                             </tr>
                         </table>
 
-                        <!-- Spacer -->
-                        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
-                            <tr><td style="padding-top:32px;"></td></tr>
-                        </table>
-
-                        <!-- Divider -->
+                        <!-- Security Notice Box (Sky Tint) -->
                         <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
                             <tr>
-                                <td style="border-top:1px solid #e5e7eb;padding-top:28px;"></td>
-                            </tr>
-                        </table>
-
-                        <!-- Notice 1: Expiry -->
-                        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
-                            <tr>
-                                <td style="padding-bottom:12px;">
-                                    <p style="margin:0;font-family:Arial,Helvetica,sans-serif;
-                                               font-size:13px;color:#6b7280;line-height:1.7;">
-                                        &#9200;&nbsp; Link ini akan kadaluarsa dalam
-                                        <strong style="color:#374151;">{{ $expireIn }} menit</strong>.
-                                    </p>
+                                <td bgcolor="#f0f9ff"
+                                    style="background-color:#f0f9ff;
+                                           border:1px solid #bae6fd;
+                                           border-radius:12px;
+                                           padding:16px 20px;">
+                                    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+                                        <tr>
+                                            <td width="24" valign="top" style="padding-top:2px;">
+                                                <span style="font-size:16px;">⏱️</span>
+                                            </td>
+                                            <td style="padding-left:10px;">
+                                                <p style="margin:0;font-size:13px;color:#0369a1;line-height:1.5;font-weight:500;">
+                                                    Tautan ini hanya berlaku selama <strong>{{ $expireIn }} menit</strong>.
+                                                </p>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td width="24" valign="top" style="padding-top:10px;">
+                                                <span style="font-size:16px;">🔒</span>
+                                            </td>
+                                            <td style="padding-left:10px;padding-top:8px;">
+                                                <p style="margin:0;font-size:13px;color:#0369a1;line-height:1.5;">
+                                                    Jika Anda tidak merasa melakukan permintaan ini, Anda dapat mengabaikan email ini dengan aman. Kata sandi Anda tidak akan berubah.
+                                                </p>
+                                            </td>
+                                        </tr>
+                                    </table>
                                 </td>
                             </tr>
-                            <!-- Notice 2: Security -->
-                            <tr>
-                                <td style="padding-bottom:28px;">
-                                    <p style="margin:0;font-family:Arial,Helvetica,sans-serif;
-                                               font-size:13px;color:#6b7280;line-height:1.7;">
-                                        &#128274;&nbsp; Jika Anda tidak merasa melakukan permintaan ini,
-                                        abaikan email ini.
-                                        Password Anda <strong style="color:#374151;">tidak akan berubah</strong>.
-                                    </p>
-                                </td>
-                            </tr>
                         </table>
 
-                        <!-- Fallback URL box -->
-                        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+                        <!-- Fallback URL Box -->
+                        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-top:24px;">
                             <tr>
-                                <td bgcolor="#f9fafb"
-                                    style="background-color:#f9fafb;border:1px solid #e5e7eb;
-                                           border-radius:10px;padding:16px 20px;">
+                                <td bgcolor="#f8fafc"
+                                    style="background-color:#f8fafc;
+                                           border:1px solid #e2e8f0;
+                                           border-radius:12px;
+                                           padding:14px 18px;">
                                     <p style="margin:0 0 6px 0;
-                                               font-family:Arial,Helvetica,sans-serif;
-                                               font-size:11px;font-weight:bold;
-                                               color:#9ca3af;text-transform:uppercase;
+                                               font-size:11px;font-weight:700;
+                                               color:#64748b;text-transform:uppercase;
                                                letter-spacing:0.5px;">
-                                        Tombol tidak berfungsi?
+                                        Tombol tidak dapat diklik?
                                     </p>
-                                    <p style="margin:0 0 8px 0;
-                                               font-family:Arial,Helvetica,sans-serif;
-                                               font-size:12px;color:#6b7280;line-height:1.6;">
-                                        Salin dan tempel URL berikut ke browser Anda:
+                                    <p style="margin:0 0 6px 0;font-size:12px;color:#64748b;line-height:1.5;">
+                                        Salin dan tempel tautan berikut ke peramban web Anda:
                                     </p>
-                                    <p style="margin:0;font-family:Arial,Helvetica,sans-serif;
-                                               font-size:12px;color:#4f46e5;line-height:1.6;
-                                               overflow-wrap:anywhere;">
+                                    <p style="margin:0;font-family:'JetBrains Mono',Consolas,monospace;
+                                               font-size:11px;color:#0284c7;line-height:1.5;
+                                               word-break:break-all;overflow-wrap:anywhere;">
                                         {{ $url }}
                                     </p>
                                 </td>
@@ -202,20 +201,18 @@
 
                 <!-- ── FOOTER ── -->
                 <tr>
-                    <td align="center" bgcolor="#f9fafb"
-                        style="background-color:#f9fafb;
-                               border:1px solid #e5e7eb;border-top:none;
-                               border-radius:0 0 16px 16px;
-                               padding:24px 48px;">
-                        <p style="margin:0 0 6px 0;
-                                   font-family:Arial,Helvetica,sans-serif;
-                                   font-size:12px;color:#9ca3af;line-height:1.6;">
-                            Email ini dikirim otomatis oleh sistem <strong>Agentic Copilot</strong>.
-                            Jangan membalas email ini.
+                    <td align="center" bgcolor="#f8fafc"
+                        style="background-color:#f8fafc;
+                               border:1px solid #e2e8f0;
+                               border-top:none;
+                               border-radius:0 0 20px 20px;
+                               padding:24px 40px;">
+                        <p style="margin:0 0 4px 0;
+                                   font-size:12px;color:#64748b;line-height:1.5;">
+                            Email otomatis dari sistem <strong>Agentic Copilot</strong> &middot; Layanan Dokumen Cerdas RAG
                         </p>
-                        <p style="margin:0;font-family:Arial,Helvetica,sans-serif;
-                                   font-size:12px;color:#d1d5db;">
-                            &copy; {{ date('Y') }} Dinas Komunikasi dan Informatika.
+                        <p style="margin:0;font-size:11px;color:#94a3b8;">
+                            &copy; {{ date('Y') }} Dinas Komunikasi, Informatika dan Statistik Kota Banda Aceh.
                         </p>
                     </td>
                 </tr>
@@ -230,3 +227,4 @@
 
 </body>
 </html>
+
