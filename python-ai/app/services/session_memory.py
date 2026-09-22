@@ -181,6 +181,45 @@ _STANDALONE_TOPIC_MARKERS = {
 }
 
 
+_RE_SESSION_RECAP = re.compile(
+    r"\b(bahas\s+apa|bicara\s+apa|ngomongin\s+apa|ngobrolin\s+apa|obrolan\s+kita|percakapan\s+kita|"
+    r"tadi\s+(?:saya\s+)?tanya\s+apa|pertanyaan\s+saya\s+sebelumnya|rangkum\s+(?:obrolan|percakapan|topik)|"
+    r"sebelumnya\s+kita\s+bahas|tadi\s+tentang\s+apa|kita\s+sedang\s+bahas\s+apa|topik\s+sebelumnya|"
+    r"apa\s+yang\s+(?:tadi\s+)?kita\s+bahas|tadi\s+saya\s+bahas\s+apa)\b",
+    re.IGNORECASE,
+)
+
+_RE_DOUBT_OR_CORRECTION = re.compile(
+    r"\b(salah|keliru|bukan|bukannya|kok beda|kok salah|kok bisa|kenapa beda|memang iya|masa sih|masa|yakin|beneran|serius|ngaco|bohong|ngibul|gak bener|tidak benar|kurang tepat|tidak tepat|hah|lah)\b",
+    re.IGNORECASE,
+)
+
+
+def clean_context_subject(raw_subject: str) -> str:
+    """Membersihkan context subject dari prefiks pertanyaan atau suffix."""
+    if not raw_subject:
+        return ""
+    text = raw_subject.strip()
+    if "terkait " in text.lower():
+        idx = text.lower().rfind("terkait ")
+        text = text[idx + len("terkait "):].strip()
+    text = re.sub(r"^(?:kalo|kalau|bagaimana|apa|berapa)\s+", "", text, flags=re.IGNORECASE).strip()
+    text = text.rstrip("?!., ")
+    return text
+
+
+_COMPARATIVE_PHRASE_PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"\b(?:di\s*antara|antara)\s+kedua(?:\s*-\s*dua)?\s*mereka\b", re.IGNORECASE), "di antara {subj}"),
+    (re.compile(r"\bkedua(?:\s*-\s*dua)?\s*mereka\b", re.IGNORECASE), "{subj}"),
+    (re.compile(r"\b(?:di\s*antara|antara)\s+keduanya\b", re.IGNORECASE), "antara {subj}"),
+    (re.compile(r"\bkedua(?:-dua)?nya\b", re.IGNORECASE), "{subj}"),
+    (re.compile(r"\bkedua\s+(?:sop|dokumen|layanan|pihak|hal)\s+(?:tersebut|ini|tadi)\b", re.IGNORECASE), "{subj}"),
+    (re.compile(r"\bmereka\s+berdua\b", re.IGNORECASE), "{subj}"),
+    (re.compile(r"\b(?:sop|dokumen|layanan|hal)\s+(?:tersebut|ini|tadi)\b", re.IGNORECASE), "{subj}"),
+    (re.compile(r"\b(beliau|dia|ia|mereka|tersebut|tadi)\b", re.IGNORECASE), "{subj}"),
+]
+
+
 def resolve_contextual_query(query: str, session_id: str) -> tuple[str, bool]:
     """
     Menganalisis apakah query pengguna adalah pertanyaan lanjutan (follow-up)
@@ -190,6 +229,10 @@ def resolve_contextual_query(query: str, session_id: str) -> tuple[str, bool]:
         tuple (resolved_query, is_resolved)
     """
     if not session_id or not query.strip():
+        return query, False
+
+    # Jangan resolusi pertanyaan rekap sesi / memori obrolan
+    if _RE_SESSION_RECAP.search(query):
         return query, False
 
     data = _get_session_data(session_id)
@@ -207,9 +250,7 @@ def resolve_contextual_query(query: str, session_id: str) -> tuple[str, bool]:
             last_user_query = m.get("content", "")
             break
 
-    context_subject = last_entity or last_topic
-    if not context_subject and last_user_query:
-        context_subject = last_user_query
+    context_subject = clean_context_subject(last_entity or last_topic or last_user_query)
 
     if not context_subject:
         return query, False
@@ -217,13 +258,14 @@ def resolve_contextual_query(query: str, session_id: str) -> tuple[str, bool]:
     q_lower = query.lower().strip()
     words = set(re.findall(r"\w+", q_lower))
 
-    # 1. Ganti kata ganti eksplisit jika ada (beliau, dia, dsb)
+    # 1. Ganti kata ganti eksplisit / frasa komparatif jika ada
     resolved = query
     replaced_pronoun = False
-    for p in ["beliau", "dia", "ia", "tersebut"]:
-        if re.search(rf"\b{p}\b", resolved, re.IGNORECASE):
-            resolved = re.sub(rf"\b{p}\b", context_subject, resolved, flags=re.IGNORECASE)
+    for pat, repl in _COMPARATIVE_PHRASE_PATTERNS:
+        if pat.search(resolved):
+            resolved = pat.sub(repl.format(subj=context_subject), resolved)
             replaced_pronoun = True
+            break
 
     if replaced_pronoun:
         logger.info("Context Resolution: Mengganti kata ganti -> '%s'", resolved)
@@ -239,9 +281,12 @@ def resolve_contextual_query(query: str, session_id: str) -> tuple[str, bool]:
     has_elliptic = bool(words.intersection(_ELLIPTIC_FOLLOWUP_WORDS)) or any(w.endswith("nya") for w in words)
     is_short_fragment = len(words) <= 4 and ("berapa" in words or "kapan" in words or "siapa" in words or "dimana" in words or "bagaimana" in words or "apa" in words)
 
-    if has_elliptic or is_short_fragment:
+    # 4. Cek pertanyaan keraguan, sanggahan, atau koreksi (misal: "masa sih?", "kok beda?", "yakin 60 menit?")
+    is_doubt = bool(_RE_DOUBT_OR_CORRECTION.search(query))
+
+    if has_elliptic or is_short_fragment or is_doubt:
         resolved = f"{query} terkait {context_subject}"
-        logger.info("Context Resolution: Menyambung follow-up -> '%s'", resolved)
+        logger.info("Context Resolution: Menyambung follow-up/keraguan -> '%s'", resolved)
         return resolved, True
 
     return query, False

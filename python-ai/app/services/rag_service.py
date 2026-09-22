@@ -117,13 +117,15 @@ _NAMA_BULAN = [
 
 
 _RE_DOUBT_OR_CORRECTION = re.compile(
-    r"\b(salah|keliru|bukan|kok beda|kok salah|kok bisa|memang iya|masa sih|yakin|beneran|serius|ngaco|bohong|ngibul|gak bener|tidak benar)\b",
+    r"\b(salah|keliru|bukan|bukannya|kok beda|kok salah|kok bisa|kenapa beda|memang iya|masa sih|masa|yakin|beneran|serius|ngaco|bohong|ngibul|gak bener|tidak benar|kurang tepat|tidak tepat|hah|lah)\b",
     re.IGNORECASE,
 )
 
 
 def _is_doubt_or_correction_query(text: str) -> bool:
     """Mendeteksi apakah pertanyaan pengguna adalah bentuk keraguan, sanggahan, atau koreksi jawaban sebelumnya."""
+    if not text:
+        return False
     return bool(_RE_DOUBT_OR_CORRECTION.search(text))
 
 
@@ -135,42 +137,114 @@ def _get_current_date_info() -> str:
     return f"{hari}, {now.day} {bulan} {now.year}"
 
 
-# System prompt standar untuk LLM bila belum diubah di pengaturan admin
-_SYSTEM_PROMPT = """Anda adalah Petugas Layanan Informasi dan Helpdesk resmi Dinas Komunikasi, Informatika dan Statistik (Diskominfotik) Kota Banda Aceh yang bertugas melayani pertanyaan masyarakat dan ASN dengan bahasa yang ramah, natural, manusiawi, komunikatif, solutif, dan profesional berdasarkan dokumen SOP kedinasan yang diberikan.
+def _get_institution_info() -> str:
+    """Mengambil ringkasan profil instansi terkini secara dinamis dari basis data atau fallback standar."""
+    try:
+        from app.database import get_active_fast_paths
+        fast_paths = get_active_fast_paths()
+        kadis_info = "Ir. Muhammad Zubir, S.Si.T, M.Si. (resmi menjabat sejak 20 April 2026)"
+        alamat_info = "Balai Kota Banda Aceh (Gedung C Lantai 3), Jl. Tgk. Abu Lam U No. 7, Banda Aceh"
+        kontak_info = "diskominfotik@bandaacehkota.go.id | Call Center Darurat: 112"
+        for fp in fast_paths:
+            title = (fp.get("title") or "").lower()
+            resp = (fp.get("response_text") or "").replace("\n", " ").strip()
+            if "kepala dinas" in title or "profil" in title:
+                kadis_info = resp
+            elif "alamat" in title or "lokasi" in title:
+                alamat_info = resp
+            elif "kontak" in title or "website" in title:
+                kontak_info = resp
 
-Waktu & Tanggal Acuan:
+        return (
+            "- Instansi: Dinas Komunikasi, Informatika dan Statistik (Diskominfotik) Kota Banda Aceh\n"
+            f"- Kepala Dinas Saat Ini (Pejabat Aktif): {kadis_info}\n"
+            f"- Alamat Kantor: {alamat_info}\n"
+            f"- Kontak Layanan: {kontak_info}"
+        )
+    except Exception as e:
+        logger.warning("Gagal mengambil dynamic institution info: %s", e)
+        return (
+            "- Instansi: Dinas Komunikasi, Informatika dan Statistik (Diskominfotik) Kota Banda Aceh\n"
+            "- Kepala Dinas Saat Ini (Pejabat Aktif): Ir. Muhammad Zubir, S.Si.T, M.Si. (resmi menjabat sejak 20 April 2026)\n"
+            "- Alamat Kantor: Balai Kota Banda Aceh (Gedung C Lantai 3), Jl. Tgk. Abu Lam U No. 7, Banda Aceh\n"
+            "- Kontak Layanan: diskominfotik@bandaacehkota.go.id | Call Center Darurat: 112"
+        )
+
+
+# System prompt standar untuk LLM bila belum diubah di pengaturan admin
+_SYSTEM_PROMPT = """Anda adalah Petugas Layanan Informasi dan Helpdesk resmi Dinas Komunikasi, Informatika dan Statistik (Diskominfotik) Kota Banda Aceh. Tugas Anda adalah memberikan jawaban yang akurat, ramah, solutif, dan profesional kepada masyarakat dan ASN berdasarkan dokumen resmi yang disediakan.
+
+Waktu Acuan:
 - Hari & Tanggal Hari Ini: {current_date}
 
-Konteks Dokumen:
+Profil Instansi Terkini:
+{institution_info}
+
+Konteks Dokumen Resmi:
 {context}
 
-Instruksi Komunikasi Helpdesk:
-1. Persona & Gaya Bahasa: Bersikaplah ramah, santun, hangat, melayani, dan profesional layaknya staf Front Office / Customer Service resmi instansi yang sedang berbicara langsung dengan masyarakat. Hindari kalimat yang kaku atau terdengar seperti mesin/robot. Akhiri jawaban dengan kalimat penutup yang menawarkan bantuan lanjutan jika diperlukan (misal: 'Ada hal lain yang dapat kami bantu terkait layanan Diskominfotik Kota Banda Aceh?').
-2. Aturan Salam Pembuka & Multi-Turn:
-{salam_guide}
-   - Hanya ucapkan salam balasan ('Wa\\'alaikumussalam') jika pengguna secara eksplisit mengucapkan salam ('Assalamu\\'alaikum').
-3. Aturan Permohonan Maaf:
-   - JANGAN PERNAH meminta maaf atau mengucapkan 'Mohon maaf atas kekeliruan sebelumnya' jika pengguna hanya mengajukan pertanyaan biasa atau pertanyaan lanjutan baru (seperti 'Sudah berapa hari...', 'Kapan...', 'Di mana...'). Jawab langsung to-the-point secara santun.
-   - HANYA ucapkan permohonan maaf jika pengguna secara EKSPLISIT meragukan atau mengoreksi kesalahan pada jawaban sebelumnya (misal: 'salah itu', 'bukan itu', 'memang iya salah?').
-   - JANGAN menggunakan kata 'Tentu' saat meralat kesalahan sendiri.
-4. Perhitungan Durasi Waktu: Bila pengguna menanyakan durasi waktu sampai hari ini (misal 'sudah berapa hari/bulan/tahun sejak...'), gunakan Hari & Tanggal Hari Ini ({current_date}) sebagai acuan perhitungan yang tepat.
-5. Adaptasi Bahasa: Bila pengguna menyapa atau bertanya menggunakan Bahasa Aceh (misal: 'Saleuem', 'Pat kanto...', 'Peue syarat...', 'Pajan buka...'), pahami maksudnya dengan baik dan jawablah dengan bahasa Indonesia yang santun serta diawali dengan salam santun khas Aceh (misal: 'Assalamu\\'alaikum' atau 'Saleuem').
-6. Kepatuhan Fakta: Jawab pertanyaan berdasarkan fakta yang tertulis di dalam Konteks Dokumen atau Informasi Dasar Instansi di bawah ini. JANGAN menggunakan asumsi atau pengetahuan di luar informasi yang diberikan.
-7. Format Persyaratan & SOP: Dalam dokumen format SOP kedinasan/pemerintah, persyaratan berkas atau kelengkapan permohonan tercantum pada bagian 'Kelengkapan', 'Persyaratan', 'Kualifikasi Pelaksana', atau 'Pencatatan'. Bila pengguna menanyakan persyaratan/syarat, jelaskan berkas kelengkapan yang tercantum pada bagian tersebut.
-8. Prosedur & Tahapan: Bila pertanyaan menyangkut tahapan atau prosedur, jelaskan secara terstruktur menggunakan poin-poin bernomor (1, 2, 3) beserta persyaratan/kelengkapan, pelaksana, dan waktu penyelesaiannya jika tersedia.
-9. Presisi Data: Salin nama jabatan, nomor SOP, persyaratan/kelengkapan, formulir, dan angka waktu/biaya PERSIS seperti tertulis di dokumen tanpa mengubah atau menebak.
-10. Perhitungan Total Waktu/Biaya: Bila pengguna menanyakan TOTAL waktu atau durasi pelaksanaan SOP:
-   - Kelompokkan penjumlahan sesuai satuannya masing-masing (Hari, Jam, Menit). JANGAN memaksakan konversi seluruh hari menjadi ratusan jam.
-   - Untuk rentang waktu (misal: 5-6 hari + 3-4 hari), jumlahkan batas bawah dan batas atasnya (contoh: 8-10 hari).
-   - Tuliskan kesimpulan total yang mudah dipahami: "Sekitar 8-10 hari kerja + 2 hari (total estimasi 10-12 hari kerja)".
-11. Informasi Tidak Ditemukan: Bila informasi yang ditanyakan benar-benar TIDAK ADA di dalam Konteks Dokumen maupun Informasi Dasar Instansi, jawab dengan sopan: "Maaf, informasi mengenai hal tersebut tidak ditemukan di dalam dokumen SOP yang tersedia. Silakan hubungi petugas layanan Diskominfotik Kota Banda Aceh untuk bantuan lebih lanjut." JANGAN pernah mengarang informasi.
-12. JANGAN menggunakan emoji atau simbol grafis berlebihan sama sekali.
+Pedoman Inferensi & Penanganan Sumber Data:
+1. Kepatuhan Fakta & Anti-Halusinasi:
+   - Jawab HANYA berdasarkan fakta yang tertulis pada "Konteks Dokumen Resmi" atau "Profil Instansi Terkini". JANGAN mengarang nama pejabat, tanggal, regulasi, nomor kontak, atau prosedur di luar data tersebut.
+   - DILARANG mengarang kepanjangan singkatan/akronim (misal: SPPD, SPT, Renja, RKA, dsb) jika tidak tertulis di teks dokumen. Tulis singkatannya apa adanya.
 
-Informasi Dasar Instansi:
-- Instansi: Dinas Komunikasi, Informatika dan Statistik (Diskominfotik) Kota Banda Aceh
-- Penanggung Jawab / Kepala Dinas: Ir. Muhammad Zubir, S.Si.T, M.Si.
-- Alamat Kantor: Balai Kota Banda Aceh (Gedung C Lantai 3), Jl. Tgk. Abu Lam U No. 7, Banda Aceh
-- Kontak Layanan: diskominfotik@bandaacehkota.go.id | Call Center Darurat: 112"""
+2. Aturan Pembedaan Pejabat Dokumen vs Pejabat Aktif:
+   - Pertanyaan Dokumen/SOP: Bila pengguna menanyakan siapa pejabat/pimpinan yang mengesahkan atau tertulis "di dalam SOP/dokumen", salin PERSIS nama pejabat dan NIP yang tertera pada lembar identitas/pengesahan dokumen SOP pada Konteks Dokumen.
+   - Pertanyaan Kondisi Saat Ini: Bila pengguna menanyakan siapa pimpinan/Kepala Dinas "saat ini / sekarang / pejabat aktif", gunakan data pimpinan pada "Profil Instansi Terkini".
+
+3. Prosedur & Persyaratan SOP:
+   - Sajikan langkah-langkah alur secara terstruktur dengan poin bernomor (1, 2, 3...) beserta pelaksana, kelengkapan berkas, dan waktu proses jika tersedia pada teks dokumen.
+   - Rujuk bagian 'Kelengkapan', 'Persyaratan', atau 'Kualifikasi Pelaksana' bila ditanyakan syarat permohonan.
+
+4. Perhitungan Waktu & Penjumlahan SOP:
+   - Bila menghitung total waktu pelaksanaan SOP, WAJIB membaca dan menjumlahkan waktu seluruh tahapan/langkah dari langkah pertama hingga langkah terakhir pada tabel SOP secara lengkap dan teliti tanpa terpotong di tengah jalan.
+   - Untuk estimasi waktu hari kerja, jumlahkan sesuai rentang yang tertulis tanpa memaksakan konversi hari menjadi ratusan jam.
+   - Bila ditanyakan durasi waktu hingga hari ini, gunakan acuan {current_date}.
+
+5. Etika Komunikasi & Multi-Turn:
+   - Bersikaplah santun dan to-the-point.
+   - Hanya ucapkan salam pembuka/balasan jika pengguna mengawali pesan dengan salam.
+   - Bila informasi benar-benar tidak tercantum pada Dokumen maupun Profil Instansi, sampaikan secara jujur dan arahkan ke kontak resmi yang tersedia.
+   - JANGAN menggunakan emoji atau simbol grafis berlebihan.
+
+6. Analisis Perbandingan & Komparasi Antar-SOP:
+   - Bila pengguna menanyakan perbandingan (misal: perbedaan peralatan, syarat, waktu, kualifikasi, atau keterkaitan antara dua SOP), lakukan perbandingan langsung terhadap data masing-masing SOP yang tercantum pada Konteks Dokumen Resmi (atau gunakan Tabel Perbandingan Terstruktur bila disediakan).
+   - Jelaskan secara terstruktur: persamaan di antara keduanya, apa yang hanya ada di SOP pertama, dan apa yang hanya ada di SOP kedua. JANGAN menyatakan informasi tidak ditemukan jika rincian masing-masing SOP sudah ada di konteks."""
+
+
+def _format_pages_list(pages: list[int]) -> str:
+    """
+    Format daftar nomor halaman integer menjadi string rentang atau koma yang rapi.
+    Contoh: [3, 4, 5, 6] -> 'Halaman 3–6', [64, 65] -> 'Halaman 64, 65'.
+    """
+    if not pages:
+        return ""
+    sorted_pages = sorted(set(pages))
+    ranges: list[str] = []
+    start = sorted_pages[0]
+    prev = sorted_pages[0]
+
+    for p in sorted_pages[1:]:
+        if p == prev + 1:
+            prev = p
+        else:
+            if start == prev:
+                ranges.append(str(start))
+            elif prev == start + 1:
+                ranges.append(f"{start}, {prev}")
+            else:
+                ranges.append(f"{start}–{prev}")
+            start = p
+            prev = p
+
+    if start == prev:
+        ranges.append(str(start))
+    elif prev == start + 1:
+        ranges.append(f"{start}, {prev}")
+    else:
+        ranges.append(f"{start}–{prev}")
+
+    return f"Halaman {', '.join(ranges)}"
 
 
 # ─────────────────────────────────────────────────────────────
@@ -598,13 +672,23 @@ def _retrieve_context(
                     top_score = rerank_scores[ranked_chunk_ids[0]]
 
                     # Dynamic Adaptive Pruning (Relative Gap & Score-Drop Cutoff)
-                    # Jika query bukan list-query lengkap, pangkas potongan yang skornya anjlok jauh di bawah peringkat #1
-                    if not is_list and len(ranked_chunk_ids) > 1:
-                        # Rasio toleransi: pertahankan chunk yang skornya minimal 50% dari skor peringkat #1
-                        relative_cutoff = max(settings.RERANKER_MIN_SCORE, top_score * 0.50)
-                        # Bila peringkat #1 memiliki keyakinan tinggi (>= 0.15), perketat rasio ke 60%
-                        if top_score >= 0.15:
-                            relative_cutoff = max(relative_cutoff, top_score * 0.60)
+                    # Pangkas potongan yang skornya anjlok jauh di bawah peringkat #1
+                    if len(ranked_chunk_ids) > 1:
+                        if is_list:
+                            # Pada list query: jika terdapat chunk master daftar dengan keyakinan sangat tinggi (>= 0.90),
+                            # perketat cutoff ke 0.90 agar potongan rincian SOP tunggal tidak ikut terseret.
+                            if top_score >= 0.90:
+                                relative_cutoff = 0.90
+                            elif top_score >= 0.70:
+                                relative_cutoff = max(0.50, top_score * 0.60)
+                            else:
+                                relative_cutoff = settings.RERANKER_MIN_SCORE
+                        else:
+                            # Rasio toleransi: pertahankan chunk yang skornya minimal 50% dari skor peringkat #1
+                            relative_cutoff = max(settings.RERANKER_MIN_SCORE, top_score * 0.50)
+                            # Bila peringkat #1 memiliki keyakinan tinggi (>= 0.15), perketat rasio ke 60%
+                            if top_score >= 0.15:
+                                relative_cutoff = max(relative_cutoff, top_score * 0.60)
 
                         pruned_ids = [
                             cid for cid in ranked_chunk_ids
@@ -684,10 +768,18 @@ def _retrieve_context(
                 if reranker is not None and any(x[3] is not None for x in combined):
                     combined.sort(key=lambda x: (x[3] if x[3] is not None else -1.0), reverse=True)
                     top_parent_score = combined[0][3] if combined[0][3] is not None else 0.0
-                    if not is_list and top_parent_score > 0 and len(combined) > 1:
-                        parent_cutoff = max(settings.RERANKER_MIN_SCORE, top_parent_score * 0.50)
-                        if top_parent_score >= 0.15:
-                            parent_cutoff = max(parent_cutoff, top_parent_score * 0.60)
+                    if top_parent_score > 0 and len(combined) > 1:
+                        if is_list:
+                            if top_parent_score >= 0.90:
+                                parent_cutoff = 0.90
+                            elif top_parent_score >= 0.70:
+                                parent_cutoff = max(0.50, top_parent_score * 0.60)
+                            else:
+                                parent_cutoff = settings.RERANKER_MIN_SCORE
+                        else:
+                            parent_cutoff = max(settings.RERANKER_MIN_SCORE, top_parent_score * 0.50)
+                            if top_parent_score >= 0.15:
+                                parent_cutoff = max(parent_cutoff, top_parent_score * 0.60)
                         pruned_combined = [x for x in combined if (x[3] is not None and x[3] >= parent_cutoff)]
                         if pruned_combined:
                             combined = pruned_combined
@@ -802,7 +894,8 @@ def _retrieve_context(
 
         # ── Tahap 4: Bangun teks konteks dan sumber ──
         context_parts: list[str] = []
-        sources_set: set[str] = set()
+        doc_pages_for_sources: dict[str, set[int]] = {}
+        non_page_sources: set[str] = set()
 
         # Ambil nama asli dokumen dari database untuk sitasi yang informatif
         doc_ids_set = {
@@ -837,7 +930,12 @@ def _retrieve_context(
                 f"Chunk #{chunk_idx} ({chunk_type}) "
                 f"({score_str})]\n{doc_text}"
             )
-            sources_set.add(f"{display_title} \u2014 Halaman {page_num}")
+
+            # Agregasikan nomor halaman per dokumen
+            if str(page_num).isdigit():
+                doc_pages_for_sources.setdefault(display_title, set()).add(int(page_num))
+            else:
+                non_page_sources.add(f"{display_title} — Halaman {page_num}")
 
             if return_chunks_info:
                 chunk_item = {
@@ -855,7 +953,16 @@ def _retrieve_context(
                 debug_chunks.append(chunk_item)
 
         context_text = "\n\n---\n\n".join(context_parts)
-        sources_text = "\n".join(f"- {s}" for s in sorted(sources_set))
+
+        # Susun daftar sumber yang ringkas, bersih, dan teragregasi
+        sources_lines: list[str] = []
+        for d_title in sorted(doc_pages_for_sources.keys()):
+            pages_list = sorted(doc_pages_for_sources[d_title])
+            sources_lines.append(f"- {d_title} — {_format_pages_list(pages_list)}")
+        for np in sorted(non_page_sources):
+            sources_lines.append(f"- {np}")
+
+        sources_text = "\n".join(sources_lines)
 
         best_score = max(aggregated_rrf.values()) if aggregated_rrf else 0.0
         logger.info(
@@ -1451,9 +1558,10 @@ def _build_enumeration_answer(context_text: str, query: str) -> str | None:
 # ─────────────────────────────────────────────────────────────
 
 def _extract_list_items(block: str, field_name: str) -> list[str]:
-    """Ekstrak daftar item dari sebuah field (misal Peralatan/Perlengkapan) dalam teks blok."""
+    """Ekstrak daftar item dari sebuah field (misal Peralatan/Perlengkapan) dalam teks blok SOP."""
+    escaped = _re.escape(field_name).replace(r"\/", r"[\/\s]+")
     pattern = _re.compile(
-        rf"[-*]?\s*\*{{0,2}}{_re.escape(field_name)}\*{{0,2}}:\s*\n(.*?)(?=\n\s*[-*]?\s*\*{{0,2}}\w|\Z)",
+        rf"[-*]?\s*\*{{0,2}}{escaped}\*{{0,2}}:\s*(?:[ \t]*\n)?(.*?)(?=\n\s*[-*]?\s*\*{{0,2}}[A-Z][a-zA-Z /]+:\s*|\n\s*---|\n\s*\[|\Z)",
         _re.IGNORECASE | _re.DOTALL
     )
     match = pattern.search(block)
@@ -1462,7 +1570,7 @@ def _extract_list_items(block: str, field_name: str) -> list[str]:
     raw = match.group(1)
     items = []
     for line in raw.splitlines():
-        line = line.strip().lstrip("-*0123456789. ").strip()
+        line = line.strip().lstrip("-*0123456789. ").rstrip(",;").strip()
         line = _re.sub(r"\*+", "", line).strip()
         if line:
             items.append(line)
@@ -1513,27 +1621,35 @@ def _build_comparison_hint(context_text: str, query: str) -> str:
     sop_a_text, sop_b_text = sop_blocks[sop_a_name], sop_blocks[sop_b_name]
 
     hint_lines = [
-        "=== TABEL PERBANDINGAN TERSTRUKTUR (dihasilkan oleh sistem, gunakan ini untuk menjawab pertanyaan perbandingan) ===",
+        "=== TABEL PERBANDINGAN TERSTRUKTUR (WAJIB DIGUNAKAN SEBAGAI ACUAN UTAMA JAWABAN) ===",
+        "Instruksi Khusus Analisis Perbandingan:",
+        "- Sebutkan secara jelas apa saja item yang SAMA di kedua SOP.",
+        "- Sebutkan secara eksplisit dan rinci apa saja item yang HANYA ADA di SOP A dan apa saja yang HANYA ADA di SOP B berdasarkan rincian berikut:",
         f"SOP A: {sop_a_name}",
         f"SOP B: {sop_b_name}",
     ]
 
     for field in FIELDS_TO_COMPARE:
-        items_a = set(_extract_list_items(sop_a_text, field))
-        items_b = set(_extract_list_items(sop_b_text, field))
+        items_a = _extract_list_items(sop_a_text, field)
+        items_b = _extract_list_items(sop_b_text, field)
         if not items_a and not items_b:
             continue
-        only_in_a = sorted(items_a - items_b)
-        only_in_b = sorted(items_b - items_a)
-        in_both = sorted(items_a & items_b)
-        if only_in_a or only_in_b:
+
+        norm_b = {x.lower(): x for x in items_b}
+        norm_a = {x.lower(): x for x in items_a}
+
+        in_both = [x for x in items_a if x.lower() in norm_b]
+        only_in_a = [x for x in items_a if x.lower() not in norm_b]
+        only_in_b = [x for x in items_b if x.lower() not in norm_a]
+
+        if in_both or only_in_a or only_in_b:
             hint_lines.append(f"\n[PERBANDINGAN: {field}]")
             if in_both:
-                hint_lines.append(f"  SAMA di kedua SOP: {'; '.join(in_both)}")
+                hint_lines.append(f"  SAMA di kedua SOP ({len(in_both)} item): {'; '.join(in_both)}")
             if only_in_a:
-                hint_lines.append(f"  HANYA di {sop_a_name}: {'; '.join(only_in_a)}")
+                hint_lines.append(f"  HANYA di {sop_a_name} ({len(only_in_a)} item): {'; '.join(only_in_a)}")
             if only_in_b:
-                hint_lines.append(f"  HANYA di {sop_b_name}: {'; '.join(only_in_b)}")
+                hint_lines.append(f"  HANYA di {sop_b_name} ({len(only_in_b)} item): {'; '.join(only_in_b)}")
 
     hint_lines.append("=== AKHIR TABEL PERBANDINGAN ===\n")
     hint_text = "\n".join(hint_lines)
@@ -1768,36 +1884,196 @@ def generate_response(
         route_label = route_result.get("label", "Fast-Path Routing")
         route_params = route_result.get("params", {})
 
-        if intent == "chitchat":
-            greeting_msg = rag_cfg.get("chatbot_greeting") or (
-                f"Halo! Saya adalah {chatbot_persona}. "
-                "Ada yang bisa saya bantu mengenai informasi SOP atau layanan Diskominfotik Kota Banda Aceh?"
-            )
+        if intent == "session_recap":
+            is_empty_history = not chat_history or len(chat_history) == 0
+            if is_empty_history:
+                recap_msg = (
+                    "Kita baru saja memulai sesi percakapan ini dan belum membahas topik tertentu. "
+                    "Ada informasi seputar layanan atau dokumen SOP di Diskominfotik Kota Banda Aceh yang dapat saya bantu?"
+                )
+                if include_debug:
+                    yield {
+                        "type": "trace",
+                        "stage": "intent_routing",
+                        "step": 1,
+                        "total_steps": 1,
+                        "label": "Rangkuman Memori Sesi",
+                        "detail": "Sesi belum memiliki riwayat obrolan terdahulu.",
+                    }
+                    yield {
+                        "type": "debug",
+                        "chunks": [],
+                        "total_chunks": 0,
+                    }
+                    yield {
+                        "type": "telemetry",
+                        "model_name": active_llm_model,
+                        "context_tokens": 0,
+                        "num_ctx": active_num_ctx,
+                        "chunks_count": 0,
+                        "is_fallback": False,
+                    }
+                session_memory.add_user_message(session_id, query)
+                session_memory.add_assistant_message(session_id, recap_msg, topic="Rangkuman Sesi")
+                yield recap_msg
+                return
+
+            history_lines = []
+            for m in chat_history:
+                role_label = "Pengguna" if m.get("role") == "user" else "Asisten"
+                content_text = m.get("content", "").strip()
+                if content_text:
+                    history_lines.append(f"{role_label}: {content_text}")
+
+            history_formatted = "\n".join(history_lines)
+
+            recap_prompt = f"""Anda adalah Asisten Virtual resmi Diskominfotik Kota Banda Aceh.
+Pengguna menanyakan apa yang telah dibahas sebelumnya dalam percakapan ini.
+
+Riwayat Percakapan yang Telah Berlangsung:
+{history_formatted}
+
+Instruksi:
+1. Rangkum secara singkat, jelas, santun, dan bersahabat topik atau pertanyaan yang baru saja dibahas oleh pengguna di atas dalam 1-2 kalimat ringkas.
+2. Akhiri dengan menawarkan bantuan lebih lanjut seputar layanan atau SOP Diskominfotik Kota Banda Aceh.
+3. JANGAN mengarang informasi di luar riwayat percakapan di atas.
+4. JANGAN menggunakan emoji."""
+
+            estimasi_recap = _estimasi_token_konteks(recap_prompt)
             if include_debug:
                 yield {
                     "type": "trace",
                     "stage": "intent_routing",
                     "step": 1,
-                    "total_steps": 1,
-                    "label": route_label,
-                    "detail": "Input terdeteksi sebagai sapaan/chitchat. Menjawab langsung tanpa pencarian dokumen...",
+                    "total_steps": 2,
+                    "label": "Rangkuman Memori Sesi",
+                    "detail": f"Membaca {len(chat_history)} pesan terdahulu dan merangkum obrolan...",
                 }
                 yield {
                     "type": "debug",
                     "chunks": [],
                     "total_chunks": 0,
                 }
+
+            response_chunks = []
+            for chunk in _stream_jawaban(
+                recap_prompt,
+                query,
+                temperature=0.2,
+                num_ctx=active_num_ctx,
+                model_name=active_llm_model,
+            ):
+                response_chunks.append(chunk)
+                yield chunk
+
+            full_recap = "".join(response_chunks)
+            session_memory.add_user_message(session_id, query)
+            session_memory.add_assistant_message(session_id, full_recap, topic="Rangkuman Sesi")
+            if include_debug:
                 yield {
                     "type": "telemetry",
-                    "model_name": "Fast-Path Chitchat",
-                    "context_tokens": 0,
+                    "model_name": active_llm_model,
+                    "context_tokens": estimasi_recap,
                     "num_ctx": active_num_ctx,
                     "chunks_count": 0,
                     "is_fallback": False,
                 }
+            return
+
+        if intent == "chitchat":
+            is_simple_hi = bool(re.match(r"^(?:halo|hai|hay|hei|hi|hello|assalamu['\s]?alaikum|ass|askum|saleuem|saleum|kru\s+seumangat|p|ping|tes|test)[\s,.-]*$", query.strip().lower()))
+            is_followup = bool(chat_history and len(chat_history) > 0)
+
+            if is_simple_hi and not is_followup:
+                greeting_msg = rag_cfg.get("chatbot_greeting") or (
+                    f"Halo! Saya adalah {chatbot_persona}. "
+                    "Ada yang bisa saya bantu mengenai informasi SOP atau layanan Diskominfotik Kota Banda Aceh?"
+                )
+                if include_debug:
+                    yield {
+                        "type": "trace",
+                        "stage": "intent_routing",
+                        "step": 1,
+                        "total_steps": 1,
+                        "label": route_label,
+                        "detail": "Input terdeteksi sebagai sapaan awal. Menjawab langsung...",
+                    }
+                    yield {
+                        "type": "debug",
+                        "chunks": [],
+                        "total_chunks": 0,
+                    }
+                    yield {
+                        "type": "telemetry",
+                        "model_name": active_llm_model,
+                        "context_tokens": 0,
+                        "num_ctx": active_num_ctx,
+                        "chunks_count": 0,
+                        "is_fallback": False,
+                    }
+                session_memory.add_user_message(session_id, query)
+                session_memory.add_assistant_message(session_id, greeting_msg, topic="Sapaan")
+                yield greeting_msg
+                return
+
+            now_str = _get_current_date_info()
+            inst_info_str = _get_institution_info()
+
+            chitchat_prompt = f"""Anda adalah Asisten Virtual resmi Layanan Informasi Diskominfotik Kota Banda Aceh ({chatbot_name}) yang ramah, hangat, manusiawi, santun, dan profesional.
+
+Waktu Acuan: {now_str}
+Profil Singkat Instansi:
+{inst_info_str}
+
+Instruksi Komunikasi:
+1. Respon percakapan santai pengguna (sapaan, tanya kabar/kondisi, apresiasi, atau pertanyaan identitas diri) secara ramah, natural, dan menyenangkan layaknya petugas Front Office yang melayani masyarakat.
+2. Bila pengguna menanyakan kabar (misal: 'kamu gimana sehat?', 'apa kabar?'), jawab dengan ramah bahwa Anda dalam kondisi sangat baik dan siap membantu.
+3. Bila pengguna menanyakan identitas/kemampuan (misal: 'kamu siapa?', 'bisa apa aja?'), jelaskan secara ringkas peran Anda sebagai asisten resmi yang membantu masyarakat dan ASN dalam mencari informasi SOP kedinasan dan layanan Diskominfotik Kota Banda Aceh.
+4. Bila pengguna mengucapkan terima kasih/apresiasi, balas dengan ramah dan tulus.
+5. Akhiri dengan menawarkan bantuan seputar layanan atau dokumen SOP Diskominfotik Kota Banda Aceh.
+6. JANGAN memunculkan pesan 'tidak ditemukan di dokumen SOP' untuk obrolan santai ini.
+7. JANGAN menggunakan emoji."""
+
+            estimasi_chitchat = _estimasi_token_konteks(chitchat_prompt)
+            if include_debug:
+                yield {
+                    "type": "trace",
+                    "stage": "intent_routing",
+                    "step": 1,
+                    "total_steps": 2,
+                    "label": "Obrolan Santai & Persona",
+                    "detail": "Menjawab percakapan santai secara natural berbasis persona helpdesk...",
+                }
+                yield {
+                    "type": "debug",
+                    "chunks": [],
+                    "total_chunks": 0,
+                }
+
+            response_chunks = []
+            for chunk in _stream_jawaban(
+                chitchat_prompt,
+                query,
+                temperature=0.3,
+                num_ctx=active_num_ctx,
+                chat_history=chat_history,
+                model_name=active_llm_model,
+            ):
+                response_chunks.append(chunk)
+                yield chunk
+
+            full_resp = "".join(response_chunks)
             session_memory.add_user_message(session_id, query)
-            session_memory.add_assistant_message(session_id, greeting_msg, topic="Sapaan")
-            yield greeting_msg
+            session_memory.add_assistant_message(session_id, full_resp, topic="Percakapan Santai")
+            if include_debug:
+                yield {
+                    "type": "telemetry",
+                    "model_name": active_llm_model,
+                    "context_tokens": estimasi_chitchat,
+                    "num_ctx": active_num_ctx,
+                    "chunks_count": 0,
+                    "is_fallback": False,
+                }
             return
 
         if intent == "augmented_knowledge":
@@ -1922,7 +2198,7 @@ PANDUAN KOMUNIKASI HELPDESK:
                 }
                 yield {
                     "type": "telemetry",
-                    "model_name": "Agentic Tool: Working Day Calculator",
+                    "model_name": f"{active_llm_model} (Tool: Kalkulator)",
                     "context_tokens": 0,
                     "num_ctx": active_num_ctx,
                     "chunks_count": 0,
@@ -1931,40 +2207,6 @@ PANDUAN KOMUNIKASI HELPDESK:
             session_memory.add_user_message(session_id, query)
             session_memory.add_assistant_message(session_id, calc_result["formatted_text"], topic="Kalkulator Hari Kerja")
             yield calc_result["formatted_text"]
-            return
-
-        if intent == "tool_ticket":
-            ticket_result = tool_router.cek_status_tiket(**route_params)
-            if include_debug:
-                yield {
-                    "type": "trace",
-                    "stage": "intent_routing",
-                    "step": 1,
-                    "total_steps": 1,
-                    "label": route_label,
-                    "detail": f"Mengecek status tiket layanan {route_params.get('nomor_tiket') or ''}...",
-                }
-                yield {
-                    "type": "debug",
-                    "chunks": [],
-                    "total_chunks": 0,
-                }
-                yield {
-                    "type": "telemetry",
-                    "model_name": "Agentic Tool: Service Ticket Tracker",
-                    "context_tokens": 0,
-                    "num_ctx": active_num_ctx,
-                    "chunks_count": 0,
-                    "is_fallback": False,
-                }
-            session_memory.add_user_message(session_id, query)
-            session_memory.add_assistant_message(
-                session_id,
-                ticket_result["formatted_text"],
-                topic="Status Tiket",
-                entity=route_params.get("nomor_tiket"),
-            )
-            yield ticket_result["formatted_text"]
             return
 
         resolved_query = route_params.get("query", query)
@@ -2118,12 +2360,39 @@ PANDUAN KOMUNIKASI HELPDESK:
             active_prompt_template
             .replace("{current_date}", now_str)
             .replace("{salam_guide}", salam_inst)
+            .replace("{institution_info}", _get_institution_info())
         )
+
+        if "{institution_info}" not in active_prompt_template and "Profil Instansi Terkini" not in formatted_template and "Informasi Dasar Instansi" not in formatted_template:
+            formatted_template = f"{formatted_template}\n\nProfil Instansi Terkini:\n{_get_institution_info()}"
+
+        calc_duration_info = tool_router.parse_and_sum_durations_from_context(context_text)
+        if calc_duration_info and any(kw in resolved_query.lower() for kw in ["waktu", "durasi", "lama", "menit", "jam", "hari", "berapa", "hitung", "total"]):
+            dur_items_str = " + ".join(calc_duration_info["items"])
+            dur_hint = (
+                f"\n\n[Perhitungan Akurat Sistem]:\n"
+                f"- Rincian Waktu Tahapan: {dur_items_str}\n"
+                f"- Total Akumulasi Durasi: TEPAT {calc_duration_info['formatted_total']}\n"
+                f"- Instruksi: Jika menyajikan total waktu pelaksanaan, gunakan hasil perhitungan matematis di atas."
+            )
+            context_text += dur_hint
 
         if "{context}" in formatted_template:
             system_prompt = formatted_template.replace("{context}", context_text)
         else:
-            system_prompt = f"{formatted_template}\n\nKonteks Dokumen:\n{context_text}"
+            system_prompt = f"{formatted_template}\n\nKonteks Dokumen Resmi:\n{context_text}"
+
+        is_doubt = _is_doubt_or_correction_query(query) or _is_doubt_or_correction_query(resolved_query)
+        if is_doubt:
+            doubt_guide = (
+                "\n\nInstruksi Khusus Penanganan Keraguan & Sanggahan Pengguna:\n"
+                "- Pengguna sedang menyanggah, meragukan, atau meminta penegasan atas jawaban sebelumnya.\n"
+                "- Periksa dan cocokkan secara seksama dengan Konteks Dokumen Resmi di atas.\n"
+                "- Jika jawaban sebelumnya SUDAH BENAR dan sesuai isi dokumen, tegaskan kembali secara santun dengan menunjukkan bukti langkah dan durasi dari dokumen (JANGAN mengubah angka atau memodifikasi rincian SOP hanya karena disanggah pengguna).\n"
+                "- Jika jawaban sebelumnya terdapat kekeliruan perhitungan/salah baca dokumen, akui dan sampaikan rincian yang benar sesuai dokumen resmi secara santun.\n"
+                "- DILARANG KERAS mengarang, memodifikasi durasi menit/jam, atau mengubah nama pelaksana di luar fakta dokumen."
+            )
+            system_prompt += doubt_guide
 
         estimasi_token = _estimasi_token_konteks(system_prompt)
         logger.info(

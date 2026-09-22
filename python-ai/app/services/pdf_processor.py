@@ -119,7 +119,14 @@ def render_halaman(
                 f"Halaman {page_number} di luar jangkauan (dokumen ini {len(doc)} halaman)"
             )
 
-        pix = doc[page_number - 1].get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+        page = doc[page_number - 1]
+        rect = page.rect
+        max_side = max(rect.width, rect.height)
+        effective_zoom = zoom
+        if max_side * zoom > 2560:
+            effective_zoom = max(2560.0 / max_side, 0.5)
+
+        pix = page.get_pixmap(matrix=fitz.Matrix(effective_zoom, effective_zoom))
         return pix.tobytes("jpeg", jpg_quality=_MUTU_JPEG), pix.width, pix.height
 
 
@@ -533,7 +540,7 @@ def vision_extract_general(
         "images": [img_base64],
         "stream": False,
         "options": {
-            "num_ctx": 4096, 
+            "num_ctx": 8192, 
             "num_predict": 2048, 
             "temperature": 0.1
         }
@@ -755,6 +762,107 @@ def perbaiki_penanda_daftar(pages_content: list[dict]) -> int:
     return keadaan["diperbaiki"]
 
 
+def _ekstrak_gambar_tersemat(
+    page: "fitz.Page",
+    nomor: int,
+    category_prompt: str | None = None,
+    job_titles: str | None = None,
+    vision_model: str | None = None,
+    custom_prompts: dict | None = None,
+) -> str:
+    """
+    Mengekstrak teks/bagan dari gambar signifikan yang tertanam pada halaman teks digital.
+    Mengabaikan logo kecil, ikon, kop surat, atau hiasan berukuran kecil.
+    """
+    try:
+        image_list = page.get_images(full=True)
+    except Exception:
+        return ""
+
+    if not image_list:
+        return ""
+
+    page_area = max(page.rect.width * page.rect.height, 1.0)
+    extracted_sections = []
+    seen_xrefs = set()
+
+    for img_info in image_list:
+        xref = img_info[0]
+        if xref in seen_xrefs:
+            continue
+        seen_xrefs.add(xref)
+
+        w, h = img_info[2], img_info[3]
+        # Abaikan gambar kecil (ikon, garis, ornamen)
+        if w < 250 or h < 180 or (w * h < 50000):
+            continue
+
+        rects = page.get_image_rects(xref)
+        is_significant = False
+        if rects:
+            for r in rects:
+                area_ratio = (r.width * r.height) / page_area
+                if area_ratio >= 0.10 or (r.width >= 200 and r.height >= 150):
+                    is_significant = True
+                    break
+        else:
+            if w >= 350 and h >= 250:
+                is_significant = True
+
+        if not is_significant:
+            continue
+
+        logger.info(
+            "Halaman %d: Menemukan gambar/bagan tertanam (xref=%d, %dx%d px), mengekstrak via Vision AI...",
+            nomor, xref, w, h,
+        )
+
+        try:
+            doc = page.parent
+            base_img = doc.extract_image(xref)
+            img_bytes = base_img.get("image")
+            if not img_bytes:
+                continue
+
+            import io
+            from PIL import Image
+            img = Image.open(io.BytesIO(img_bytes))
+            MAX_DIM = 2048
+            if max(img.size) > MAX_DIM:
+                scale = MAX_DIM / max(img.size)
+                new_size = (int(img.width * scale), int(img.height * scale))
+                img = img.resize(new_size, Image.Resampling.LANCZOS)
+
+            buf = io.BytesIO()
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            img.save(buf, format="JPEG", quality=85)
+            img_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+            prompt_diagram = (
+                "Anda adalah sistem OCR cerdas. Ekstrak dan salin SELURUH teks, bagan alur, diagram, "
+                "atau tabel yang terdapat di dalam gambar ini secara terstruktur dan lengkap. "
+                "Sajikan hasilnya apa adanya tanpa asumsi atau ringkasan di luar yang terlihat pada gambar."
+            )
+
+            res = vision_extract_general(
+                img_b64,
+                petunjuk=prompt_diagram,
+                category_prompt=category_prompt,
+                job_titles=job_titles,
+                vision_model=vision_model,
+                custom_prompts=custom_prompts,
+            )
+            if res and len(res.strip()) > 20:
+                extracted_sections.append(res.strip())
+        except Exception as err:
+            logger.warning("Halaman %d: Gagal mengekstrak gambar xref=%d: %s", nomor, xref, err)
+
+    if extracted_sections:
+        return "\n\n---\n### [Konten Gambar / Bagan Terlampir]:\n" + "\n\n".join(extracted_sections)
+    return ""
+
+
 def _ekstrak_halaman(
     page: "fitz.Page",
     nomor: int,
@@ -769,6 +877,16 @@ def _ekstrak_halaman(
     """
     text = _extract_text_from_page(page)
     if len(text) >= _MIN_TEXT_LENGTH:
+        tambahan_gambar = _ekstrak_gambar_tersemat(
+            page,
+            nomor,
+            category_prompt=category_prompt,
+            job_titles=job_titles,
+            vision_model=vision_model,
+            custom_prompts=custom_prompts,
+        )
+        if tambahan_gambar:
+            text = text + tambahan_gambar
         return text, petunjuk_tabel
 
     logger.info(
@@ -776,7 +894,12 @@ def _ekstrak_halaman(
         nomor, len(text),
     )
 
-    pixmap = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+    rect = page.rect
+    max_side = max(rect.width, rect.height)
+    zoom = 1.5
+    if max_side * zoom > 2048:
+        zoom = max(2048.0 / max_side, 0.5)
+    pixmap = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
     img_base64 = base64.b64encode(pixmap.tobytes("jpeg", jpg_quality=85)).decode("utf-8")
 
     tabel_rule = (custom_prompts.get("tabel_sop") if custom_prompts else None) or _PETUNJUK_TABEL_SOP

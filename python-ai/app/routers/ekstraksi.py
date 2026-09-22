@@ -66,10 +66,13 @@ class MulaiEkstraksiRequest(BaseModel):
 
 
 @router.post(
-    "/{document_id}/ekstraksi",
+    "/{document_id}/extraction",
     status_code=status.HTTP_202_ACCEPTED,
     summary="Mulai atau lanjutkan ekstraksi",
 )
+@router.post("/{document_id}/extract", status_code=status.HTTP_202_ACCEPTED, include_in_schema=False)
+@router.post("/{document_id}/ekstraksi", status_code=status.HTTP_202_ACCEPTED, include_in_schema=False)
+@router.post("/{document_id}/ekstrak", status_code=status.HTTP_202_ACCEPTED, include_in_schema=False)
 async def mulai_ekstraksi(
     document_id: int,
     payload: MulaiEkstraksiRequest = Body(default_factory=MulaiEkstraksiRequest),
@@ -121,14 +124,15 @@ async def mulai_ekstraksi(
     return {"document_id": document_id, "status": eb.STATUS_ANTRE}
 
 
-# ── POST /{id}/ekstraksi/jeda - Minta berhenti ───────────────────
-
-
+# ── POST /{id}/extraction/pause - Minta berhenti ────────────────
 @router.post(
-    "/{document_id}/ekstraksi/jeda",
+    "/{document_id}/extraction/pause",
     status_code=status.HTTP_202_ACCEPTED,
     summary="Minta ekstraksi berhenti di batas halaman berikutnya",
 )
+@router.post("/{document_id}/pause", status_code=status.HTTP_202_ACCEPTED, include_in_schema=False)
+@router.post("/{document_id}/ekstraksi/jeda", status_code=status.HTTP_202_ACCEPTED, include_in_schema=False)
+@router.post("/{document_id}/jeda", status_code=status.HTTP_202_ACCEPTED, include_in_schema=False)
 async def jeda_ekstraksi(
     document_id: int,
     _token: str = Depends(verify_token),
@@ -148,7 +152,8 @@ async def jeda_ekstraksi(
 # ── GET /{id}/ekstraksi - Keadaan sekarang ───────────────────────
 
 
-@router.get("/{document_id}/ekstraksi", summary="Status dan kemajuan ekstraksi")
+@router.get("/{document_id}/extraction", summary="Status dan kemajuan ekstraksi")
+@router.get("/{document_id}/ekstraksi", summary="Status dan kemajuan ekstraksi", include_in_schema=False)
 async def status_ekstraksi(
     document_id: int,
     _token: str = Depends(verify_token),
@@ -157,9 +162,6 @@ async def status_ekstraksi(
 
     keadaan = _penyimpanan().keadaan(document_id)
     if keadaan is None:
-        # Dokumen ada tapi belum pernah diekstrak - bukan galat, hanya keadaan
-        # awal. Mengembalikan 404 di sini memaksa Dev 2 menangani dua cabang
-        # untuk satu hal yang sama.
         return {
             "document_id": document_id,
             "status": eb.STATUS_ANTRE,
@@ -172,12 +174,14 @@ async def status_ekstraksi(
     return keadaan
 
 
-# ── GET /{id}/ekstraksi/aliran - Kemajuan langsung (SSE) ─────────
-
-
+# ── GET /{id}/extraction/stream - Kemajuan langsung (SSE) ───────
+@router.get(
+    "/{document_id}/extraction/stream",
+    summary="Kemajuan ekstraksi secara langsung",
+)
 @router.get(
     "/{document_id}/ekstraksi/aliran",
-    summary="Kemajuan ekstraksi secara langsung",
+    include_in_schema=False,
 )
 async def aliran_ekstraksi(
     document_id: int,
@@ -232,10 +236,9 @@ async def aliran_ekstraksi(
     return EventSourceResponse(kabar(), media_type="text/event-stream")
 
 
-# ── GET /{id}/halaman - Teks semua halaman (untuk editor) ────────
-
-
-@router.get("/{document_id}/halaman", summary="Teks halaman untuk editor koreksi")
+# ── GET /{id}/pages - Teks semua halaman (untuk editor) ──────────
+@router.get("/{document_id}/pages", summary="Teks halaman untuk editor koreksi")
+@router.get("/{document_id}/halaman", summary="Teks halaman untuk editor koreksi", include_in_schema=False)
 async def daftar_halaman(
     document_id: int,
     perlu_diperiksa: bool = False,
@@ -270,10 +273,9 @@ async def daftar_halaman(
     }
 
 
-# ── PUT /{id}/halaman/{n} - Simpan koreksi satu halaman ──────────
-
-
-@router.put("/{document_id}/halaman/{page_number}", summary="Simpan koreksi satu halaman")
+# ── PUT /{id}/pages/{n} - Simpan koreksi satu halaman ────────────
+@router.put("/{document_id}/pages/{page_number}", summary="Simpan koreksi satu halaman")
+@router.put("/{document_id}/halaman/{page_number}", summary="Simpan koreksi satu halaman", include_in_schema=False)
 async def simpan_koreksi(
     document_id: int,
     page_number: int,
@@ -307,11 +309,11 @@ class OpsiPemotongan(BaseModel):
     strategy: str = "auto"
 
 
-# ── POST / GET /{id}/potongan - Pratinjau induk/anak ────────────────────
-
-
-@router.post("/{document_id}/potongan", summary="Pratinjau potongan dengan opsi kustom")
-@router.get("/{document_id}/potongan", summary="Pratinjau potongan induk dan anak")
+# ── POST / GET /{id}/chunks/preview - Pratinjau induk/anak ──────
+@router.post("/{document_id}/chunks/preview", summary="Pratinjau potongan dengan opsi kustom")
+@router.get("/{document_id}/chunks/preview", summary="Pratinjau potongan induk dan anak")
+@router.post("/{document_id}/potongan", include_in_schema=False)
+@router.get("/{document_id}/potongan", include_in_schema=False)
 async def pratinjau_potongan(
     document_id: int,
     opsi: OpsiPemotongan | None = None,
@@ -363,13 +365,16 @@ async def pratinjau_potongan(
     }
 
 
-# ── POST /{id}/simpan - Tombol akhir: potong lalu embed ──────────
-
-
+# ── POST /{id}/embed - Tombol akhir: potong lalu embed ───────────
+@router.post(
+    "/{document_id}/embed",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Potong lalu simpan vektornya ke korpus",
+)
 @router.post(
     "/{document_id}/simpan",
     status_code=status.HTTP_202_ACCEPTED,
-    summary="Potong lalu simpan vektornya ke korpus",
+    include_in_schema=False,
 )
 async def simpan_ke_korpus(
     document_id: int,

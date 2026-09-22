@@ -496,7 +496,8 @@ def _hitung_kecocokan_model(
     }
 
 
-@app.get("/api/health/mesin", tags=["Health"])
+@app.get("/api/health/hardware", tags=["Health"])
+@app.get("/api/health/mesin", tags=["Health"], include_in_schema=False)
 def diagnostik_mesin(
     nocache: bool = False,
     model: str | None = None,

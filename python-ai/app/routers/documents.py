@@ -14,11 +14,8 @@ from app.schemas import (
     DocumentListItem,
     DocumentListResponse,
     DocumentStatusResponse,
-    ProcessDocumentRequest,
-    ProcessDocumentResponse,
 )
 from app.services import pdf_processor
-from app.tasks.process_document import process_document_task
 
 logger = logging.getLogger(__name__)
 
@@ -166,59 +163,7 @@ async def get_document_status(
         ) from e
 
 
-# ── POST /api/docs/process — Kirim dokumen untuk diproses ────────
 
-
-@router.post(
-    "/process",
-    response_model=ProcessDocumentResponse,
-    status_code=status.HTTP_202_ACCEPTED,
-    summary="Kirim dokumen untuk diproses",
-    description="Mengirim dokumen PDF ke antrian Celery untuk diekstrak dan di-embed.",
-)
-async def process_document(
-    request: ProcessDocumentRequest,
-    _token: str = Depends(verify_token),
-) -> ProcessDocumentResponse:
-    """
-    Endpoint untuk memulai pemrosesan dokumen.
-
-    Menerima request berisi document_id, file_path, dan action,
-    lalu mendispatch Celery task untuk pemrosesan asinkron.
-
-    Returns:
-        202 Accepted dengan pesan bahwa dokumen sedang diproses.
-    """
-    try:
-        # Dispatch Celery task secara asinkron
-        process_document_task.delay(
-            document_id=request.document_id,
-            file_path=request.file_path,
-            action=request.action,
-        )
-
-        logger.info(
-            "Dokumen %d dikirim ke antrian (action=%s, path=%s)",
-            request.document_id,
-            request.action,
-            request.file_path,
-        )
-
-        return ProcessDocumentResponse(
-            status="accepted",
-            message=f"Dokumen {request.document_id} sedang diproses.",
-        )
-
-    except Exception as e:
-        logger.error(
-            "Gagal mengirim dokumen %d ke antrian",
-            request.document_id,
-            exc_info=True,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=_ERROR_MESSAGE,
-        ) from e
 
 
 @router.post(
@@ -322,7 +267,7 @@ async def get_document_chunks_route(
 
 
 @router.get(
-    "/{document_id}/halaman/{page_number}/citra",
+    "/{document_id}/pages/{page_number}/image",
     summary="Citra satu halaman dokumen",
     description=(
         "Merender satu halaman PDF jadi JPEG. Dipakai editor koreksi agar "
@@ -333,6 +278,11 @@ async def get_document_chunks_route(
         400: {"description": "Nilai zoom tidak diizinkan"},
         404: {"description": "Dokumen, berkas, atau halaman tidak ditemukan"},
     },
+    response_class=Response,
+)
+@router.get(
+    "/{document_id}/halaman/{page_number}/citra",
+    include_in_schema=False,
     response_class=Response,
 )
 async def citra_halaman(
@@ -409,16 +359,18 @@ async def citra_halaman(
     )
 
 
-# ── GET /api/docs/{id}/halaman/ukuran — Ukuran semua halaman ─────
-
-
+# ── GET /api/docs/{id}/pages/dimensions — Ukuran semua halaman ──
 @router.get(
-    "/{document_id}/halaman/ukuran",
+    "/{document_id}/pages/dimensions",
     summary="Ukuran dan orientasi semua halaman",
     description=(
         "Lebar, tinggi, dan orientasi tiap halaman pada perbesaran bawaan — "
         "tanpa merender apa pun. Dipakai editor untuk menyiapkan ukuran panel."
     ),
+)
+@router.get(
+    "/{document_id}/halaman/ukuran",
+    include_in_schema=False,
 )
 async def ukuran_semua_halaman(
     document_id: int,
@@ -481,7 +433,8 @@ def get_ollama_tags():
         return {"models": []}
 
 
-@router.get("/prompt-ekstraksi", tags=["Ollama"])
+@router.get("/extraction-prompts", tags=["Ollama"])
+@router.get("/prompt-ekstraksi", tags=["Ollama"], include_in_schema=False)
 def prompt_ekstraksi_bawaan(_token: str = Depends(verify_token)) -> dict:
     """
     Teks prompt bawaan yang BENAR-BENAR dipakai saat ekstraksi.

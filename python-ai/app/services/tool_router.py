@@ -42,6 +42,24 @@ _NAMA_BULAN = [
     "Juli", "Agustus", "September", "Oktober", "November", "Desember"
 ]
 
+# Pola regex untuk rangkuman memori percakapan / session recap
+_RE_SESSION_RECAP = re.compile(
+    r"\b(bahas\s+apa|bicara\s+apa|ngomongin\s+apa|ngobrolin\s+apa|obrolan\s+kita|percakapan\s+kita|"
+    r"tadi\s+(?:saya\s+)?tanya\s+apa|pertanyaan\s+saya\s+sebelumnya|rangkum\s+(?:obrolan|percakapan|topik)|"
+    r"sebelumnya\s+kita\s+bahas|tadi\s+tentang\s+apa|kita\s+sedang\s+bahas\s+apa|topik\s+sebelumnya|"
+    r"apa\s+yang\s+(?:tadi\s+)?kita\s+bahas|tadi\s+saya\s+bahas\s+apa|tadi\s+kita\s+ngapain)\b",
+    re.IGNORECASE,
+)
+
+# Pola regex untuk obrolan santai, kabar, persona, identitas asisten
+_RE_CHITCHAT_CONVERSATIONAL = re.compile(
+    r"\b(apa\s+kabar|gimana\s+kabar|bagaimana\s+kabar|sehat|gimana\s+sehat|kabare|kiban\s+haba|haba\s+kiban|peue\s+haba|peu\s+haba|"
+    r"lagi\s+apa|lagi\s+ngapain|lagi\s+sibuk|kamu\s+lagi\s+apa|"
+    r"kamu\s+siapa|anda\s+siapa|siapa\s+kamu|siapa\s+anda|siapa\s+namamu|nama\s+kamu\s+siapa|kamu\s+bisa\s+apa|bisa\s+bantu\s+apa|bisa\s+ngapain|kamu\s+robot|apakah\s+kamu\s+ai|siapa\s+pembuatmu|siapa\s+yang\s+buat\s+kamu|"
+    r"terima\s+kasih|makasih|makasi|thanks|matur\s+nuwun|syukron|teurimong\s+gaseh|mantap|keren|good\s+job|semangat)\b",
+    re.IGNORECASE,
+)
+
 # Pola regex untuk sapaan dan uji coba (Termasuk Sapaan Bahasa Aceh & Santun)
 _RE_GREETING = re.compile(
     r"^(?:(?:halo|hai|hay|hei|hi|hello|assalamu['\s]?alaikum(?:\s+wr\s+wb|\s+warahmatullahi\s+wabarakatuh)?|ass|askum|"
@@ -54,24 +72,26 @@ _RE_GREETING = re.compile(
     re.IGNORECASE,
 )
 
-# Pola regex untuk kalkulator hari kerja
-_RE_CALC_HARI_KERJA = re.compile(
-    r"\b(hitung\s+estimasi|estimasi\s+selesai|berapa\s+hari\s+kerja|kapan\s+selesai|"
-    r"hitung\s+hari\s+kerja|estimasi\s+tanggal|kalkulasi\s+hari\s+kerja|"
-    r"jika\s+prosesnya\s+\d+\s+hari\s+kerja|lama\s+proses\s+\d+\s+hari\s+kerja)\b",
+# Pola regex untuk kalkulator estimasi waktu dan hari kerja
+_RE_CALC_ESTIMASI_WAKTU = re.compile(
+    r"\b(hitung\s+estimasi|estimasi\s+selesai|estimasi\s+waktu|berapa\s+hari\s+kerja|kapan\s+selesai|"
+    r"hitung\s+hari\s+kerja|estimasi\s+tanggal|kalkulasi\s+hari\s+kerja|kalkulator\s+waktu|"
+    r"lama\s+proses\s+\d+\s+hari|jika\s+(?:prosesnya\s+)?\d+\s+hari\s+kerja)\b",
     re.IGNORECASE,
 )
 
-# Pola regex untuk cek tiket
-_RE_TICKET_QUERY = re.compile(
-    r"\b(cek\s+tiket|status\s+tiket|tiket\s+layanan|lacak\s+tiket|nomor\s+tiket|"
-    r"pengajuan\s+tiket|progres\s+tiket|tracking\s+tiket)\b",
+# Pola regex untuk deteksi keraguan, sanggahan, atau koreksi jawaban sebelumnya
+_RE_DOUBT_OR_CORRECTION = re.compile(
+    r"\b(salah|keliru|bukan|bukannya|kok beda|kok salah|kok bisa|kenapa beda|memang iya|masa sih|masa|yakin|beneran|serius|ngaco|bohong|ngibul|gak bener|tidak benar|kurang tepat|tidak tepat|hah|lah)\b",
     re.IGNORECASE,
 )
-_RE_TICKET_CODE = re.compile(
-    r"\b(TIK|SRV|TKT|DISKOM|REQ)[-_]?\d{4,12}[-_]?\w*\b",
-    re.IGNORECASE,
-)
+
+
+def _is_doubt_or_correction_query(text: str) -> bool:
+    """Mendeteksi apakah teks pengguna adalah bentuk keraguan, sanggahan, atau koreksi."""
+    if not text:
+        return False
+    return bool(_RE_DOUBT_OR_CORRECTION.search(text))
 
 
 def _parse_date_from_text(text: str) -> datetime | None:
@@ -134,10 +154,78 @@ def _parse_days_count(text: str) -> int | None:
     return None
 
 
+def parse_and_sum_durations_from_context(context_text: str) -> dict[str, Any] | None:
+    """
+    Kalkulator Masa Tempuh & Durasi Waktu:
+    Mengekstrak seluruh rincian waktu (menit, jam, hari) dari teks langkah/SOP
+    dan menghitung total akumulasi durasinya secara presisi matematis.
+    """
+    if not context_text:
+        return None
+
+    # Cari pola 'Waktu: X menit', 'Waktu: X jam', 'Waktu: X hari'
+    time_matches = re.findall(
+        r"(?:waktu|durasi|lama)\s*[:=]\s*(\d+(?:[.,]\d+)?)\s*(menit|jam|hari|detik|hari\s*kerja)",
+        context_text,
+        re.IGNORECASE,
+    )
+    if not time_matches:
+        time_matches = re.findall(
+            r"\b(\d+(?:[.,]\d+)?)\s*(menit|jam|hari|detik)\b",
+            context_text,
+            re.IGNORECASE,
+        )
+
+    if not time_matches or len(time_matches) < 2:
+        return None
+
+    total_menit = 0.0
+    items = []
+    has_hari = False
+
+    for val_str, unit in time_matches:
+        val = float(val_str.replace(",", "."))
+        u = unit.lower().strip()
+        if "menit" in u:
+            total_menit += val
+            items.append(f"{int(val) if val.is_integer() else val} menit")
+        elif "jam" in u:
+            total_menit += val * 60
+            items.append(f"{int(val) if val.is_integer() else val} jam")
+        elif "hari" in u:
+            has_hari = True
+            items.append(f"{int(val) if val.is_integer() else val} hari")
+        elif "detik" in u:
+            total_menit += val / 60
+            items.append(f"{int(val) if val.is_integer() else val} detik")
+
+    if not items:
+        return None
+
+    if not has_hari:
+        jam = int(total_menit // 60)
+        sisa_menit = int(total_menit % 60)
+        if jam > 0 and sisa_menit > 0:
+            formatted_total = f"{jam} jam {sisa_menit} menit ({int(total_menit)} menit)"
+        elif jam > 0:
+            formatted_total = f"{jam} jam ({int(total_menit)} menit)"
+        else:
+            formatted_total = f"{int(total_menit)} menit"
+    else:
+        formatted_total = f"{int(total_menit)} menit (beserta komponen hari)"
+
+    return {
+        "items": items,
+        "total_menit": total_menit,
+        "formatted_total": formatted_total,
+    }
+
+
 def _enrich_facts_with_date_calculations(facts_text: str) -> str:
     """
-    Mendeteksi tanggal di dalam fakta resmi (misal tanggal pelantikan)
-    dan menghitung selisih waktu secara presisi (hari & bulan) hingga hari ini.
+    Kalkulator Masa Durasi Waktu:
+    Mendeteksi tanggal di dalam fakta resmi dan menghitung selisih masa waktu
+    secara presisi (hari & bulan) hingga hari ini.
     """
     now = datetime.now()
     parsed_date = _parse_date_from_text(facts_text)
@@ -156,10 +244,10 @@ def _enrich_facts_with_date_calculations(facts_text: str) -> str:
     tgl_peristiwa_str = f"{parsed_date.day} {_NAMA_BULAN[parsed_date.month]} {parsed_date.year}"
 
     calc_note = (
-        f"\n- Data Perhitungan Waktu Nyata (Hingga Hari Ini: {hari_ini_str}):\n"
-        f"  * Selisih waktu dari tanggal {tgl_peristiwa_str} sampai hari ini ({hari_ini_str}) adalah TEPAT {total_days} hari "
+        f"\n- Data Perhitungan Masa Durasi Waktu (Hingga Hari Ini: {hari_ini_str}):\n"
+        f"  * Selisih masa waktu dari tanggal {tgl_peristiwa_str} sampai hari ini ({hari_ini_str}) adalah TEPAT {total_days} hari "
         f"(sekitar {months} bulan {remaining_days} hari).\n"
-        f"  * Bila pengguna bertanya 'sudah berapa hari/bulan menjabat atau berlangsung', JAWAB BERDASARKAN ANGKA INI: {total_days} hari (sekitar {months} bulan {remaining_days} hari)."
+        f"  * Jika pengguna menanyakan masa waktu, lama berlangsung, atau durasi hari/bulan, rujuk hasil perhitungan ini: {total_days} hari (sekitar {months} bulan {remaining_days} hari)."
     )
     return facts_text + calc_note
 
@@ -276,13 +364,13 @@ def normalize_query(text: str) -> str:
 def _matches_keywords(raw_text: str, keywords: list[str]) -> bool:
     """
     Memeriksa kecocokan kata kunci terhadap teks mentah maupun teks ternormalisasi.
-    Mendukung substring match, multi-word matching, dan token overlap.
+    Mendukung exact word boundary match, multi-word sequential phrase matching, dan token matching.
     """
+    if not raw_text or not keywords:
+        return False
+
     raw_lower = raw_text.lower().strip()
     norm_text = normalize_query(raw_text)
-
-    raw_clean = f" {raw_lower} "
-    norm_clean = f" {norm_text} "
 
     norm_tokens = set(norm_text.split())
     raw_tokens = set(raw_lower.split())
@@ -293,29 +381,98 @@ def _matches_keywords(raw_text: str, keywords: list[str]) -> bool:
         if not kw_clean:
             continue
 
-        # 1. Exact substring match di raw atau normalized text
-        if f" {kw_clean} " in raw_clean or kw_clean in raw_lower:
-            return True
-        if f" {kw_clean} " in norm_clean or kw_clean in norm_text:
+        # 1. Exact phrase match dengan word boundaries di raw atau normalized text
+        pattern = rf"\b{re.escape(kw_clean)}\b"
+        if re.search(pattern, raw_lower) or re.search(pattern, norm_text):
             return True
 
-        # 2. Multi-word match: semua kata dalam keyword ada di query
         kw_words = [w for w in kw_clean.split() if w not in _FILLER_WORDS]
-        if len(kw_words) >= 2:
-            if all(
-                w in all_query_tokens
-                or any(_normalize_token(qt) == w or difflib.SequenceMatcher(None, w, qt).ratio() >= 0.80 for qt in all_query_tokens)
-                for w in kw_words
-            ):
-                return True
+        if not kw_words:
+            continue
 
-        # 3. Fuzzy matching jika keyword adalah kata tunggal signifikan (panjang >= 4)
-        if len(kw_clean) >= 4 and " " not in kw_clean:
-            for qt in all_query_tokens:
-                if len(qt) >= 4 and difflib.SequenceMatcher(None, kw_clean, qt).ratio() >= 0.80:
-                    return True
+        # 2. Multi-word phrase: kata-kata harus berurutan dengan jeda maksimal 2 kata penghubung/filler
+        if len(kw_words) >= 2:
+            phrase_pattern = r"\b" + r"\s+(?:\w+\s+){0,2}".join(re.escape(w) for w in kw_words) + r"\b"
+            if re.search(phrase_pattern, raw_lower) or re.search(phrase_pattern, norm_text):
+                return True
+        elif len(kw_words) == 1:
+            w = kw_words[0]
+            # Exact token match
+            if w in all_query_tokens:
+                return True
+            # Fuzzy match hanya jika kata kunci entitas cukup panjang (>= 5 huruf)
+            if len(w) >= 5:
+                for qt in all_query_tokens:
+                    if len(qt) >= 5 and difflib.SequenceMatcher(None, w, qt).ratio() >= 0.85:
+                        return True
 
     return False
+
+
+# ─────────────────────────────────────────────────────────────
+# AI-NATIVE SEMANTIC INTENT CLASSIFIER (Cosine Similarity)
+# ─────────────────────────────────────────────────────────────
+
+_SEMANTIC_INTENT_VECTORS: dict[str, list] | None = None
+
+def _get_semantic_intent_vectors() -> dict[str, list]:
+    global _SEMANTIC_INTENT_VECTORS
+    if _SEMANTIC_INTENT_VECTORS is None:
+        try:
+            from app.services.embedding_service import get_embedding_model
+            model = get_embedding_model()
+            anchors = {
+                "chitchat": [
+                    "halo hai assalamu'alaikum selamat pagi siang sore malam saleuem",
+                    "apa kabar gimana sehat kabar baik sehat kamu gimana lagi apa lagi ngapain",
+                    "nama saya perkenalkan nama saya kenalin panggil saya siapa kamu kamu siapa robot manusia",
+                    "terima kasih makasih banyak matur nuwun syukron mantap keren good job semangat",
+                ],
+                "session_recap": [
+                    "tadi kita bahas apa sih rangkum percakapan kita tadi ngomongin apa",
+                    "sebelumnya saya tanya apa topik yang baru saja dibahas di obrolan",
+                    "kita sedang bicara apa tadi tentang apa rangkuman percakapan",
+                ],
+            }
+            _SEMANTIC_INTENT_VECTORS = {
+                intent: [model.encode(t, normalize_embeddings=True) for t in texts]
+                for intent, texts in anchors.items()
+            }
+        except Exception as e:
+            logger.warning("Gagal memuat semantic intent vectors: %s", e)
+            _SEMANTIC_INTENT_VECTORS = {}
+    return _SEMANTIC_INTENT_VECTORS
+
+
+def classify_semantic_intent(query: str) -> str | None:
+    """
+    Mengklasifikasikan intent pesan secara semantik menggunakan cosine similarity
+    tanpa bergantung pada kata kunci statis.
+    """
+    vectors_map = _get_semantic_intent_vectors()
+    if not vectors_map:
+        return None
+    try:
+        from app.services.embedding_service import get_embedding_model
+        import numpy as np
+        model = get_embedding_model()
+        vq = model.encode(query, normalize_embeddings=True)
+
+        scores = {}
+        for intent, anchors in vectors_map.items():
+            scores[intent] = max(float(np.dot(vq, a)) for a in anchors)
+
+        best_intent = max(scores, key=scores.get)
+        best_score = scores[best_intent]
+
+        if best_intent == "session_recap" and best_score >= 0.60:
+            return "session_recap"
+        if best_intent == "chitchat" and best_score >= 0.62:
+            return "chitchat"
+        return None
+    except Exception as e:
+        logger.warning("Error saat classify_semantic_intent: %s", e)
+        return None
 
 
 # ─────────────────────────────────────────────────────────────
@@ -336,28 +493,60 @@ def route_intent(query: str, session_id: str | None = None) -> dict[str, Any]:
 
     # Resolusi konteks follow-up / kata ganti bila ada sesi aktif
     search_q = q
+    is_context_resolved = False
     if session_id:
         try:
             from app.services.session_memory import resolve_contextual_query
             resolved_query, is_res = resolve_contextual_query(q, session_id)
             if is_res:
                 search_q = resolved_query
+                is_context_resolved = True
         except Exception as e:
             logger.debug("Gagal resolve contextual query: %s", e)
 
     q_lower = q.lower()
     search_lower = search_q.lower()
 
-    # 1. Jalur Chitchat / Sapaan Murni
-    if _RE_GREETING.match(q_lower):
+    # 0. AI-Native Semantic Intent Classifier (Deteksi Makna Semantik Tanpa Ketergantungan Keyword)
+    sem_intent = classify_semantic_intent(q)
+    if sem_intent == "session_recap" or _RE_SESSION_RECAP.search(q_lower) or _RE_SESSION_RECAP.search(search_lower):
+        return {
+            "intent": "session_recap",
+            "params": {"raw_query": q},
+            "label": "Rangkuman Memori Percakapan (Session Recap)",
+        }
+
+    # 1. Jalur Chitchat, Sapaan & Persona Asisten
+    if sem_intent == "chitchat" or _RE_GREETING.match(q_lower) or _RE_CHITCHAT_CONVERSATIONAL.search(q_lower):
         return {
             "intent": "chitchat",
             "params": {"raw_query": q},
-            "label": "Fast-Path Sapaan (Chitchat)",
+            "label": "Percakapan Santai & Persona (Chitchat)",
         }
 
-    # 2. Jalur Tool Agent: Kalkulator Hari Kerja SOP
-    if _RE_CALC_HARI_KERJA.search(q_lower) or _RE_CALC_HARI_KERJA.search(search_lower):
+    # 1.5 Cek apakah query saat ini adalah koreksi/sanggahan atau follow-up dari topik RAG sebelumnya
+    is_doubt = _is_doubt_or_correction_query(q) or _is_doubt_or_correction_query(search_q)
+    if session_id and (is_doubt or is_context_resolved):
+        try:
+            from app.services.session_memory import get_last_context
+            last_topic, last_entity = get_last_context(session_id)
+            is_prev_rag = bool(
+                last_topic and any(kw in last_topic.lower() for kw in ["sop", "dokumen", "prosedur", "perwal", "sk", "dpa", "renja", "renstra", "lkjip", "sakip", "iku", "pk"])
+            ) or bool(
+                last_entity and any(kw in last_entity.lower() for kw in ["sop", "dokumen", "prosedur", "perwal", "dinas", "surat", "tugas", "pelaksanaan", "pasal", "halaman"])
+            )
+            if is_doubt and is_prev_rag:
+                logger.info("Doubt/Correction query pada topik RAG ('%s') -> prioritaskan Two-Stage RAG untuk verifikasi dokumen", last_topic)
+                return {
+                    "intent": "rag",
+                    "params": {"query": search_q, "raw_query": q},
+                    "label": "Two-Stage Knowledge Retrieval (RAG - Verifikasi Fakta Dokumen)",
+                }
+        except Exception as e:
+            logger.debug("Gagal cek previous context: %s", e)
+
+    # 2. Jalur Tool Agent: Kalkulator Estimasi Waktu
+    if _RE_CALC_ESTIMASI_WAKTU.search(q_lower) or _RE_CALC_ESTIMASI_WAKTU.search(search_lower):
         days = _parse_days_count(search_q) or _parse_days_count(q)
         target_date = _parse_date_from_text(search_q) or _parse_date_from_text(q)
         if days is not None:
@@ -367,23 +556,10 @@ def route_intent(query: str, session_id: str | None = None) -> dict[str, Any]:
                     "lama_hari_kerja": days,
                     "tanggal_mulai": target_date.strftime("%Y-%m-%d") if target_date else None,
                 },
-                "label": "Tool Agent: Kalkulator Estimasi Hari Kerja",
+                "label": "Tool Agent: Kalkulator Estimasi Waktu",
             }
 
-    # 3. Jalur Tool Agent: Pelacak Status Tiket Layanan
-    ticket_match = _RE_TICKET_CODE.search(q) or _RE_TICKET_CODE.search(search_q)
-    if ticket_match or _RE_TICKET_QUERY.search(q_lower) or _RE_TICKET_QUERY.search(search_lower):
-        ticket_id = ticket_match.group(0).upper() if ticket_match else None
-        return {
-            "intent": "tool_ticket",
-            "params": {
-                "nomor_tiket": ticket_id,
-                "raw_query": q,
-            },
-            "label": "Tool Agent: Pelacak Status Tiket Layanan",
-        }
-
-    # 4. Jalur Direktori Bidang & Unit Kerja (DIPRIORITASKAN dari Fast-Path Umum)
+    # 3. Jalur Direktori Bidang & Unit Kerja (DIPRIORITASKAN dari Fast-Path Umum)
     # Ini mencegah pertanyaan seperti "jam operasional bidang statistik" salah tangkap ke jam kerja umum.
     active_dirs = get_active_directories()
     for d in active_dirs:
@@ -457,6 +633,7 @@ def hitung_estimasi_selesai(
     tanggal_mulai: str | None = None,
 ) -> dict[str, Any]:
     """
+    Kalkulator Estimasi Waktu & Target Selesai:
     Menghitung estimasi tanggal penyelesaian layanan berdasarkan hari kerja.
     Hari Sabtu dan Minggu secara otomatis dilewati.
     """
@@ -488,18 +665,18 @@ def hitung_estimasi_selesai(
     tgl_selesai_str = f"{nama_hari_selesai}, {current_dt.day} {_NAMA_BULAN[current_dt.month]} {current_dt.year}"
 
     output_text = (
-        "Hasil Perhitungan Estimasi Waktu Penyelesaian Layanan:\n\n"
+        "Hasil Perhitungan Estimasi Waktu Penyelesaian:\n\n"
         "+--------------------------------+------------------------------------------+\n"
         "| Parameter                      | Keterangan                               |\n"
         "+--------------------------------+------------------------------------------+\n"
-        f"| Tanggal Mulai Pengajuan        | {tgl_mulai_str:<40} |\n"
-        f"| Durasi SOP (Hari Kerja)        | {f'{lama_hari_kerja} Hari Kerja':<40} |\n"
+        f"| Tanggal Mulai                  | {tgl_mulai_str:<40} |\n"
+        f"| Durasi (Hari Kerja)            | {f'{lama_hari_kerja} Hari Kerja':<40} |\n"
         f"| Hari Libur Akhir Pekan         | {f'{weekend_days} Hari (Sabtu/Minggu)':<40} |\n"
         f"| Total Durasi Kalender          | {f'{total_calendar_days} Hari':<40} |\n"
         f"| Estimasi Tanggal Selesai       | {tgl_selesai_str:<40} |\n"
         "+--------------------------------+------------------------------------------+\n\n"
-        f"Catatan: Estimasi di atas mengacu pada ketentuan jam operasional resmi Diskominfotik Kota Banda Aceh "
-        f"(Senin - Jumat, pukul 08:00 - 16:45 WIB). Hari libur nasional atau cuti bersama tidak dihitung sebagai hari kerja."
+        f"Catatan: Perhitungan mengacu pada hari kerja aktif (Senin - Jumat). "
+        f"Hari libur nasional atau cuti bersama tidak dihitung sebagai hari kerja."
     )
 
     return {
@@ -508,70 +685,5 @@ def hitung_estimasi_selesai(
         "lama_hari_kerja": lama_hari_kerja,
         "weekend_days": weekend_days,
         "total_calendar_days": total_calendar_days,
-        "formatted_text": output_text,
-    }
-
-
-def cek_status_tiket(nomor_tiket: str | None, raw_query: str = "") -> dict[str, Any]:
-    """
-    Melacak status tiket permohonan layanan SPBE / helpdesk IT.
-    """
-    if not nomor_tiket:
-        return {
-            "found": False,
-            "formatted_text": (
-                "Untuk memeriksa progres permohonan layanan, silakan sertakan nomor tiket Anda.\n\n"
-                "Contoh format nomor tiket:\n"
-                "- TIK-20260901-001 (Layanan Hosting & Domain)\n"
-                "- SRV-20260815-012 (Layanan TTE / Sertifikat Elektronik)\n"
-                "- TKT-89421 (Layanan Jaringan & Insiden SPBE)\n\n"
-                "Silakan ketik pertanyaan Anda kembali dengan menyertakan kode tiket tersebut."
-            ),
-        }
-
-    tgl_aju = "01 September 2026"
-    status_layanan = "Sedang Diproses oleh Tim Teknis"
-    bidang_pj = "Bidang Tata Kelola E-Government"
-    layanan = "Permohonan Subdomain & Hosting Web OPD"
-    estimasi = "3 Hari Kerja (Selesai pada 04 September 2026)"
-    catatan = "Konfigurasi Virtual Host dan DNS record sedang diverifikasi oleh administrator sistem."
-
-    upper_code = nomor_tiket.upper()
-    if "SRV" in upper_code or "TTE" in upper_code:
-        bidang_pj = "Bidang Statistik dan Persandian"
-        layanan = "Penerbitan / Pembaruan Tanda Tangan Elektronik (TTE BSrE)"
-        status_layanan = "Menunggu Verifikasi Dokumen Rekomendasi"
-        catatan = "Dokumen SK Pengangkatan sedang divalidasi dengan database Kepegawaian BKPSDM."
-    elif "TKT" in upper_code or "NET" in upper_code:
-        bidang_pj = "Bidang Tata Kelola E-Government (Seksi Infrastruktur)"
-        layanan = "Troubleshooting Jaringan Intra Pemerintah & Akses Internet"
-        status_layanan = "Selesai Dikerjakan"
-        estimasi = "Telah Diselesaikan pada 02 September 2026"
-        catatan = "Perbaikan switch distribusi dan konfigurasi VLAN telah selesai diuji coba."
-
-    output_text = (
-        f"Informasi Status Tiket Layanan [{upper_code}]:\n\n"
-        "+--------------------------------+------------------------------------------+\n"
-        "| Rincian Pelacakan              | Keterangan                               |\n"
-        "+--------------------------------+------------------------------------------+\n"
-        f"| Nomor Tiket                    | {upper_code:<40} |\n"
-        f"| Jenis Layanan                  | {layanan[:40]:<40} |\n"
-        f"| Bidang Penanggung Jawab        | {bidang_pj[:40]:<40} |\n"
-        f"| Status Saat Ini                | {status_layanan[:40]:<40} |\n"
-        f"| Tanggal Pengajuan              | {tgl_aju:<40} |\n"
-        f"| Estimasi Waktu                 | {estimasi[:40]:<40} |\n"
-        "+--------------------------------+------------------------------------------+\n\n"
-        f"Catatan Progres:\n"
-        f"{catatan}\n\n"
-        f"Untuk eskalasi langsung atau informasi lebih lanjut, silakan hubungi helpdesk terkait atau "
-        f"kunjungi Front Office Diskominfotik di Balai Kota Banda Aceh (Gedung C Lantai 3)."
-    )
-
-    return {
-        "found": True,
-        "nomor_tiket": upper_code,
-        "status": status_layanan,
-        "bidang": bidang_pj,
-        "layanan": layanan,
         "formatted_text": output_text,
     }

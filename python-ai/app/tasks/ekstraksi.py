@@ -62,11 +62,58 @@ def ekstrak_dokumen_task(
         vision_model: model vision spesifik kategori (opsional).
         custom_prompts: kamus prompt kustom untuk menimpa aturan bawaan.
     """
-    import fitz
-
-    from app.services import pdf_processor
-
+    from pathlib import Path
+    ext = Path(file_path).suffix.lower()
     penyimpanan = eb.PenyimpananMySQL()
+
+    if ext in [".png", ".jpg", ".jpeg", ".webp"]:
+        from app.services import document_processor
+        penyimpanan.mulai_job(document_id, 1)
+        try:
+            pages = document_processor.extract_document(
+                file_path,
+                category_prompt=category_prompt,
+                job_titles=job_titles,
+                vision_model=vision_model,
+                custom_prompts=custom_prompts,
+            )
+            text = pages[0]["text"] if pages else ""
+            penyimpanan.simpan_halaman(document_id, 1, text)
+            penyimpanan.catat_status(document_id, eb.STATUS_MENUNGGU_KOREKSI)
+            try:
+                from app.database import record_document_log, update_document_status
+                update_document_status(
+                    document_id,
+                    status="menunggu_koreksi",
+                    total_pages=1,
+                    processed_pages=1,
+                )
+                record_document_log(
+                    document_id,
+                    action="ocr_completed",
+                    details="Ekstraksi berkas gambar berhasil melalui Vision OCR. Dokumen siap ditinjau/dikoreksi.",
+                )
+            except Exception:
+                logger.exception("Gagal sinkron status dokumen %d ke tabel documents", document_id)
+            logger.info("Dokumen gambar %d: 1 halaman terekstrak, menunggu koreksi admin", document_id)
+            return {"status": eb.STATUS_MENUNGGU_KOREKSI, "halaman": 1}
+        except Exception as e:
+            penyimpanan.catat_status(document_id, eb.STATUS_GAGAL, str(e))
+            try:
+                from app.database import update_document_status
+                update_document_status(
+                    document_id,
+                    status="failed",
+                    error_message=str(e),
+                    total_pages=1,
+                    processed_pages=0,
+                )
+            except Exception:
+                logger.exception("Gagal sinkron status gagal dokumen %d ke tabel documents", document_id)
+            raise self.retry(exc=e)
+
+    import fitz
+    from app.services import pdf_processor
 
     with fitz.open(file_path) as doc:
         halaman_total = len(doc)

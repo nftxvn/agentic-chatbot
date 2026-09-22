@@ -50,6 +50,8 @@ def get_total_pages(file_path: str) -> int:
             return max(len(dfs), 1)
         except Exception:
             return 1
+    elif ext in [".png", ".jpg", ".jpeg", ".webp"]:
+        return 1
     return 1
 
 
@@ -57,10 +59,14 @@ def extract_document(
     file_path: str,
     page_num: int | None = None,
     progress_callback: Callable | None = None,
+    category_prompt: str | None = None,
+    job_titles: str | None = None,
+    vision_model: str | None = None,
+    custom_prompts: dict | None = None,
 ) -> list[dict]:
     """
     Ekstrak konten dari berbagai jenis file.
-    Mendukung PDF, DOCX, XLSX, XLS, CSV, TXT, MD, PNG, JPG, JPEG.
+    Mendukung PDF, DOCX, XLSX, XLS, CSV, TXT, MD, PNG, JPG, JPEG, WEBP.
     """
     resolved = pdf_processor._resolve_pdf_path(file_path)
     path = Path(resolved)
@@ -76,8 +82,14 @@ def extract_document(
         return _extract_csv(resolved)
     elif ext in [".txt", ".md"]:
         return _extract_text_file(resolved)
-    elif ext in [".png", ".jpg", ".jpeg"]:
-        return _extract_image(resolved)
+    elif ext in [".png", ".jpg", ".jpeg", ".webp"]:
+        return _extract_image(
+            resolved,
+            category_prompt=category_prompt,
+            job_titles=job_titles,
+            vision_model=vision_model,
+            custom_prompts=custom_prompts,
+        )
     else:
         raise ValueError(f"Tipe file '{ext}' belum didukung.")
 
@@ -97,7 +109,7 @@ def detect_document_type(file_path: str) -> str:
         return "text"
     elif ext in [".xlsx", ".xls", ".csv"]:
         return "spreadsheet"
-    elif ext in [".png", ".jpg", ".jpeg"]:
+    elif ext in [".png", ".jpg", ".jpeg", ".webp"]:
         return "image"
     else:
         return "unknown"
@@ -167,13 +179,37 @@ def _extract_text_file(file_path: str) -> list[dict]:
     return [{"page_number": 1, "text": _sanitize_text(text)}]
 
 
-def _extract_image(file_path: str) -> list[dict]:
+def _extract_image(
+    file_path: str,
+    category_prompt: str | None = None,
+    job_titles: str | None = None,
+    vision_model: str | None = None,
+    custom_prompts: dict | None = None,
+) -> list[dict]:
     logger.info("Mengekstrak file GAMBAR: %s", file_path)
     import base64
+    import io
+    from PIL import Image
     from app.services.pdf_processor import vision_extract_general
     
-    with open(file_path, "rb") as image_file:
-        img_base64 = base64.b64encode(image_file.read()).decode("utf-8")
+    img = Image.open(file_path)
+    MAX_DIM = 2048
+    if max(img.size) > MAX_DIM:
+        scale = MAX_DIM / max(img.size)
+        new_size = (int(img.width * scale), int(img.height * scale))
+        img = img.resize(new_size, Image.Resampling.LANCZOS)
+    
+    buf = io.BytesIO()
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    img.save(buf, format="JPEG", quality=85)
+    img_base64 = base64.b64encode(buf.getvalue()).decode("utf-8")
         
-    text = vision_extract_general(img_base64)
+    text = vision_extract_general(
+        img_base64,
+        category_prompt=category_prompt,
+        job_titles=job_titles,
+        vision_model=vision_model,
+        custom_prompts=custom_prompts,
+    )
     return [{"page_number": 1, "text": _sanitize_text(text)}]
