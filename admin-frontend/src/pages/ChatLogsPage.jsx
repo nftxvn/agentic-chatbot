@@ -18,8 +18,7 @@ export default function ChatLogsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [page, setPage] = useState(1)
 
-  // Modals & Drawers
-  const [selectedLog, setSelectedLog] = useState(null)
+  // Modals
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [showPurgeModal, setShowPurgeModal] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -57,7 +56,7 @@ export default function ChatLogsPage() {
       setPagination(res.pagination || { current_page: 1, last_page: 1, total: 0 })
     } catch (err) {
       console.error(err)
-      setStatusMsg({ type: 'error', text: 'Gagal memuat riwayat percakapan dari server.' })
+      setStatusMsg({ type: 'error', text: 'Gagal memuat catatan telemetri dari server.' })
     } finally {
       setLoading(false)
     }
@@ -87,13 +86,13 @@ export default function ChatLogsPage() {
       setDeleteTarget(null)
       fetchAnalytics()
       addAppNotification({
-        title: 'Riwayat Dihapus',
-        message: 'Entri log percakapan telah dihapus.',
+        title: 'Telemetri Dihapus',
+        message: 'Baris catatan telemetri telah dihapus.',
         type: 'info',
       })
     } catch (err) {
       console.error(err)
-      setStatusMsg({ type: 'error', text: 'Gagal menghapus log percakapan.' })
+      setStatusMsg({ type: 'error', text: 'Gagal menghapus catatan telemetri.' })
     } finally {
       setDeleting(false)
     }
@@ -107,13 +106,13 @@ export default function ChatLogsPage() {
       setShowPurgeModal(false)
       fetchAnalytics()
       addAppNotification({
-        title: 'Riwayat Dikosongkan',
-        message: 'Seluruh data riwayat percakapan telah dibersihkan.',
+        title: 'Telemetri Dikosongkan',
+        message: 'Seluruh data telemetri interaksi telah dibersihkan.',
         type: 'system',
       })
     } catch (err) {
       console.error(err)
-      setStatusMsg({ type: 'error', text: 'Gagal membersihkan riwayat percakapan.' })
+      setStatusMsg({ type: 'error', text: 'Gagal membersihkan data telemetri.' })
     } finally {
       setDeleting(false)
     }
@@ -123,10 +122,10 @@ export default function ChatLogsPage() {
     <div className="p-4 sm:p-5 max-w-[1600px] mx-auto space-y-4 sm:space-y-5 pb-20">
       {/* ── HEADER BANNER ───────────────────────────────────────── */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 sm:p-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-sm">
-        <div ref={headerRef} className="space-y-1">
+        <div ref={headerRef}>
           <h1 className="text-xl sm:text-2xl font-black text-[var(--text-primary)] tracking-tight flex items-center">
-            <span>RIWAYAT & ANALITIK PERCAKAPAN</span>
-            <InfoTooltip size="lg" content="Pantau seluruh riwayat interaksi AI, audit pertanyaan masyarakat dari WhatsApp, Telegram, dan API pihak ketiga, serta identifikasi materi SOP yang perlu dilengkapi." />
+            <span>TELEMETRI & ANALITIK</span>
+            <InfoTooltip size="lg" content="Pemantauan beban kueri, latensi inferensi LLM, distribusi kanal komunikasi (WhatsApp, Telegram, API), dan tingkat keberhasilan retrieval." />
           </h1>
         </div>
 
@@ -140,32 +139,33 @@ export default function ChatLogsPage() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
               </svg>
-              <span>Bersihkan Riwayat</span>
+              <span>Bersihkan Data</span>
             </button>
           )}
         </div>
       </div>
 
+
       {/* ── TOP STATS ANALYTICS ─────────────────────────────────── */}
-      <div ref={statsRef} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 sm:gap-4">
+      <div ref={statsRef} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3.5 sm:gap-4">
         {[
           {
-            label: 'Total Pertanyaan',
+            label: 'Total Kueri',
             value: analytics ? analytics.total_queries.toLocaleString('id-ID') : '0',
             dotColor: 'bg-sky-500',
-            tooltip: 'Jumlah total seluruh interaksi pesan yang diproses oleh sistem AI.',
+            tooltip: 'Jumlah total transaksi kueri yang diproses oleh AI Microservice.',
           },
           {
             label: 'Kanal WhatsApp',
             value: analytics ? analytics.whatsapp_count.toLocaleString('id-ID') : '0',
             dotColor: 'bg-emerald-500',
-            tooltip: 'Akumulasi pesan yang masuk dan dijawab melalui integrasi WhatsApp Gateway.',
+            tooltip: 'Total kueri yang masuk melalui webhook WhatsApp Gateway.',
           },
           {
             label: 'Kanal Telegram',
             value: analytics ? (analytics.telegram_count ?? 0).toLocaleString('id-ID') : '0',
             dotColor: 'bg-cyan-500',
-            tooltip: 'Akumulasi pesan yang masuk dan dijawab melalui bot Telegram resmi.',
+            tooltip: 'Total kueri yang masuk melalui bot Telegram.',
           },
           {
             label: 'Public API Gateway',
@@ -174,7 +174,13 @@ export default function ChatLogsPage() {
             tooltip: 'Jumlah pemanggilan endpoint API /api/v1/chat dari aplikasi eksternal.',
           },
           {
-            label: 'Rasio Tidak Ditemukan',
+            label: 'Rata-Rata Latensi',
+            value: analytics ? `${analytics.avg_response_time_ms} ms` : '0 ms',
+            dotColor: 'bg-violet-500',
+            tooltip: 'Waktu rata-rata inferensi pencarian vektor & generasi teks LLM.',
+          },
+          {
+            label: 'Rasio Fallback',
             value: analytics ? `${analytics.fallback_rate_pct}%` : '0%',
             dotColor: 'bg-amber-500',
             tooltip: 'Persentase pertanyaan yang tidak menemukan fakta di SOP sehingga memicu pesan fallback.',
@@ -191,45 +197,12 @@ export default function ChatLogsPage() {
               </span>
               <span className={`w-2 h-2 rounded-full ${stat.dotColor} shrink-0`} />
             </div>
-            <div className="text-2xl sm:text-3xl font-black text-[var(--text-primary)] tracking-tight mt-3">
+            <div className="text-2xl font-black text-[var(--text-primary)] tracking-tight mt-3">
               {stat.value}
             </div>
           </div>
         ))}
       </div>
-
-      {/* ── UNANSWERED / FALLBACK INTELLIGENCE CARD ─────────────── */}
-      {analytics && analytics.recent_fallbacks && analytics.recent_fallbacks.length > 0 && (
-        <div className="p-4 sm:p-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl space-y-3">
-          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
-            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-            </svg>
-            <h3 className="text-xs font-bold uppercase tracking-wider">
-              Evaluasi SOP: Pertanyaan yang Belum Ditemukan Jawabannya di Korpus
-            </h3>
-          </div>
-          <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-            Masyarakat atau aplikasi menanyakan hal berikut, namun informasi belum termuat dalam dokumen SOP yang diunggah. Jadikan daftar ini sebagai panduan untuk menambahkan dokumen SOP baru:
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-1">
-            {analytics.recent_fallbacks.map((item) => (
-              <div
-                key={item.id}
-                className="p-3 rounded-lg bg-[var(--bg-input)]/50 border border-[var(--border-color)] text-xs space-y-1"
-              >
-                <p className="font-semibold text-[var(--text-primary)] line-clamp-2">
-                  "{item.query}"
-                </p>
-                <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
-                  <span className="capitalize">{item.channel}</span>
-                  <span>{new Date(item.created_at).toLocaleString('id-ID')}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* ── FILTER & SEARCH BAR ─────────────────────────────────── */}
       <div className="p-4 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xs space-y-3">
@@ -239,7 +212,7 @@ export default function ChatLogsPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari pertanyaan, pengirim, atau jawaban..."
+              placeholder="Cari kanal atau nama klien API..."
               className="w-full pl-9 pr-3.5 py-2 text-xs rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-sky-500 transition-colors"
             />
             <svg className="w-4 h-4 text-[var(--text-muted)] absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -292,10 +265,10 @@ export default function ChatLogsPage() {
         <div className="p-4 sm:p-5 border-b border-[var(--border-color)] flex items-center justify-between">
           <div>
             <h2 className="text-sm font-bold text-[var(--text-primary)]">
-              Daftar Interaksi Chatbot
+              Log Transaksi Telemetri
             </h2>
             <p className="text-xs text-[var(--text-muted)] mt-0.5">
-              Total {pagination.total} riwayat pertanyaan tercatat.
+              Total {pagination.total} transaksi tercatat secara anonim.
             </p>
           </div>
         </div>
@@ -308,9 +281,9 @@ export default function ChatLogsPage() {
           </div>
         ) : logs.length === 0 ? (
           <div className="p-12 text-center space-y-2">
-            <p className="text-xs font-semibold text-[var(--text-primary)]">Belum ada riwayat percakapan</p>
+            <p className="text-xs font-semibold text-[var(--text-primary)]">Belum ada transaksi telemetri</p>
             <p className="text-xs text-[var(--text-muted)]">
-              Interaksi dari WhatsApp bot, Telegram bot, atau Public API akan otomatis tercatat di sini.
+              Aktivitas kueri dari WhatsApp bot, Telegram bot, atau Public API akan otomatis tercatat di sini.
             </p>
           </div>
         ) : (
@@ -318,12 +291,11 @@ export default function ChatLogsPage() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-[var(--border-color)] bg-[var(--bg-input)]/40 text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                  <th className="py-3 px-4">Waktu</th>
+                  <th className="py-3 px-4">Waktu Transaksi</th>
                   <th className="py-3 px-4">Kanal</th>
-                  <th className="py-3 px-4">Pengirim / Klien</th>
-                  <th className="py-3 px-4">Pertanyaan</th>
-                  <th className="py-3 px-4">Status & Sumber</th>
-                  <th className="py-3 px-4">Durasi</th>
+                  <th className="py-3 px-4">Sumber / Klien</th>
+                  <th className="py-3 px-4">Status Retrieval</th>
+                  <th className="py-3 px-4">Latensi Inferensi</th>
                   <th className="py-3 px-4 text-right">Aksi</th>
                 </tr>
               </thead>
@@ -335,54 +307,48 @@ export default function ChatLogsPage() {
                     </td>
                     <td className="py-3.5 px-4 whitespace-nowrap">
                       {log.channel === 'whatsapp' ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border border-[var(--border-color)] text-[var(--action-green)] bg-[var(--bg-input)]">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border border-[var(--border-color)] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">
                           WhatsApp
                         </span>
                       ) : log.channel === 'telegram' ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border border-[var(--border-color)] text-[var(--brand-primary)] bg-[var(--bg-input)]">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border border-[var(--border-color)] text-cyan-600 dark:text-cyan-400 bg-cyan-500/10">
                           Telegram
                         </span>
                       ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border border-[var(--border-color)] text-[var(--text-secondary)] bg-[var(--bg-input)]">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border border-[var(--border-color)] text-indigo-600 dark:text-indigo-400 bg-indigo-500/10">
                           Public API
                         </span>
                       )}
                     </td>
                     <td className="py-3.5 px-4 font-mono text-xs text-[var(--text-secondary)] whitespace-nowrap">
-                      {log.sender_identifier || '-'}
-                    </td>
-                    <td className="py-3.5 px-4 font-medium max-w-xs truncate" title={log.query}>
-                      {log.query}
+                      {log.sender_identifier || (log.api_key?.name ? `API: ${log.api_key.name}` : '-')}
                     </td>
                     <td className="py-3.5 px-4 whitespace-nowrap">
                       {log.is_fallback ? (
-                        <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">
-                          Informasi Tidak Ada
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                          Informasi Tidak Ditemukan
                         </span>
                       ) : (
-                        <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                          {log.sources_json && log.sources_json.length > 0
-                            ? `${log.sources_json.length} Dokumen Terbit`
-                            : 'Terjawab'}
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          Terjawab dari SOP
                         </span>
                       )}
                     </td>
                     <td className="py-3.5 px-4 text-xs font-mono text-[var(--text-muted)] whitespace-nowrap">
-                      {log.response_time_ms ? `${log.response_time_ms} ms` : '-'}
+                      {log.response_time_ms ? (
+                        <span className="font-semibold text-[var(--text-primary)]">
+                          {log.response_time_ms} ms
+                        </span>
+                      ) : '-'}
                     </td>
-                    <td className="py-3.5 px-4 text-right space-x-1 whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedLog(log)}
-                        className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-[var(--bg-input)] hover:bg-[var(--border-color)] text-[var(--text-primary)] border border-[var(--border-color)] transition-colors cursor-pointer"
-                      >
-                        Detail
-                      </button>
+                    <td className="py-3.5 px-4 text-right whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => setDeleteTarget(log)}
                         className="p-1 text-zinc-400 hover:text-rose-500 rounded transition-colors cursor-pointer"
-                        title="Hapus Log"
+                        title="Hapus Catatan"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
@@ -424,96 +390,11 @@ export default function ChatLogsPage() {
         )}
       </div>
 
-      {/* ── MODAL DETAIL PERCAKAPAN ─────────────────────────────── */}
-      {selectedLog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl max-w-2xl w-full p-5 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-3">
-              <div className="space-y-0.5">
-                <h3 className="text-sm font-bold text-[var(--text-primary)]">
-                  Detail Interaksi Chatbot #{selectedLog.id}
-                </h3>
-                <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-                  <span>Kanal: <strong className="capitalize text-[var(--text-primary)]">{selectedLog.channel}</strong></span>
-                  <span>•</span>
-                  <span>{new Date(selectedLog.created_at).toLocaleString('id-ID')}</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedLog(null)}
-                className="p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Query */}
-            <div className="space-y-1.5">
-              <span className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider block">
-                Pertanyaan Pengguna
-              </span>
-              <div className="p-3 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-xs text-[var(--text-primary)] font-medium">
-                {selectedLog.query}
-              </div>
-            </div>
-
-            {/* Answer */}
-            <div className="space-y-1.5">
-              <span className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider block">
-                Jawaban AI (SOP Response)
-              </span>
-              <div className="p-3.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-xs text-[var(--text-primary)] whitespace-pre-wrap leading-relaxed">
-                {selectedLog.answer}
-              </div>
-            </div>
-
-            {/* Cited Sources */}
-            {selectedLog.sources_json && selectedLog.sources_json.length > 0 && (
-              <div className="space-y-1.5">
-                <span className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider block">
-                  Dokumen SOP yang Dirujuk ({selectedLog.sources_json.length})
-                </span>
-                <div className="space-y-1.5">
-                  {selectedLog.sources_json.map((s, idx) => (
-                    <div
-                      key={idx}
-                      className="p-2.5 rounded bg-[var(--bg-card)] border border-[var(--border-color)] text-xs flex items-center justify-between"
-                    >
-                      <span className="font-semibold text-[var(--text-primary)]">
-                        {s.doc_name || `Dokumen #${s.document_id}`}
-                      </span>
-                      {s.page && (
-                        <span className="text-xs font-mono px-2 py-0.5 rounded bg-[var(--bg-input)] text-[var(--brand-primary)] border border-[var(--border-color)]">
-                          Halaman {s.page}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Technical Metadata */}
-            <div className="pt-2 border-t border-[var(--border-color)] flex items-center justify-between text-xs text-[var(--text-muted)]">
-              <div>
-                Session ID: <code className="font-mono">{selectedLog.session_id}</code>
-              </div>
-              <div>
-                Durasi: <strong className="font-mono text-[var(--text-primary)]">{selectedLog.response_time_ms ? `${selectedLog.response_time_ms} ms` : '-'}</strong>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── MODAL DELETE SINGLE ─────────────────────────────────── */}
       <ConfirmModal
         isOpen={Boolean(deleteTarget)}
-        title="Hapus Log Percakapan?"
-        message="Apakah Anda yakin ingin menghapus catatan percakapan ini?"
+        title="Hapus Catatan Telemetri?"
+        message="Apakah Anda yakin ingin menghapus data baris telemetri ini?"
         confirmText="Ya, Hapus"
         cancelText="Batal"
         danger={true}
@@ -524,8 +405,8 @@ export default function ChatLogsPage() {
       {/* ── MODAL PURGE ALL ─────────────────────────────────────── */}
       <ConfirmModal
         isOpen={showPurgeModal}
-        title="Bersihkan Seluruh Riwayat Percakapan?"
-        message="Tindakan ini akan mengosongkan seluruh data audit log percakapan dari database secara permanen."
+        title="Bersihkan Seluruh Data Telemetri?"
+        message="Tindakan ini akan mengosongkan seluruh data metrik telemetri interaksi dari database secara permanen."
         confirmText="Ya, Bersihkan Semua"
         cancelText="Batal"
         danger={true}

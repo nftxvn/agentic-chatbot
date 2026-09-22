@@ -47,14 +47,14 @@ export const documentsApi = {
 
   /** Minta jeda ekstraksi di batas halaman (tidak merusak progress). */
   async pause(id) {
-    const { data } = await client.post(`/api/documents/${id}/ekstraksi/jeda`)
+    const { data } = await client.post(`/api/documents/${id}/extraction/pause`)
     return data
   },
 
   /** Mulai atau lanjutkan ekstraksi bertahap. */
   async resume(id, maksHalaman = null) {
     const payload = maksHalaman ? { maks_halaman: maksHalaman } : {}
-    const { data } = await client.post(`/api/documents/${id}/ekstraksi`, payload)
+    const { data } = await client.post(`/api/documents/${id}/extraction`, payload)
     return data
   },
 
@@ -64,13 +64,13 @@ export const documentsApi = {
 
   /** Ambil status dan kemajuan ekstraksi bertahap. */
   async getExtractionStatus(id) {
-    const { data } = await client.get(`/api/documents/${id}/ekstraksi`)
+    const { data } = await client.get(`/api/documents/${id}/extraction`)
     return data
   },
 
   /** Ambil daftar teks halaman untuk editor koreksi manual. */
   async getPages(id, perluDiperiksa = false) {
-    const { data } = await client.get(`/api/documents/${id}/halaman`, {
+    const { data } = await client.get(`/api/documents/${id}/pages`, {
       params: { perlu_diperiksa: perluDiperiksa ? 1 : 0 },
     })
     return data
@@ -78,30 +78,30 @@ export const documentsApi = {
 
   /** Simpan koreksi teks satu halaman. */
   async savePageCorrection(id, pageNumber, text) {
-    const { data } = await client.put(`/api/documents/${id}/halaman/${pageNumber}`, { text })
+    const { data } = await client.put(`/api/documents/${id}/pages/${pageNumber}`, { text })
     return data
   },
 
   /** Ambil ukuran dan orientasi semua halaman. */
   async getPageSizes(id) {
-    const { data } = await client.get(`/api/documents/${id}/halaman/ukuran`)
+    const { data } = await client.get(`/api/documents/${id}/pages/dimensions`)
     return data
   },
 
   /** URL citra JPEG satu halaman untuk perbandingan dengan teks OCR. */
   pageImageUrl(id, pageNumber, zoom = 2.0) {
-    return `/api/documents/${id}/halaman/${pageNumber}/citra?zoom=${zoom}`
+    return `/api/documents/${id}/pages/${pageNumber}/image?zoom=${zoom}`
   },
 
   /** Ambil pratinjau potongan induk dan anak dengan opsi kustom. */
   async getChunksPreview(id, params = {}) {
-    const { data } = await client.post(`/api/documents/${id}/potongan`, params)
+    const { data } = await client.post(`/api/documents/${id}/chunks/preview`, params)
     return data
   },
 
   /** Finalisasi dokumen: simpan potongan vektor ke ChromaDB dengan opsi kustom. */
   async saveToCorpus(id, params = {}) {
-    const { data } = await client.post(`/api/documents/${id}/simpan`, params)
+    const { data } = await client.post(`/api/documents/${id}/embed`, params)
     return data
   },
 

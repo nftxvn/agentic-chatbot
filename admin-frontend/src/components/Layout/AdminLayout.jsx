@@ -45,7 +45,7 @@ const NAV_ITEMS = [
   },
   {
     to: "/categories",
-    label: "Kategori AI",
+    label: "Kategori",
     icon: (
       <svg
         className="w-5 h-5"
@@ -64,7 +64,7 @@ const NAV_ITEMS = [
   },
   {
     to: "/settings/chatbot",
-    label: "RAG Playground",
+    label: "Chatbot & RAG",
     icon: (
       <svg
         className="w-5 h-5"
@@ -83,7 +83,7 @@ const NAV_ITEMS = [
   },
   {
     to: "/integrations",
-    label: "Integrasi & API",
+    label: "Integrasi",
     icon: (
       <svg
         className="w-5 h-5"
@@ -101,8 +101,8 @@ const NAV_ITEMS = [
     ),
   },
   {
-    to: "/chat-logs",
-    label: "Riwayat & Analitik",
+    to: "/monitoring",
+    label: "Monitoring",
     icon: (
       <svg
         className="w-5 h-5"
@@ -119,57 +119,38 @@ const NAV_ITEMS = [
       </svg>
     ),
   },
-  {
-    to: "/mesin",
-    label: "Kesehatan Mesin",
-    icon: (
-      <svg
-        className="w-5 h-5"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={1.75}
-          d="M8.25 3v1.5M15.75 3v1.5M8.25 19.5V21M15.75 19.5V21M3 8.25h1.5M3 15.75h1.5M19.5 8.25H21M19.5 15.75H21M6.75 6.75h10.5v10.5H6.75V6.75zM9.75 9.75h4.5v4.5h-4.5v-4.5z"
-        />
-      </svg>
-    ),
-  },
 ];
 
 const QUICK_FEATURES = [
   {
     id: "f-dashboard",
-    label: "Dashboard Utama",
+    label: "Dashboard",
     desc: "Ringkasan dokumen RAG & statistik pengindeksan",
     to: "/dashboard",
   },
   {
     id: "f-categories",
-    label: "Kategori Dokumen AI",
-    desc: "Kelola kategori, prompt LLM & model vision",
+    label: "Kategori",
+    desc: "Kelola profil OCR, prompt ekstraksi & variabel dokumen",
     to: "/categories",
   },
   {
     id: "f-chatbot",
-    label: "RAG Playground & Prompt",
+    label: "Chatbot & RAG",
     desc: "Editor prompt, tuning parameter RAG, live chat testing & chunk inspector",
     to: "/settings/chatbot",
   },
   {
     id: "f-integrations",
-    label: "Integrasi & API Gateway",
-    desc: "Kelola kunci API, bot WhatsApp & webhook pihak ketiga",
+    label: "Integrasi",
+    desc: "Kelola kunci API, bot WhatsApp, Telegram & webhook",
     to: "/integrations",
   },
   {
-    id: "f-chatlogs",
-    label: "Riwayat & Analitik Percakapan",
-    desc: "Audit pertanyaan masuk, performa inferensi & pertanyaan tak terjawab",
-    to: "/chat-logs",
+    id: "f-monitoring",
+    label: "Monitoring",
+    desc: "Telemetri kueri layanan, beban latensi, utilisasi GPU VRAM & status runtime Ollama",
+    to: "/monitoring",
   },
 ];
 

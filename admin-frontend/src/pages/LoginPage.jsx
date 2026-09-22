@@ -134,6 +134,10 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+    if (!email.trim() || !password.trim()) {
+      setError('Alamat email dan password wajib diisi.')
+      return
+    }
     setLoading(true)
 
     try {
@@ -150,6 +154,10 @@ export default function LoginPage() {
     e.preventDefault()
     setForgotError('')
     setForgotMessage('')
+    if (!forgotEmail.trim()) {
+      setForgotError('Alamat email wajib diisi.')
+      return
+    }
     setForgotLoading(true)
     try {
       const res = await authApi.forgotPassword(forgotEmail)
@@ -246,9 +254,9 @@ export default function LoginPage() {
 
       {/* Right side Form Panel (35% width) */}
       <div className="flex items-center justify-center p-8 lg:p-10 bg-[var(--bg-card)]">
-        <div className="w-full max-w-md space-y-8">
+        <div className="w-full max-w-md">
           {/* Header Logos & Branding above Selamat Datang */}
-          <div className="flex items-center gap-4 justify-center mb-6">
+          <div className="flex items-center gap-4 justify-center mb-10 sm:mb-12">
             <div className="flex items-center gap-2.5 shrink-0">
               <div className="rounded-2xl flex items-center justify-center p-1">
                 <img src={bandaAcehLogo} alt="Logo Kota Banda Aceh" className="h-20 w-auto object-contain" />
@@ -270,8 +278,8 @@ export default function LoginPage() {
 
           {!isForgot ? (
             /* ───── LOGIN FORM VIEW ───── */
-            <>
-              <div className="text-center lg:text-left">
+            <div className="space-y-6">
+              <div className="text-center lg:text-left mb-6">
                 <h2 className="text-3xl font-extrabold text-[var(--text-primary)] tracking-tight">Selamat Datang</h2>
                 <p className="mt-2 text-sm text-[var(--text-secondary)]">Masuk ke Admin Dashboard</p>
               </div>
@@ -282,10 +290,10 @@ export default function LoginPage() {
                 </div>
               )}
 
-              <form onSubmit={handleSubmit} className="space-y-6">
+              <form noValidate onSubmit={handleSubmit} className="space-y-6">
                 <div>
                   <label htmlFor="email" className="block text-sm font-semibold text-[var(--text-primary)] mb-2">
-                    Email Address
+                    Alamat Email
                   </label>
                   <Input
                     id="email"
@@ -293,7 +301,6 @@ export default function LoginPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="admin@diskominfotik.go.id"
-                    required
                     disabled={loading}
                   />
                 </div>
@@ -310,7 +317,6 @@ export default function LoginPage() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••"
-                      required
                       disabled={loading}
                     />
                     <button
@@ -359,7 +365,7 @@ export default function LoginPage() {
 
                 <button
                   type="submit"
-                  className="w-full py-3.5 px-4 bg-gradient-to-r from-sky-500 via-sky-500 to-sky-100 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white font-bold rounded-xl shadow-lg shadow-sky-500/20 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center"
+                  className="w-full py-3.5 px-4 bg-gradient-to-r from-sky-500 via-sky-500 to-sky-100 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white font-bold rounded-xl shadow-lg shadow-sky-500/20 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center cursor-pointer"
                   disabled={loading}
                 >
                   {loading ? (
@@ -369,11 +375,11 @@ export default function LoginPage() {
                   )}
                 </button>
               </form>
-            </>
+            </div>
           ) : (
             /* ───── FORGOT PASSWORD FORM VIEW ───── */
-            <>
-              <div className="text-center lg:text-left">
+            <div className="space-y-6">
+              <div className="text-center lg:text-left mb-6">
                 <h2 className="text-3xl font-extrabold text-[var(--text-primary)] tracking-tight">Lupa Password?</h2>
                 <p className="mt-2 text-sm text-[var(--text-secondary)]">Masukkan email Anda untuk menerima link reset password.</p>
               </div>
@@ -389,10 +395,10 @@ export default function LoginPage() {
                 </div>
               )}
 
-              <form onSubmit={handleForgotSubmit} className="space-y-6">
+              <form noValidate onSubmit={handleForgotSubmit} className="space-y-6">
                 <div>
                   <label htmlFor="forgotEmail" className="block text-sm font-semibold text-[var(--text-primary)] mb-2">
-                    Email Address
+                    Alamat Email
                   </label>
                   <Input
                     id="forgotEmail"
@@ -400,14 +406,13 @@ export default function LoginPage() {
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
                     placeholder="admin@diskominfotik.go.id"
-                    required
                     disabled={forgotLoading}
                   />
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full py-3.5 px-4 bg-gradient-to-r from-sky-500 via-sky-500 to-sky-100 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white font-bold rounded-xl shadow-lg shadow-sky-500/20 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center"
+                  className="w-full py-3.5 px-4 bg-gradient-to-r from-sky-500 via-sky-500 to-sky-100 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white font-bold rounded-xl shadow-lg shadow-sky-500/20 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center cursor-pointer"
                   disabled={forgotLoading}
                 >
                   {forgotLoading ? (
@@ -427,7 +432,7 @@ export default function LoginPage() {
                   </button>
                 </div>
               </form>
-            </>
+            </div>
           )}
         </div>
       </div>

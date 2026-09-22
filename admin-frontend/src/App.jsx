@@ -10,8 +10,7 @@ import CategoriesPage from './pages/CategoriesPage'
 import DocumentDetailPage from './pages/DocumentDetailPage'
 import ChatbotSettingsPage from './pages/ChatbotSettingsPage'
 import IntegrationsPage from './pages/IntegrationsPage'
-import ChatLogsPage from './pages/ChatLogsPage'
-import MesinPage from './pages/MesinPage'
+import MonitoringPage from './pages/MonitoringPage'
 
 function AppLoader() {
   return (
@@ -133,9 +132,10 @@ export default function App() {
             <Route path="/documents/:id"      element={<DocumentDetailPage />} />
             <Route path="/settings/chatbot"   element={<ChatbotSettingsPage />} />
             <Route path="/integrations"       element={<IntegrationsPage />} />
-            <Route path="/chat-logs"          element={<ChatLogsPage />} />
-            <Route path="/mesin"              element={<MesinPage />} />
+            <Route path="/monitoring"         element={<MonitoringPage />} />
             {/* Backward compatibility redirects */}
+            <Route path="/chat-logs"          element={<Navigate to="/monitoring?tab=telemetri" replace />} />
+            <Route path="/mesin"              element={<Navigate to="/monitoring?tab=hardware" replace />} />
             <Route path="/settings/whatsapp"  element={<Navigate to="/integrations" replace />} />
             <Route path="/settings/api-keys"  element={<Navigate to="/integrations" replace />} />
           </Route>

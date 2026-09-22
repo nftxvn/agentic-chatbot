@@ -19,13 +19,7 @@ ATURAN:
 - Tulis isi tabel sebagai teks biasa atau daftar. JANGAN memakai tabel Markdown (tanda |).
 - Bila sebuah sel kosong, biarkan kosong. Jangan menebak isinya.
 - HANYA keluarkan teks hasil ekstraksi tanpa penjelasan atau komentar pembuka.`,
-    llm_prompt: `Anda adalah editor ahli bahasa. Koreksi typo dari teks OCR berikut tanpa merubah makna asli. Pertahankan struktur Markdown (seperti tabel, header). Keluarkan HANYA teks yang sudah diperbaiki.
-
-{TEXT}`,
     job_titles: [],
-    temperature: 0.0,
-    chunk_size: 1500,
-    chunk_overlap: 200,
   },
   sop: {
     description:
@@ -44,15 +38,6 @@ ATURAN TAMBAHAN:
 - Pelaksana ditentukan dari POSISI simbol flowchart (kotak/belah ketupat). Lihat simbol berada di bawah kolom jabatan mana.
 - Waktu dan Output adalah DUA kolom BERBEDA. JANGAN digabung. (Contoh BENAR: Waktu: 30 menit / Output: Disposisi).
 - HANYA keluarkan teks hasil ekstraksi tanpa komentar.`,
-    llm_prompt: `Anda adalah analis SOP pemerintah. Perbaiki typo hasil OCR pada teks prosedur berikut.
-Jika ada nama jabatan pelaksana yang salah baca/ambigu, sesuaikan dengan DAFTAR JABATAN RESMI: {job_titles}
-
-Keluarkan HANYA teks yang sudah diperbaiki.
-
-TEKS:
----
-{TEXT}
----`,
     job_titles: [
       "Kepala Dinas",
       "Sekretaris",
@@ -63,9 +48,6 @@ TEKS:
       "Staf Pelaksana",
       "Pengguna Layanan",
     ],
-    temperature: 0.0,
-    chunk_size: 1500,
-    chunk_overlap: 200,
   },
 };
 
@@ -81,17 +63,11 @@ export default function CategoriesPage() {
     description: PRESETS.general.description,
     ui_layout: "general",
     vision_prompt: "",
-    llm_prompt: "",
     prompt_variables: "",
     vision_model: "",
-    llm_model: "",
-    temperature: 0.0,
-    chunk_size: 1500,
-    chunk_overlap: 200,
   });
 
   const [isCustomVision, setIsCustomVision] = useState(false);
-  const [isCustomLlm, setIsCustomLlm] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [jobTitlesList, setJobTitlesList] = useState([]);
   const [newJobInput, setNewJobInput] = useState("");
@@ -224,11 +200,6 @@ export default function CategoriesPage() {
         category.vision_prompt.trim() !== "" &&
         category.vision_prompt !== preset.vision_prompt,
       );
-      const hasCustomLlm = Boolean(
-        category.llm_prompt &&
-        category.llm_prompt.trim() !== "" &&
-        category.llm_prompt !== preset.llm_prompt,
-      );
 
       // `kata_kunci` nama barunya; `job_titles` dibaca sebagai cadangan supaya
       // kategori yang sudah terlanjur diisi tidak kehilangan datanya.
@@ -242,14 +213,7 @@ export default function CategoriesPage() {
       }
 
       setIsCustomVision(hasCustomVision);
-      setIsCustomLlm(hasCustomLlm);
-      setShowAdvanced(
-        Boolean(
-          category.vision_model ||
-          category.llm_model ||
-          (category.temperature && category.temperature > 0),
-        ),
-      );
+      setShowAdvanced(Boolean(category.vision_model));
       setJobTitlesList(extractedJobTitles);
       setIsRawJsonMode(false);
       setNewJobInput("");
@@ -261,20 +225,14 @@ export default function CategoriesPage() {
         description: category.description || preset.description,
         ui_layout: layout,
         vision_prompt: hasCustomVision ? category.vision_prompt : "",
-        llm_prompt: hasCustomLlm ? category.llm_prompt : "",
         prompt_variables: category.prompt_variables
           ? JSON.stringify(category.prompt_variables, null, 2)
           : "",
         vision_model: category.vision_model || "",
-        llm_model: category.llm_model || "",
-        temperature: category.temperature ?? 0.0,
-        chunk_size: category.chunk_size ?? 1500,
-        chunk_overlap: category.chunk_overlap ?? 200,
       });
     } else {
       setEditingCategory(null);
       setIsCustomVision(false);
-      setIsCustomLlm(false);
       setShowAdvanced(false);
       setJobTitlesList(PRESETS.sop.job_titles);
       setIsRawJsonMode(false);
@@ -287,13 +245,8 @@ export default function CategoriesPage() {
         description: PRESETS.general.description,
         ui_layout: "general",
         vision_prompt: "",
-        llm_prompt: "",
         prompt_variables: "",
         vision_model: "",
-        llm_model: "",
-        temperature: 0.0,
-        chunk_size: 1500,
-        chunk_overlap: 200,
       });
     }
     setTestImageBase64("");
@@ -316,9 +269,6 @@ export default function CategoriesPage() {
         !prev.description
           ? preset.description
           : prev.description,
-      chunk_size: preset.chunk_size,
-      chunk_overlap: preset.chunk_overlap,
-      temperature: preset.temperature,
     }));
 
     if (newLayout === "sop" && jobTitlesList.length === 0) {
@@ -438,6 +388,11 @@ export default function CategoriesPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    if (!formData.name || !formData.name.trim()) {
+      alert("Nama kategori wajib diisi.");
+      return;
+    }
+
     const layout = formData.ui_layout || "general";
     let finalPromptVariables = null;
 
@@ -487,10 +442,6 @@ export default function CategoriesPage() {
         vision_prompt:
           isCustomVision && formData.vision_prompt.trim() !== ""
             ? formData.vision_prompt.trim()
-            : null,
-        llm_prompt:
-          isCustomLlm && formData.llm_prompt.trim() !== ""
-            ? formData.llm_prompt.trim()
             : null,
         prompt_variables: finalPromptVariables,
       };
@@ -645,7 +596,7 @@ export default function CategoriesPage() {
                   <div className="flex flex-wrap items-center gap-1.5 mb-4 text-xs text-[var(--text-muted)] font-mono">
                     <span className="inline-flex items-center gap-1 bg-[var(--bg-input)] px-2 py-0.5 rounded-md border border-[var(--border-color)]">
                       <svg
-                        className="w-3 h-3 text-[var(--text-muted)]"
+                        className="w-3 h-3 text-sky-500"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -654,20 +605,16 @@ export default function CategoriesPage() {
                           strokeLinecap="round"
                           strokeLinejoin="round"
                           strokeWidth={2}
-                          d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"
+                          d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
                         />
                       </svg>
-                      {cat.llm_model || "qwen2.5:7b"}
+                      Vision: {cat.vision_model || "qwen2.5vl"}
                     </span>
-                    <span className="inline-flex items-center gap-1 bg-[var(--bg-input)] px-2 py-0.5 rounded-md border border-[var(--border-color)]">
-                      Chunk: {cat.chunk_size ?? 1500}
-                    </span>
-                    {cat.temperature !== undefined &&
-                      cat.temperature !== null && (
-                        <span className="inline-flex items-center gap-1 bg-[var(--bg-input)] px-2 py-0.5 rounded-md border border-[var(--border-color)]">
-                          Temp: {cat.temperature}
-                        </span>
-                      )}
+                    {cat.vision_prompt && (
+                      <span className="inline-flex items-center gap-1 bg-[var(--bg-input)] px-2 py-0.5 rounded-md border border-[var(--border-color)] text-sky-500 font-medium">
+                        Custom Prompt
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -722,6 +669,7 @@ export default function CategoriesPage() {
       {showModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[100] p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
           <form
+            noValidate
             className="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-7xl h-[92vh] max-h-[92vh] rounded-2xl shadow-2xl flex flex-col"
             onSubmit={handleSubmit}
             ref={modalRef}
@@ -803,7 +751,6 @@ export default function CategoriesPage() {
                         onChange={(e) =>
                           setFormData({ ...formData, name: e.target.value })
                         }
-                        required
                         placeholder="Contoh: SOP Pelayanan Masyarakat"
                       />
                     </div>
@@ -1231,12 +1178,12 @@ export default function CategoriesPage() {
                         />
                       </svg>
                       <span>
-                        Pengaturan Model & Parameter (Ollama / Chunking)
+                        Pengaturan Model Vision (OCR)
                       </span>
-                      {(formData.vision_model || formData.llm_model) && (
+                      {formData.vision_model && (
                         <span
                           className="w-2 h-2 rounded-full bg-sky-500"
-                          title="Ada setelan kustom aktif"
+                          title="Model Vision Kustom Aktif"
                         />
                       )}
                     </span>
@@ -1259,113 +1206,36 @@ export default function CategoriesPage() {
                   </button>
 
                   {showAdvanced && (
-                    <div className="p-4 space-y-4 bg-[var(--bg-card)] border-t border-[var(--border-color)]">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1.5">
-                            Vision Model
+                    <div className="p-4 space-y-3 bg-[var(--bg-card)] border-t border-[var(--border-color)]">
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                            Vision Model (Ollama)
                           </label>
-                          <select
-                            className="w-full text-xs"
-                            value={formData.vision_model}
-                            onChange={(e) =>
-                              setFormData({
-                                ...formData,
-                                vision_model: e.target.value,
-                              })
-                            }
-                          >
-                            <option value="">
-                              -- Default Global (qwen2.5vl) --
+                          <InfoTooltip content="Model OCR Vision lokal yang digunakan untuk mengekstrak teks dan tabel dari berkas halaman dokumen." />
+                        </div>
+                        <select
+                          className="w-full text-xs"
+                          value={formData.vision_model}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              vision_model: e.target.value,
+                            })
+                          }
+                        >
+                          <option value="">
+                            -- Default Global (qwen2.5vl) --
+                          </option>
+                          {ollamaModels.map((m) => (
+                            <option key={m} value={m}>
+                              {m}
                             </option>
-                            {ollamaModels.map((m) => (
-                              <option key={m} value={m}>
-                                {m}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1.5">
-                            LLM Model
-                          </label>
-                          <select
-                            className="w-full text-xs"
-                            value={formData.llm_model}
-                            onChange={(e) =>
-                              setFormData({
-                                ...formData,
-                                llm_model: e.target.value,
-                              })
-                            }
-                          >
-                            <option value="">
-                              -- Default Global (qwen2.5:7b) --
-                            </option>
-                            {ollamaModels.map((m) => (
-                              <option key={m} value={m}>
-                                {m}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
-                        <div>
-                          <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1.5">
-                            Temperature:{" "}
-                            <span className="text-sky-500 font-bold">
-                              {formData.temperature}
-                            </span>
-                          </label>
-                          <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.05"
-                            className="w-full cursor-pointer"
-                            value={formData.temperature}
-                            onChange={(e) =>
-                              setFormData({
-                                ...formData,
-                                temperature: parseFloat(e.target.value),
-                              })
-                            }
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1.5">
-                            Parent Chunk Size
-                          </label>
-                          <input
-                            type="number"
-                            className="w-full text-xs"
-                            value={formData.chunk_size}
-                            onChange={(e) =>
-                              setFormData({
-                                ...formData,
-                                chunk_size: parseInt(e.target.value, 10),
-                              })
-                            }
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1.5">
-                            Chunk Overlap
-                          </label>
-                          <input
-                            type="number"
-                            className="w-full text-xs"
-                            value={formData.chunk_overlap}
-                            onChange={(e) =>
-                              setFormData({
-                                ...formData,
-                                chunk_overlap: parseInt(e.target.value, 10),
-                              })
-                            }
-                          />
-                        </div>
+                          ))}
+                        </select>
+                        <p className="text-[11px] text-[var(--text-muted)] mt-1.5">
+                          Kosongkan untuk menggunakan model vision bawaan sistem. Parameter potongan chunk diatur saat finalisasi dokumen di Editor Koreksi.
+                        </p>
                       </div>
                     </div>
                   )}
@@ -1508,7 +1378,7 @@ export default function CategoriesPage() {
                             d="M4 12a8 8 0 018-8v8H4z"
                           ></path>
                         </svg>
-                        <span>Menjalankan Vision & LLM...</span>
+                        <span>Menjalankan Vision OCR...</span>
                       </>
                     ) : (
                       <>

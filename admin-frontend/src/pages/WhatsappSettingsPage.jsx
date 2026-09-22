@@ -109,7 +109,13 @@ export default function WhatsappSettingsPage() {
 
   async function handleTestSend(e) {
     e.preventDefault()
-    if (!testPhone.trim()) return
+    if (!testPhone || !testPhone.trim()) {
+      setTestResult({
+        type: 'error',
+        text: 'Nomor WhatsApp tujuan uji wajib diisi.',
+      })
+      return
+    }
 
     setTestingSend(true)
     setTestResult(null)
@@ -429,7 +435,7 @@ export default function WhatsappSettingsPage() {
               </p>
             </div>
 
-            <form onSubmit={handleTestSend} className="space-y-3 text-xs">
+            <form noValidate onSubmit={handleTestSend} className="space-y-3 text-xs">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-[var(--text-primary)] block">
                   Nomor WhatsApp Tujuan Uji
@@ -439,7 +445,6 @@ export default function WhatsappSettingsPage() {
                   value={testPhone}
                   onChange={(e) => setTestPhone(e.target.value)}
                   placeholder="Contoh: 6281234567890"
-                  required
                   className="w-full px-3.5 py-2 text-xs rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-sky-500 transition-colors"
                 />
               </div>

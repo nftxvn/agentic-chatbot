@@ -71,13 +71,23 @@ export default function SettingsModal({
     setPassError('')
     setPassSuccess('')
 
-    if (passwordForm.new_password !== passwordForm.new_password_confirmation) {
-      setPassError('Konfirmasi password baru tidak cocok.')
+    if (!passwordForm.current_password) {
+      setPassError('Password saat ini wajib diisi.')
+      return
+    }
+
+    if (!passwordForm.new_password) {
+      setPassError('Password baru wajib diisi.')
       return
     }
 
     if (passwordForm.new_password.length < 8) {
       setPassError('Password baru minimal 8 karakter.')
+      return
+    }
+
+    if (passwordForm.new_password !== passwordForm.new_password_confirmation) {
+      setPassError('Konfirmasi password baru tidak cocok.')
       return
     }
 
@@ -246,7 +256,7 @@ export default function SettingsModal({
 
           {/* ── TAB 2: KEAMANAN & GANTI SANDI ───────────────────── */}
           {activeTab === 'security' && (
-            <form key="tab-security" onSubmit={handleChangePasswordSubmit} className="animate-fade-in space-y-4">
+            <form key="tab-security" noValidate onSubmit={handleChangePasswordSubmit} className="animate-fade-in space-y-4">
               {passSuccess && (
                 <div className="p-3 bg-[var(--bg-input)] border border-[var(--border-color)] text-emerald-500 rounded-xl text-xs font-semibold flex items-center gap-2">
                   <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -272,7 +282,6 @@ export default function SettingsModal({
                 <div className="relative">
                   <input
                     type={showCurrentPass ? 'text' : 'password'}
-                    required
                     value={passwordForm.current_password}
                     onChange={(e) => {
                       setPassError('')
@@ -309,8 +318,6 @@ export default function SettingsModal({
                 <div className="relative">
                   <input
                     type={showNewPass ? 'text' : 'password'}
-                    required
-                    minLength={8}
                     value={passwordForm.new_password}
                     onChange={(e) => {
                       setPassError('')
@@ -347,8 +354,6 @@ export default function SettingsModal({
                 <div className="relative">
                   <input
                     type={showConfirmPass ? 'text' : 'password'}
-                    required
-                    minLength={8}
                     value={passwordForm.new_password_confirmation}
                     onChange={(e) => {
                       setPassError('')

@@ -8,7 +8,7 @@ import client from './client'
  */
 export const mesinApi = {
   async ambil() {
-    const { data } = await client.get('/api/ai/health/mesin')
+    const { data } = await client.get('/api/ai/health/hardware')
     return data
   },
 }

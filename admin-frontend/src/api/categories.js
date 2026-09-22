@@ -32,7 +32,7 @@ export const categoriesApi = {
    * pernah ada dan diam-diam melenceng dari yang sebenarnya berjalan.
    */
   async promptEkstraksi() {
-    const { data } = await client.get('/api/ai/docs/prompt-ekstraksi')
+    const { data } = await client.get('/api/ai/docs/extraction-prompts')
     return data
   }
 }

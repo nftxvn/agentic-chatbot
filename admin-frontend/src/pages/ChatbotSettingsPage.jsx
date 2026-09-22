@@ -63,7 +63,7 @@ export default function ChatbotSettingsPage() {
 
   const [initialForm, setInitialForm] = useState(null)
   const [form, setForm] = useState({
-    llm_model_name: 'qwen2.5:3b',
+    llm_model_name: 'qwen2.5:7b',
     chatbot_name: '',
     chatbot_persona: '',
     rag_system_prompt: '',
@@ -111,7 +111,7 @@ export default function ChatbotSettingsPage() {
       ])
 
       const loaded = {
-        llm_model_name: settingsData.llm_model_name || 'qwen2.5:3b',
+        llm_model_name: settingsData.llm_model_name || 'qwen2.5:7b',
         chatbot_name: settingsData.chatbot_name || 'Asisten Virtual Diskominfotik',
         chatbot_persona: settingsData.chatbot_persona || 'Asisten AI Resmi Layanan Informasi Diskominfotik',
         rag_system_prompt: settingsData.rag_system_prompt || '',
@@ -155,7 +155,7 @@ export default function ChatbotSettingsPage() {
   const handleDetectHardware = async (showNotification = true, modelOverride = null) => {
     setDetectingHardware(true)
     try {
-      const modelToUse = modelOverride || form.llm_model_name || 'qwen2.5:3b'
+      const modelToUse = modelOverride || form.llm_model_name || 'qwen2.5:7b'
       const res = await getHardwareStatus(modelToUse)
       if (res?.data) {
         setHardwareData(res.data)
@@ -218,7 +218,7 @@ export default function ChatbotSettingsPage() {
   }
 
   const handleRunBenchmark = async () => {
-    const currentModel = form.llm_model_name || 'qwen2.5:3b'
+    const currentModel = form.llm_model_name || 'qwen2.5:7b'
     setBenchmarking(true)
     try {
       const res = await benchmarkModel(currentModel)
@@ -292,6 +292,13 @@ export default function ChatbotSettingsPage() {
 
   const handleSubmit = async (e) => {
     if (e) e.preventDefault()
+    if (!form.rag_system_prompt || !form.rag_system_prompt.trim()) {
+      setStatusMsg({
+        type: 'error',
+        text: 'System prompt wajib diisi.',
+      })
+      return
+    }
     setSaving(true)
     setStatusMsg(null)
     try {
@@ -466,7 +473,7 @@ console.log("Rujukan:", data.sources);`
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 sm:p-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-sm">
         <div ref={headerRef} className="space-y-1">
           <h1 className="text-xl sm:text-2xl font-black text-[var(--text-primary)] tracking-tight flex items-center">
-            <span>RAG PLAYGROUND & PROMPT STUDIO</span>
+            <span>CHATBOT & RAG PLAYGROUND</span>
             <InfoTooltip size="lg" content="Pusat konfigurasi prompt instruksi AI, parameter inferensi LLM, serta sandbox simulasi pengujian retrieval korpus dokumen RAG secara live." />
           </h1>
         </div>
@@ -612,7 +619,6 @@ console.log("Rujukan:", data.sources);`
                   value={form.rag_system_prompt}
                   onChange={handleChange}
                   rows={14}
-                  required
                   placeholder="Tuliskan system prompt di sini..."
                   className="w-full p-3 font-mono text-xs leading-relaxed bg-transparent text-[var(--text-primary)] focus:outline-none resize-y"
                   spellCheck={false}
@@ -652,7 +658,7 @@ console.log("Rujukan:", data.sources);`
                   <div className="sm:col-span-8 relative">
                     <select
                       name="llm_model_name"
-                      value={form.llm_model_name || 'qwen2.5:3b'}
+                      value={form.llm_model_name || 'qwen2.5:7b'}
                       onChange={handleModelSelectChange}
                       className="w-full px-3 py-2 text-xs font-semibold rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-sky-500 cursor-pointer appearance-none pr-8 transition-colors"
                     >
@@ -1283,7 +1289,7 @@ console.log("Rujukan:", data.sources);`
                                 {msg.telemetry?.isFallback ? 'Fallback (Luar SOP)' : 'Terjawab dari Korpus'}
                               </span>
                               <span>•</span>
-                              <span>{msg.telemetry?.modelName || 'qwen3:8b'}</span>
+                              <span>{msg.telemetry?.modelName || form.llm_model_name || 'qwen2.5:7b'}</span>
                               {typeof msg.telemetry?.contextTokens === 'number' && msg.telemetry.contextTokens > 0 && (
                                 <>
                                   <span>•</span>

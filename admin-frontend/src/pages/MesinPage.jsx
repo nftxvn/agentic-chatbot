@@ -159,7 +159,7 @@ export default function MesinPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 sm:p-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-sm">
         <div ref={headerRef} className="space-y-1">
           <h1 className="text-xl sm:text-2xl font-black text-[var(--text-primary)] tracking-tight flex items-center">
-            <span>KESEHATAN MESIN AI</span>
+            <span>HARDWARE & DIAGNOSTIK MESIN</span>
             <InfoTooltip size="lg" content="Pemantauan perangkat keras, alokasi VRAM GPU, pemanfaatan RAM host, dan status eksekusi runtime inferensi model AI secara real-time." />
           </h1>
         </div>

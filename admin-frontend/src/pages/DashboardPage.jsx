@@ -114,7 +114,18 @@ export default function DashboardPage() {
 
   const handleUploadSubmit = async (e) => {
     e.preventDefault();
-    if (!uploadFile || !uploadTitle || !uploadCategoryId) return;
+    if (!uploadTitle || !uploadTitle.trim()) {
+      alert("Judul dokumen wajib diisi.");
+      return;
+    }
+    if (!uploadCategoryId) {
+      alert("Kategori AI prompt wajib dipilih.");
+      return;
+    }
+    if (!uploadFile) {
+      alert("File dokumen atau gambar wajib dipilih.");
+      return;
+    }
 
     setUploading(true);
     setUploadProgress(0);
@@ -304,7 +315,7 @@ export default function DashboardPage() {
         <div ref={headerRef}>
           <div className="flex items-center gap-2">
             <h1 className="text-xl sm:text-2xl font-black text-[var(--text-primary)] tracking-tight flex items-center">
-              <span>MANAJEMEN DOKUMEN RAG</span>
+              <span>DASHBOARD DOKUMEN</span>
               <InfoTooltip size="lg" content="Kelola basis pengetahuan (knowledge base) dokumen PDF untuk AI Assistant dan pemrosesan ekstraksi vektor." />
             </h1>
           </div>
@@ -666,7 +677,7 @@ export default function DashboardPage() {
               </button>
             </div>
 
-            <form onSubmit={handleUploadSubmit}>
+            <form noValidate onSubmit={handleUploadSubmit}>
               <div className="p-6 space-y-5">
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2 flex items-center">
@@ -682,7 +693,6 @@ export default function DashboardPage() {
                     value={uploadTitle}
                     onChange={(e) => setUploadTitle(e.target.value)}
                     placeholder="Contoh: SK Pelayanan Publik 2024"
-                    required
                     disabled={uploading}
                   />
                 </div>
@@ -698,7 +708,6 @@ export default function DashboardPage() {
                     className="w-full"
                     value={uploadCategoryId}
                     onChange={(e) => setUploadCategoryId(e.target.value)}
-                    required
                     disabled={uploading || categories.length === 0}
                   >
                     {categories.length === 0 ? (
@@ -722,23 +731,22 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2 flex items-center">
-                    <span>File Dokumen</span>
+                    <span>File Dokumen / Gambar</span>
                     <InfoTooltip
                       align="left"
-                      content="Unggah dokumen PDF atau format teks yang akan dipindai OCR vision dan di-embedding ke database vektor."
+                      content="Unggah dokumen PDF, gambar (PNG, JPG, WEBP), atau format teks/spreadsheet yang akan dipindai OCR vision dan di-embedding ke database vektor."
                     />
                   </label>
                     <input
                     type="file"
-                    accept=".pdf,.docx,.xlsx,.xls,.csv,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/plain,text/markdown"
+                    accept=".pdf,.docx,.xlsx,.xls,.csv,.txt,.md,.png,.jpg,.jpeg,.webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/plain,text/markdown,image/png,image/jpeg,image/webp"
                     onChange={(e) => setUploadFile(e.target.files[0])}
-                    required
                     disabled={uploading}
                     className="w-full text-xs text-[var(--text-secondary)] file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border file:border-[var(--border-color)] file:text-xs file:font-bold file:bg-[var(--bg-card)] file:text-sky-500 hover:file:bg-[var(--bg-input)] cursor-pointer"
                   />
                   <p className="text-xs text-[var(--text-muted)] mt-1.5">
                     Maksimal ukuran file: 50MB (Format PDF, DOCX, XLSX, CSV,
-                    TXT, MD)
+                    TXT, MD, PNG, JPG, JPEG, WEBP)
                   </p>
                 </div>
               </div>

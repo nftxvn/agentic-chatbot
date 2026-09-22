@@ -984,12 +984,12 @@ export default function DocumentDetailPage() {
       {/* Main Split-Screen Workspace (PDF vs Inspector / Chunks) */}
       <div
         ref={containerRef}
-        className="relative flex flex-col md:flex-row bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm overflow-hidden min-h-[750px] select-none"
+        className="relative flex flex-col md:flex-row items-stretch bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm overflow-hidden min-h-[750px] lg:h-[calc(100vh-185px)] select-none"
       >
         {/* LEFT COLUMN: PDF Preview & Manual OCR Correction */}
         <div
           style={{ width: isRightSidebarOpen ? `${leftColWidth}%` : "100%" }}
-          className="flex flex-col h-full overflow-hidden transition-[width] duration-75"
+          className="flex flex-col h-full self-stretch min-h-0 overflow-hidden transition-[width] duration-75"
         >
           <ManualCorrectionEditor
             documentId={document.id}
@@ -1010,8 +1010,8 @@ export default function DocumentDetailPage() {
         {/* Resizer Divider (Option B: Center Grip Pill + Glow Line + Double-Click Reset) */}
         {isRightSidebarOpen && (
           <div
-            className={`group relative flex items-center justify-center cursor-col-resize select-none h-full transition-colors z-20 ${
-              isResizing ? "bg-[var(--bg-input)]" : "hover:bg-[var(--bg-input)]"
+            className={`group relative flex items-center justify-center cursor-col-resize select-none self-stretch w-4 -mx-2 shrink-0 transition-colors z-20 ${
+              isResizing ? "bg-sky-500/10" : "hover:bg-sky-500/5"
             }`}
             onMouseDown={startDrag}
             onDoubleClick={handleResetSplit}
@@ -1028,7 +1028,7 @@ export default function DocumentDetailPage() {
 
             {/* Center Floating Pill Grip Handle */}
             <div
-              className={`absolute top-1/2 -translate-y-1/2 flex flex-col items-center justify-center gap-0.5 w-3 h-7 rounded-full border shadow-2xs transition-all duration-150 ${
+              className={`absolute top-1/2 -translate-y-1/2 pointer-events-none flex flex-col items-center justify-center gap-0.5 w-3.5 h-8 rounded-full border shadow-sm transition-all duration-150 ${
                 isResizing
                   ? "bg-sky-500 border-sky-500 text-white scale-110 shadow-md"
                   : "bg-[var(--bg-card)] border-[var(--border-color)] text-[var(--text-muted)] group-hover:border-sky-500 group-hover:text-sky-500 group-hover:scale-105"
@@ -1043,7 +1043,7 @@ export default function DocumentDetailPage() {
 
         {/* RIGHT COLUMN: Sidebar */}
         {isRightSidebarOpen && (
-          <div className="flex flex-col divide-y divide-[var(--border-color)] h-full overflow-y-auto">
+          <div className="flex-1 min-w-[280px] self-stretch flex flex-col min-h-0 overflow-y-auto divide-y divide-[var(--border-color)] bg-[var(--bg-card)]">
             {/* 1. Document Metadata & Extraction Controls */}
             <div>
               <button
@@ -1561,13 +1561,13 @@ export default function DocumentDetailPage() {
               <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
                 Mengganti file akan menghapus indeks lama dan mengulang seluruh
                 proses ekstraksi dokumen. Format yang didukung: PDF, DOCX, XLSX,
-                CSV, TXT, MD.
+                CSV, TXT, MD, PNG, JPG, JPEG, WEBP.
               </p>
 
               <div className="p-4 rounded-xl border border-dashed border-[var(--border-color)] bg-[var(--bg-input)] space-y-2">
                 <input
                   type="file"
-                  accept=".pdf,.docx,.xlsx,.xls,.csv,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/plain,text/markdown"
+                  accept=".pdf,.docx,.xlsx,.xls,.csv,.txt,.md,.png,.jpg,.jpeg,.webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/plain,text/markdown,image/png,image/jpeg,image/webp"
                   onChange={(e) => setReplaceFile(e.target.files[0])}
                   disabled={replacing}
                   className="w-full text-xs text-[var(--text-secondary)] file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-[var(--bg-card)] file:border file:border-[var(--border-color)] file:text-sky-500 cursor-pointer"

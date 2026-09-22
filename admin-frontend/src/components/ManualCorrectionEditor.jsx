@@ -539,6 +539,7 @@ export default function ManualCorrectionEditor({
   // Mouse Pan / Dragging & Zooming State
   const imageContainerRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(600);
+  const [containerHeight, setContainerHeight] = useState(700);
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef({
     startX: 0,
@@ -547,24 +548,23 @@ export default function ManualCorrectionEditor({
     scrollTop: 0,
   });
 
-  // Measure container width accurately for pixel-perfect zoom calculations
+  // Measure container dimensions accurately for pixel-perfect zoom calculations
   useEffect(() => {
     const container = imageContainerRef.current;
     if (!container) return;
 
-    const updateWidth = () => {
+    const updateDimensions = () => {
       if (imageContainerRef.current) {
         setContainerWidth(imageContainerRef.current.clientWidth);
+        setContainerHeight(imageContainerRef.current.clientHeight);
       }
     };
-    updateWidth();
+    updateDimensions();
 
-    const ro = new ResizeObserver(updateWidth);
+    const ro = new ResizeObserver(updateDimensions);
     ro.observe(container);
     return () => ro.disconnect();
   }, []);
-
-  const baseImgWidth = Math.max(200, containerWidth - 32);
 
   // Determine current page orientation (Landscape vs Portrait)
   const currentPageSize = pageSizes.find((p) => p.page_number === currentPage);
@@ -574,6 +574,30 @@ export default function ManualCorrectionEditor({
       ? currentPageSize.lebar >= currentPageSize.tinggi
       : false) ||
     (imgNaturalDim.width > 0 && imgNaturalDim.width >= imgNaturalDim.height);
+
+  // Natural or fallback dimensions (2x default render scale)
+  const natW = imgNaturalDim.width || (currentPageSize?.lebar ? currentPageSize.lebar * 2 : 800);
+  const natH = imgNaturalDim.height || (currentPageSize?.tinggi ? currentPageSize.tinggi * 2 : 1130);
+
+  // Available viewport space with padding (p-6 => 48px padding total)
+  const availW = Math.max(200, containerWidth - 48);
+  const availH = Math.max(200, containerHeight - 48);
+
+  // Base scale to fit entirely within viewport (100% Fit Page)
+  const fitPageScale = Math.min(availW / natW, availH / natH, 1.0);
+  const fitWidthScale = availW / natW;
+
+  let computedWidth = Math.round(natW * fitPageScale);
+  let computedHeight = Math.round(natH * fitPageScale);
+
+  if (fitMode === "width") {
+    computedWidth = Math.round(natW * fitWidthScale);
+    computedHeight = Math.round(natH * fitWidthScale);
+  } else if (fitMode === "custom") {
+    const effectiveScale = fitPageScale * (zoomScale / 100);
+    computedWidth = Math.round(natW * effectiveScale);
+    computedHeight = Math.round(natH * effectiveScale);
+  }
 
   const handleZoomIn = () => {
     setFitMode("custom");
@@ -870,51 +894,40 @@ export default function ManualCorrectionEditor({
                   </button>
                 </div>
               ) : (
-                <div className="min-w-full min-h-full w-max h-max flex items-center justify-center p-4 m-auto">
-                  <img
-                    ref={imgRef}
-                    key={`${documentId}-${currentPage}-${zoom}-${imageRetryKey}`}
-                    src={`${documentsApi.pageImageUrl(documentId, currentPage, zoom)}${imageRetryKey ? `&retry=${imageRetryKey}` : ""}`}
-                    alt={`Halaman ${currentPage}`}
-                    draggable={false}
-                    onDoubleClick={handleDoubleClick}
-                    onLoad={(e) => {
-                      setImgNaturalDim({
-                        width: e.currentTarget.naturalWidth || 0,
-                        height: e.currentTarget.naturalHeight || 0,
-                      });
-                      setImageState("loaded");
-                      if (imageContainerRef.current) {
-                        imageContainerRef.current.scrollTop = 0;
-                        imageContainerRef.current.scrollLeft = 0;
-                      }
-                    }}
-                    onError={() => setImageState("error")}
-                    className={`shadow-md rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] transition-all duration-150 block select-none pointer-events-auto shrink-0 ${
-                      isPanning ? "cursor-grabbing" : "cursor-grab"
-                    } ${imageState === "loaded" ? "opacity-100" : "opacity-0"}`}
-                    style={
-                      fitMode === "auto"
-                        ? {
-                            maxWidth: "100%",
-                            maxHeight: "100%",
-                            width: "auto",
-                            height: "auto",
-                            objectFit: "contain",
-                          }
-                        : fitMode === "width"
-                          ? {
-                              width: `${baseImgWidth}px`,
-                              maxWidth: "100%",
-                              height: "auto",
-                            }
-                          : {
-                              width: `${Math.round((baseImgWidth * zoomScale) / 100)}px`,
-                              maxWidth: "none",
-                              height: "auto",
-                            }
-                    }
-                  />
+                <div
+                  className={`min-w-full min-h-full flex p-6 transition-all duration-75 ${
+                    computedHeight > availH ? "items-start" : "items-center"
+                  } ${
+                    computedWidth > availW ? "justify-start" : "justify-center"
+                  }`}
+                >
+                  <div className="m-auto shrink-0 flex items-center justify-center">
+                    <img
+                      ref={imgRef}
+                      key={`${documentId}-${currentPage}-${zoom}-${imageRetryKey}`}
+                      src={`${documentsApi.pageImageUrl(documentId, currentPage, zoom)}${imageRetryKey ? `&retry=${imageRetryKey}` : ""}`}
+                      alt={`Halaman ${currentPage}`}
+                      draggable={false}
+                      onDoubleClick={handleDoubleClick}
+                      onLoad={(e) => {
+                        setImgNaturalDim({
+                          width: e.currentTarget.naturalWidth || 0,
+                          height: e.currentTarget.naturalHeight || 0,
+                        });
+                        setImageState("loaded");
+                      }}
+                      onError={() => setImageState("error")}
+                      className={`shadow-md rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] transition-all duration-75 block select-none pointer-events-auto shrink-0 ${
+                        isPanning ? "cursor-grabbing" : "cursor-grab"
+                      } ${imageState === "loaded" ? "opacity-100" : "opacity-0"}`}
+                      style={{
+                        width: `${computedWidth}px`,
+                        height: `${computedHeight}px`,
+                        maxWidth: "none",
+                        maxHeight: "none",
+                      }}
+                    />
+                  </div>
                 </div>
               )}
             </div>

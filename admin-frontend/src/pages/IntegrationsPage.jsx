@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useLayoutEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import gsap from 'gsap'
 import { apiKeysApi } from '../api/apiKeys'
 import { 
@@ -17,7 +18,15 @@ import { FloatingSaveBar } from '../components/UI/FloatingSaveBar'
 import { InfoTooltip } from '../components/UI/InfoTooltip'
 
 export default function IntegrationsPage() {
-  const [activeTab, setActiveTab] = useState('apikeys') // 'apikeys' | 'whatsapp' | 'telegram' | 'docs'
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const validTabs = ['apikeys', 'whatsapp', 'telegram', 'docs']
+  const activeTab = validTabs.includes(tabParam) ? tabParam : 'apikeys'
+
+  const setActiveTab = (newTab) => {
+    setSearchParams({ tab: newTab }, { replace: true })
+  }
+
   const [loading, setLoading] = useState(true)
   const [statusMsg, setStatusMsg] = useState(null)
 
@@ -85,7 +94,7 @@ export default function IntegrationsPage() {
   }, [])
 
   useLayoutEffect(() => {
-    if (headerRef.current) {
+    if (headerRef.current?.children?.length) {
       gsap.fromTo(
         headerRef.current.children,
         { opacity: 0, x: -16 },
@@ -103,23 +112,24 @@ export default function IntegrationsPage() {
         getWhatsappSettings().catch(() => ({})),
         getTelegramSettings().catch(() => ({})),
       ])
-      setKeys(keysRes.data || [])
+      const keysList = Array.isArray(keysRes?.data) ? keysRes.data : Array.isArray(keysRes) ? keysRes : []
+      setKeys(keysList)
       const loadedWa = {
-        wa_status: waRes.wa_status || false,
-        wa_api_url: waRes.wa_api_url || '',
-        wa_token: waRes.wa_token || '',
-        wa_phone_number: waRes.wa_phone_number || '',
-        wa_webhook_verify_token: waRes.wa_webhook_verify_token || 'diskominfo_wa_rag_token',
-        webhook_url: waRes.webhook_url || `${window.location.origin}/api/v1/webhook/whatsapp`,
+        wa_status: waRes?.wa_status || false,
+        wa_api_url: waRes?.wa_api_url || '',
+        wa_token: waRes?.wa_token || '',
+        wa_phone_number: waRes?.wa_phone_number || '',
+        wa_webhook_verify_token: waRes?.wa_webhook_verify_token || 'diskominfo_wa_rag_token',
+        webhook_url: waRes?.webhook_url || `${window.location.origin}/api/v1/webhook/whatsapp`,
       }
       setWaForm(loadedWa)
       setInitialWaForm(loadedWa)
 
       const loadedTg = {
-        telegram_status: tgRes.telegram_status || false,
-        telegram_bot_token: tgRes.telegram_bot_token || '',
-        telegram_bot_username: tgRes.telegram_bot_username || '',
-        webhook_url: tgRes.webhook_url || `${window.location.origin}/api/v1/webhook/telegram`,
+        telegram_status: tgRes?.telegram_status || false,
+        telegram_bot_token: tgRes?.telegram_bot_token || '',
+        telegram_bot_username: tgRes?.telegram_bot_username || '',
+        webhook_url: tgRes?.webhook_url || `${window.location.origin}/api/v1/webhook/telegram`,
       }
       setTgForm(loadedTg)
       setInitialTgForm(loadedTg)
@@ -135,7 +145,10 @@ export default function IntegrationsPage() {
   // ── API KEY HANDLERS ─────────────────────────────────────────
   const handleCreateKey = async (e) => {
     e.preventDefault()
-    if (!keyName.trim()) return
+    if (!keyName || !keyName.trim()) {
+      setStatusMsg({ type: 'error', text: 'Nama aplikasi / klien pemanggil wajib diisi.' })
+      return
+    }
     setCreatingKey(true)
     setStatusMsg(null)
     try {
@@ -144,7 +157,8 @@ export default function IntegrationsPage() {
       setKeyName('')
       setNewlyCreatedKey(res.data)
       const listRes = await apiKeysApi.list()
-      setKeys(listRes.data || [])
+      const listData = Array.isArray(listRes?.data) ? listRes.data : Array.isArray(listRes) ? listRes : []
+      setKeys(listData)
       addAppNotification({
         title: 'Manajemen Kunci API',
         message: `Kunci API "${res.data.name}" berhasil dibuat.`,
@@ -233,7 +247,13 @@ export default function IntegrationsPage() {
 
   async function handleTestSendWa(e) {
     e.preventDefault()
-    if (!testPhone.trim()) return
+    if (!testPhone || !testPhone.trim()) {
+      setTestResult({
+        type: 'error',
+        text: 'Nomor WhatsApp tujuan wajib diisi.',
+      })
+      return
+    }
     setTestingSend(true)
     setTestResult(null)
     try {
@@ -783,7 +803,7 @@ console.log("Rujukan:", data.sources);`
                 </p>
               </div>
 
-              <form onSubmit={handleTestSendWa} className="space-y-3 text-xs">
+              <form noValidate onSubmit={handleTestSendWa} className="space-y-3 text-xs">
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-[var(--text-primary)] block">
                     Nomor WhatsApp Tujuan
@@ -793,7 +813,6 @@ console.log("Rujukan:", data.sources);`
                     value={testPhone}
                     onChange={(e) => setTestPhone(e.target.value)}
                     placeholder="Contoh: 6281234567890"
-                    required
                     className="w-full px-3.5 py-2 text-xs rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-sky-500 transition-colors"
                   />
                 </div>
@@ -1192,7 +1211,7 @@ console.log("Rujukan:", data.sources);`
               </p>
             </div>
 
-            <form onSubmit={handleCreateKey} className="space-y-4">
+            <form noValidate onSubmit={handleCreateKey} className="space-y-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-[var(--text-primary)] block">
                   Nama Aplikasi / Klien Pemanggil
@@ -1202,7 +1221,6 @@ console.log("Rujukan:", data.sources);`
                   value={keyName}
                   onChange={(e) => setKeyName(e.target.value)}
                   placeholder="Contoh: Portal Web Resmi Dinas, WhatsApp Bot Gateway"
-                  required
                   autoFocus
                   className="w-full px-3.5 py-2 text-xs rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-sky-500 transition-colors"
                 />

@@ -56,7 +56,10 @@ export default function ApiKeysPage() {
 
   const handleCreate = async (e) => {
     e.preventDefault()
-    if (!keyName.trim()) return
+    if (!keyName || !keyName.trim()) {
+      setStatusMsg({ type: 'error', text: 'Nama aplikasi / klien pemanggil wajib diisi.' })
+      return
+    }
 
     setCreating(true)
     setStatusMsg(null)
@@ -310,7 +313,7 @@ export default function ApiKeysPage() {
               </p>
             </div>
 
-            <form onSubmit={handleCreate} className="space-y-4">
+            <form noValidate onSubmit={handleCreate} className="space-y-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-[var(--text-primary)] block">
                   Nama Aplikasi / Klien Pemanggil
@@ -320,7 +323,6 @@ export default function ApiKeysPage() {
                   value={keyName}
                   onChange={(e) => setKeyName(e.target.value)}
                   placeholder="Contoh: Portal Web Resmi Dinas, WhatsApp Bot Gateway, CRM Helpdesk"
-                  required
                   autoFocus
                   className="w-full px-3.5 py-2 text-xs rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-sky-500 transition-colors"
                 />

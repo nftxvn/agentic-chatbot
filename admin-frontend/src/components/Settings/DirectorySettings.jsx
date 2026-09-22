@@ -408,7 +408,7 @@ export function DirectorySettings() {
               </div>
 
               {/* Modal Form */}
-              <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1 bg-[var(--bg-card)]">
+              <form noValidate onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1 bg-[var(--bg-card)]">
                 {/* Nama Bidang */}
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-[var(--text-primary)]">
@@ -419,7 +419,6 @@ export function DirectorySettings() {
                     value={form.nama_bidang}
                     onChange={(e) => setForm({ ...form, nama_bidang: e.target.value })}
                     placeholder="Contoh: Bidang Tata Kelola E-Government"
-                    required
                     className="w-full px-3 py-2 text-xs rounded-lg border border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-primary)] focus:outline-none focus:border-sky-500"
                   />
                 </div>
@@ -434,7 +433,6 @@ export function DirectorySettings() {
                     value={form.keywords}
                     onChange={(e) => setForm({ ...form, keywords: e.target.value })}
                     placeholder="Contoh: egov, domain, hosting, vps, server, spbe"
-                    required
                     className="w-full px-3 py-2 text-xs font-mono rounded-lg border border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-primary)] focus:outline-none focus:border-sky-500"
                   />
                 </div>
@@ -450,7 +448,6 @@ export function DirectorySettings() {
                       value={form.layanan_utama}
                       onChange={(e) => setForm({ ...form, layanan_utama: e.target.value })}
                       placeholder="Contoh: Helpdesk SPBE & Domain"
-                      required
                       className="w-full px-3 py-2 text-xs rounded-lg border border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-primary)] focus:outline-none focus:border-sky-500"
                     />
                   </div>
@@ -464,7 +461,6 @@ export function DirectorySettings() {
                       value={form.email}
                       onChange={(e) => setForm({ ...form, email: e.target.value })}
                       placeholder="egov@bandaacehkota.go.id"
-                      required
                       className="w-full px-3 py-2 text-xs font-mono rounded-lg border border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-primary)] focus:outline-none focus:border-sky-500"
                     />
                   </div>

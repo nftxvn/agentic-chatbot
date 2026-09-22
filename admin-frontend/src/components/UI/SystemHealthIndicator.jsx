@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import gsap from 'gsap'
 
 export function SystemHealthIndicator({ isSidebar = false, isCollapsed = false }) {
@@ -286,6 +287,20 @@ export function SystemHealthIndicator({ isSidebar = false, isCollapsed = false }
               >
                 {isDbOk ? 'Normal' : 'Terputus'}
               </span>
+            </div>
+
+            {/* Footer Quick Action */}
+            <div className="p-2.5 bg-[var(--bg-card)] border-t border-[var(--border-color)]">
+              <Link
+                to="/monitoring?tab=hardware"
+                onClick={closeDropdown}
+                className="w-full py-1.5 px-3 rounded-lg text-xs font-semibold text-sky-500 hover:text-white hover:bg-sky-500 transition-colors flex items-center justify-center gap-1.5"
+              >
+                <span>Lihat Diagnostik Hardware & Mesin</span>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
             </div>
           </div>
         </div>

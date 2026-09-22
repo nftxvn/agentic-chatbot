@@ -402,7 +402,7 @@ export function FastPathSettings() {
               </div>
 
               {/* Modal Form */}
-              <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1 bg-[var(--bg-card)]">
+              <form noValidate onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1 bg-[var(--bg-card)]">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {/* Kategori */}
                   <div className="space-y-1">
@@ -421,10 +421,10 @@ export function FastPathSettings() {
                     </select>
                   </div>
 
-                  {/* Urutan */}
+                  {/* Urutan Sort */}
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-[var(--text-primary)]">
-                      Prioritas Urutan
+                      Prioritas / Urutan (Sort Order)
                     </label>
                     <input
                       type="number"
@@ -445,7 +445,6 @@ export function FastPathSettings() {
                     value={form.title}
                     onChange={(e) => setForm({ ...form, title: e.target.value })}
                     placeholder="Contoh: Profil Kepala Dinas, Alamat Kantor, Magang Mahasiswa"
-                    required
                     className="w-full px-3 py-2 text-xs rounded-lg border border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-primary)] focus:outline-none focus:border-sky-500"
                   />
                 </div>
@@ -460,7 +459,6 @@ export function FastPathSettings() {
                     value={form.keywords}
                     onChange={(e) => setForm({ ...form, keywords: e.target.value })}
                     placeholder="Contoh: kepala dinas, siapa kadis, pimpinan kominfo"
-                    required
                     className="w-full px-3 py-2 text-xs font-mono rounded-lg border border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-primary)] focus:outline-none focus:border-sky-500"
                   />
                   <p className="text-[10px] text-[var(--text-muted)]">
@@ -478,7 +476,6 @@ export function FastPathSettings() {
                     onChange={(e) => setForm({ ...form, response_text: e.target.value })}
                     rows={5}
                     placeholder="Tuliskan teks jawaban resmi di sini (mendukung format Markdown tebal, miring, list poin)..."
-                    required
                     className="w-full p-2.5 text-xs font-mono leading-relaxed rounded-lg border border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-primary)] focus:outline-none focus:border-sky-500 resize-y"
                   />
                 </div>
