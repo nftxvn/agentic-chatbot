@@ -231,10 +231,10 @@ function TelemetrySection() {
             tooltip: 'Waktu rata-rata inferensi pencarian vektor & generasi teks LLM.',
           },
           {
-            label: 'Rasio Fallback',
-            value: analytics ? `${analytics.fallback_rate_pct}%` : '0%',
+            label: 'Perlu Balas Manual',
+            value: analytics ? analytics.fallback_count.toLocaleString('id-ID') : '0',
             dotColor: 'bg-amber-500',
-            tooltip: 'Persentase pertanyaan yang tidak menemukan fakta di SOP sehingga memicu pesan fallback.',
+            tooltip: 'Jumlah pertanyaan warga yang tidak ditemukan di SOP atau memerlukan tindak lanjut langsung dari petugas helpdesk.',
           },
         ].map((stat) => (
           <div
@@ -263,7 +263,7 @@ function TelemetrySection() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari kanal atau nama klien API..."
+              placeholder="Cari kanal atau nama pengirim..."
               className="w-full pl-9 pr-3.5 py-2 text-xs rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-sky-500 transition-colors"
             />
             <svg className="w-4 h-4 text-[var(--text-muted)] absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -297,8 +297,8 @@ function TelemetrySection() {
               className="px-3 py-2 text-xs rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none cursor-pointer"
             >
               <option value="all">Semua Status</option>
-              <option value="success">Terjawab dari SOP</option>
-              <option value="fallback">Fallback (Tidak Ditemukan)</option>
+              <option value="success">🟢 Terjawab Otomatis (SOP)</option>
+              <option value="fallback">🟠 ⚠️ Perlu Tindak Lanjut Petugas</option>
             </select>
 
             <button
@@ -358,7 +358,7 @@ function TelemetrySection() {
                   <th className="py-3 px-4">Waktu Transaksi</th>
                   <th className="py-3 px-4">Kanal</th>
                   <th className="py-3 px-4">Sumber / Klien</th>
-                  <th className="py-3 px-4">Status Retrieval</th>
+                  <th className="py-3 px-4">Status Layanan</th>
                   <th className="py-3 px-4">Latensi Inferensi</th>
                   <th className="py-3 px-4 text-right">Aksi</th>
                 </tr>
@@ -389,14 +389,14 @@ function TelemetrySection() {
                     </td>
                     <td className="py-3.5 px-4 whitespace-nowrap">
                       {log.is_fallback ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                          Informasi Tidak Ditemukan
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                          ⚠️ Perlu Tindak Lanjut Petugas
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                          Terjawab dari SOP
+                          Terjawab Otomatis (SOP)
                         </span>
                       )}
                     </td>

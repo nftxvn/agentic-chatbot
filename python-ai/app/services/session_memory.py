@@ -170,14 +170,18 @@ _ELLIPTIC_FOLLOWUP_WORDS = {
     "syaratnya", "biayanya", "waktunya", "prosesnya", "tahapannya", "langkahnya",
     "bagaimana caranya", "caranya", "durasi", "lama proses", "estimasi", "outputnya",
     "pat", "pajan", "padup", "padip", "soe", "peue", "kiban", "pane",
+    "paling lama", "paling cepat", "lebih cepat", "terlama", "tercepat",
+    "syarat berkas", "berkas", "persyaratan", "tahapan tadi", "langkah tadi",
+    "dari awal", "hitung kembali", "koreksi", "hitung ulang",
 }
 
+# Topik mandiri baru yang benar-benar spesifik (jika kata ini muncul, barulah dianggap topik baru)
 _STANDALONE_TOPIC_MARKERS = {
-    "sop", "renja", "renstra", "rka", "dpa", "lkjip", "lppd", "sakip", "iku", "pk",
-    "magang", "pkl", "subdomain", "domain", "email", "server", "wifi", "internet",
+    "renja", "renstra", "rka", "dpa", "lkjip", "lppd", "sakip", "iku", "pk",
+    "magang", "pkl", "kenaikan pangkat", "pangkat", "gaji", "cuti", "pensiun",
+    "subdomain", "domain", "email", "server", "wifi", "internet",
     "jaringan", "perwal", "sk", "csirt", "siber", "smart city", "statistik", "persandian",
-    "aplikasi", "helpdesk", "layanan", "surat", "disposisi", "bappeda", "walikota", "kantor",
-    "kadis", "kepala dinas", "sekretaris", "bidang",
+    "bappeda", "walikota", "kadis", "kepala dinas", "sekretaris",
 }
 
 
@@ -190,20 +194,31 @@ _RE_SESSION_RECAP = re.compile(
 )
 
 _RE_DOUBT_OR_CORRECTION = re.compile(
-    r"\b(salah|keliru|bukan|bukannya|kok beda|kok salah|kok bisa|kenapa beda|memang iya|masa sih|masa|yakin|beneran|serius|ngaco|bohong|ngibul|gak bener|tidak benar|kurang tepat|tidak tepat|hah|lah)\b",
+    r"\b(salah|keliru|bukan|bukannya|kok beda|kok salah|kok bisa|kenapa beda|memang iya|masa sih|masa|yakin|beneran|serius|ngaco|bohong|ngibul|gak bener|tidak benar|kurang tepat|tidak tepat|hah|lah|hitung kembali|hitung ulang)\b",
     re.IGNORECASE,
 )
 
 
 def clean_context_subject(raw_subject: str) -> str:
-    """Membersihkan context subject dari prefiks pertanyaan atau suffix."""
+    """Membersihkan context subject dari prefiks pertanyaan atau kata perintah meta."""
     if not raw_subject:
         return ""
     text = raw_subject.strip()
+    
+    # Abaikan meta-queries agar tidak dijadikan nama entitas/topik
+    meta_patterns = [
+        r"^(?:coba\s+)?(?:hitung|kalkulasi|cek|lihat|tinjau)(?:\s+(?:kembali|ulang|lagi))?$",
+        r"^(?:hari\s+apa|tanggal\s+berapa)(?:\s+hari\s+ini)?$",
+        r"^(?:kapan|dimana|siapa|bagaimana|berapa)(?:\s+siapnya|\s+selesainya)?$",
+    ]
+    for mp in meta_patterns:
+        if re.search(mp, text, re.IGNORECASE):
+            return ""
+
     if "terkait " in text.lower():
         idx = text.lower().rfind("terkait ")
         text = text[idx + len("terkait "):].strip()
-    text = re.sub(r"^(?:kalo|kalau|bagaimana|apa|berapa)\s+", "", text, flags=re.IGNORECASE).strip()
+    text = re.sub(r"^(?:kalo|kalau|bagaimana|apa|berapa|dari\s+tahapan|dari\s+langkah)\s+", "", text, flags=re.IGNORECASE).strip()
     text = text.rstrip("?!., ")
     return text
 

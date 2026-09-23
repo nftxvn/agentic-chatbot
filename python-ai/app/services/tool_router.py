@@ -60,6 +60,27 @@ _RE_CHITCHAT_CONVERSATIONAL = re.compile(
     re.IGNORECASE,
 )
 
+# Pola regex untuk deteksi permintaan bantuan tim / operator manusia (Handover)
+_RE_HUMAN_HANDOFF = re.compile(
+    r"\b("
+    r"bicara\s+(?:dengan|sama|ke)?\s*(?:petugas|admin|manusia|staf|operator|tim|orang)|"
+    r"ngomong\s+(?:dengan|sama|ke)?\s*(?:petugas|admin|manusia|staf|operator|tim|orang)|"
+    r"hubungi\s+(?:petugas|admin|staf|operator|manusia|tim)|"
+    r"minta\s+(?:bantuan\s+)?(?:petugas|admin|manusia|operator|staf|tim|orang)|"
+    r"panggil\s+(?:petugas|admin|operator|staf)|"
+    r"(?:mau|ingin)\s+(?:dibantu|bicara|ngomong|chat|tanya|konsultasi)\s+(?:langsung|dengan|sama|ke)?\s*(?:tim|admin|petugas|manusia|staf|operator|orang)?|"
+    r"(?:butuh|perlu)\s+(?:bantuan\s+)?(?:langsung|petugas|admin|manusia|operator|staf|tim|orang)|"
+    r"sambungkan\s+(?:ke|dengan)?\s*(?:petugas|admin|operator|manusia|staf|tim|orang)|"
+    r"terhubung\s+(?:ke|dengan)?\s*(?:petugas|admin|operator|manusia|staf|tim|orang)|"
+    r"alih(?:kan)?\s+(?:ke)?\s*(?:petugas|admin|operator|manusia|staf|tim|orang)|"
+    r"handover|takeover|"
+    r"operator\s+manusia|petugas\s+manusia|admin\s+manusia|manusia\s+asli|orang\s+asli|"
+    r"^(?:petugas|admin|operator|staf|cs|helpdesk)$|"
+    r"^(?:iya|ya|mau|boleh|tolong)\s*(?:hubungi|sambungkan|minta|ke|dengan|dong|bantu)?\s*(?:petugas|admin|operator|staf|tim|orang|langsung)?"
+    r")\b",
+    re.IGNORECASE,
+)
+
 # Pola regex untuk sapaan dan uji coba (Termasuk Sapaan Bahasa Aceh & Santun)
 _RE_GREETING = re.compile(
     r"^(?:(?:halo|hai|hay|hei|hi|hello|assalamu['\s]?alaikum(?:\s+wr\s+wb|\s+warahmatullahi\s+wabarakatuh)?|ass|askum|"
@@ -67,7 +88,7 @@ _RE_GREETING = re.compile(
     r"selamat\s+(?:pagi|siang|sore|malam)|pagi|siang|sore|malam|"
     r"tes|test|ping|p|testing|tes\s+123|test\s+123|"
     r"terima\s+kasih|makasih|thanks|matur\s+nuwun|syukron|teurimong\s+gaseh|"
-    r"admin|min|bot|asisten)"
+    r"bot|asisten)"
     r"[\s,.-]*)+$",
     re.IGNORECASE,
 )
@@ -265,7 +286,7 @@ _SLANG_DICT = {
     "pakriban": "bagaimana", "kiban": "bagaimana",
     "kpn": "kapan", "pajan": "kapan", "knp": "kenapa", "pakon": "kenapa", "napa": "kenapa",
     "brp": "berapa", "bbrp": "berapa", "brapa": "berapa", "brpa": "berapa", "padup": "berapa", "padum": "berapa", "padip": "berapa",
-    "ap": "apa", "apkh": "apakah", "apaan": "apa", "peue": "apa", "peu": "apa", "peuh": "apa",
+    "ap": "apa", "apkh": "apakah", "apaan": "apa", "peue": "apa", "peu": "apa", "peuh": "apa", "aj": "saja", "aja": "saja", "aje": "saja",
     "so": "siapa", "soe": "siapa",
     "sy": "saya", "aq": "saya", "gw": "saya", "gue": "saya", "ane": "saya", "lon": "saya", "ulon": "saya",
     "km": "kamu", "lu": "anda", "lo": "anda", "dron": "anda", "droeneuh": "anda", "gata": "kamu",
@@ -275,8 +296,13 @@ _SLANG_DICT = {
     "blm": "belum", "lom": "belum", "goh": "belum", "ga": "tidak", "gak": "tidak", "ngga": "tidak", "nggak": "tidak", "hana": "tidak", "han": "tidak",
     "na": "ada", "napadum": "ada berapa",
     "bs": "bisa", "bisaa": "bisa", "bisa2": "bisa", "jeut": "bisa", "hanjeut": "tidak bisa",
-    "cr": "cara", "cra": "cara", "carany": "cara", "gmn crny": "bagaimana cara",
+    "cr": "cara", "cra": "cara", "carany": "cara", "caranya": "cara", "crny": "cara", "gmn crny": "bagaimana cara",
     "bth": "butuh", "pngn": "ingin", "pgen": "ingin", "hawa": "ingin", "meung": "ingin",
+    "kalw": "kalau", "klo": "kalau", "klw": "kalau", "kl": "kalau", "kalo": "kalau", "kalu": "kalau",
+    "smw": "semua", "semuany": "semua", "semuanya": "semua", "smua": "semua",
+    "lngkp": "lengkap", "lengkp": "lengkap", "lengkapny": "lengkap", "lengkapnya": "lengkap",
+    "siapny": "selesai", "siapnya": "selesai", "kelar": "selesai", "kelarny": "selesai",
+    "tny": "tanya", "tnya": "tanya", "ttg": "tentang", "tentg": "tentang",
     # Kata Benda Tempat, Waktu, Kerja & Pelayanan (Indo & Aceh)
     "tempt": "tempat", "tmpt": "tempat", "tmpat": "tempat", "tpt": "tempat", "teumpat": "tempat",
     "almt": "alamat", "alamt": "alamat", "almat": "alamat",
@@ -291,7 +317,7 @@ _SLANG_DICT = {
     "bwh": "bawah", "ats": "atas", "dkt": "dekat", "to": "dekat",
     "tgs": "tugas", "tgsk": "tugas",
     "layn": "layanan", "lyn": "layanan", "layann": "layanan",
-    "peugot": "buat", "peugeut": "buat", "bikin": "buat",
+    "peugot": "buat", "peugeut": "buat", "bikin": "buat", "bkin": "buat",
     "surot": "surat", "surote": "surat",
     "peng": "biaya", "beuhe": "biaya",
     # Istilah Instansi Diskominfotik & IT
@@ -305,7 +331,7 @@ _SLANG_DICT = {
     "hub": "kontak", "kontk": "kontak", "kntk": "kontak", "tlp": "telepon", "tlpn": "telepon", "notlp": "telepon",
     "telp": "telepon", "nohp": "telepon", "hp": "telepon", "wa": "kontak",
     "oprasional": "operasional", "oprational": "operasional", "operasionl": "operasional",
-    "syrt": "syarat", "syrata": "syarat", "syarat2": "syarat", "persyaratan": "syarat", "syarate": "syarat",
+    "syrt": "syarat", "syrata": "syarat", "syarat2": "syarat", "syrt2": "syarat", "syrtny": "syarat", "syaratny": "syarat", "syaratnya": "syarat", "persyaratan": "syarat", "syarate": "syarat",
     "mgg": "magang", "mgng": "magang", "magng": "magang", "pkl": "magang",
     "info": "informasi", "inpo": "informasi", "informsi": "informasi", "haba": "informasi",
     "dukung": "bantuan", "bantu": "bantuan", "tlng": "tolong", "tlg": "tolong", "tulong": "tolong", "neubantu": "tolong bantu",
@@ -515,6 +541,28 @@ def route_intent(query: str, session_id: str | None = None) -> dict[str, Any]:
             "params": {"raw_query": q},
             "label": "Rangkuman Memori Percakapan (Session Recap)",
         }
+
+    # 0.1 Permintaan Handover / Eskalasi ke Petugas Manusia (Human Escalation)
+    if _RE_HUMAN_HANDOFF.search(q_lower) or _RE_HUMAN_HANDOFF.search(search_lower):
+        return {
+            "intent": "human_escalation",
+            "params": {"raw_query": q},
+            "label": "Permintaan Bantuan Petugas (Handover)",
+        }
+
+    # 0.2 Follow-up informasi tambahan (Nama/Instansi/Kendala) setelah Permintaan Handover
+    if session_id:
+        try:
+            from app.services.session_memory import get_last_context
+            last_topic, _ = get_last_context(session_id)
+            if last_topic == "Permintaan Bantuan Petugas" and not any(kw in q_lower for kw in ["sop", "perwal", "sk", "berapa", "kapan", "bagaimana cara", "hitung", "aturan", "regulasi", "pasal"]):
+                return {
+                    "intent": "human_escalation_followup",
+                    "params": {"raw_query": q},
+                    "label": "Informasi Tambahan untuk Tim Petugas",
+                }
+        except Exception:
+            pass
 
     # 1. Jalur Chitchat, Sapaan & Persona Asisten
     if sem_intent == "chitchat" or _RE_GREETING.match(q_lower) or _RE_CHITCHAT_CONVERSATIONAL.search(q_lower):

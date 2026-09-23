@@ -370,9 +370,9 @@ class TelegramPollCommand extends Command
         // 5. Catat interaksi ke ChatLog
         $elapsedMs = (int) round((microtime(true) - $startTime) * 1000);
         $isFallback = empty(trim($accumulated))
-            || str_contains(strtolower($accumulated), 'tidak ditemukan')
-            || str_contains(strtolower($accumulated), 'belum termuat')
-            || str_contains(strtolower($accumulated), 'tidak ada di dalam dokumen');
+            || str_contains(strtolower($accumulated), 'terhubung dengan petugas')
+            || str_contains(strtolower($accumulated), 'menindaklanjuti pesan')
+            || str_contains(strtolower($accumulated), 'menindaklanjuti percakapan');
 
         $senderIdentifier = !empty($username)
             ? "{$fromName} (@{$username}, ID: {$chatId})"

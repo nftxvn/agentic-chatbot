@@ -172,7 +172,7 @@ def _get_institution_info() -> str:
 
 
 # System prompt standar untuk LLM bila belum diubah di pengaturan admin
-_SYSTEM_PROMPT = """Anda adalah Petugas Layanan Informasi dan Helpdesk resmi Dinas Komunikasi, Informatika dan Statistik (Diskominfotik) Kota Banda Aceh. Tugas Anda adalah memberikan jawaban yang akurat, ramah, solutif, dan profesional kepada masyarakat dan ASN berdasarkan dokumen resmi yang disediakan.
+_SYSTEM_PROMPT = """Anda adalah Petugas Layanan Informasi dan Helpdesk resmi Dinas Komunikasi, Informatika dan Statistik (Diskominfotik) Kota Banda Aceh. Tugas Anda adalah memberikan jawaban yang akurat, ramah, solutif, ringkas, dan profesional kepada masyarakat dan ASN berdasarkan dokumen resmi yang disediakan.
 
 Waktu Acuan:
 - Hari & Tanggal Hari Ini: {current_date}
@@ -183,7 +183,7 @@ Profil Instansi Terkini:
 Konteks Dokumen Resmi:
 {context}
 
-Pedoman Inferensi & Penanganan Sumber Data:
+Pedoman Komunikasi & Inferensi:
 1. Kepatuhan Fakta & Anti-Halusinasi:
    - Jawab HANYA berdasarkan fakta yang tertulis pada "Konteks Dokumen Resmi" atau "Profil Instansi Terkini". JANGAN mengarang nama pejabat, tanggal, regulasi, nomor kontak, atau prosedur di luar data tersebut.
    - DILARANG mengarang kepanjangan singkatan/akronim (misal: SPPD, SPT, Renja, RKA, dsb) jika tidak tertulis di teks dokumen. Tulis singkatannya apa adanya.
@@ -192,20 +192,19 @@ Pedoman Inferensi & Penanganan Sumber Data:
    - Pertanyaan Dokumen/SOP: Bila pengguna menanyakan siapa pejabat/pimpinan yang mengesahkan atau tertulis "di dalam SOP/dokumen", salin PERSIS nama pejabat dan NIP yang tertera pada lembar identitas/pengesahan dokumen SOP pada Konteks Dokumen.
    - Pertanyaan Kondisi Saat Ini: Bila pengguna menanyakan siapa pimpinan/Kepala Dinas "saat ini / sekarang / pejabat aktif", gunakan data pimpinan pada "Profil Instansi Terkini".
 
-3. Prosedur & Persyaratan SOP:
-   - Sajikan langkah-langkah alur secara terstruktur dengan poin bernomor (1, 2, 3...) beserta pelaksana, kelengkapan berkas, dan waktu proses jika tersedia pada teks dokumen.
+3. Gaya Jawaban Alami, Ringkas & Anti-Repetisi:
+   - Jawablah secara to-the-point, santun, dan natural layaknya petugas helpdesk yang responsif.
+   - HINDARI pengulangan (repetisi): Jika rincian langkah atau prosedur sudah pernah dijabarkan pada pesan sebelumnya di riwayat percakapan, JANGAN mengulang menulis kembali seluruh daftar langkah tersebut. Cukup berikan ringkasan atau kesimpulan inti dari hal yang ditanyakan.
+   - HINDARI membuat tabel panjang yang memakan ruang kecuali jika pengguna secara eksplisit meminta format tabel.
+   - Hanya ucapkan salam pembuka jika pengguna mengawali pesan dengan salam. JANGAN menggunakan emoji atau simbol grafis berlebihan.
+
+4. Prosedur & Persyaratan SOP:
+   - Bila pengguna baru pertama kali menanyakan alur SOP, sajikan poin langkah (1, 2, 3...) secara terstruktur beserta pelaksana, berkas, dan waktu proses.
    - Rujuk bagian 'Kelengkapan', 'Persyaratan', atau 'Kualifikasi Pelaksana' bila ditanyakan syarat permohonan.
 
-4. Perhitungan Waktu & Penjumlahan SOP:
-   - Bila menghitung total waktu pelaksanaan SOP, WAJIB membaca dan menjumlahkan waktu seluruh tahapan/langkah dari langkah pertama hingga langkah terakhir pada tabel SOP secara lengkap dan teliti tanpa terpotong di tengah jalan.
-   - Untuk estimasi waktu hari kerja, jumlahkan sesuai rentang yang tertulis tanpa memaksakan konversi hari menjadi ratusan jam.
-   - Bila ditanyakan durasi waktu hingga hari ini, gunakan acuan {current_date}.
-
-5. Etika Komunikasi & Multi-Turn:
-   - Bersikaplah santun dan to-the-point.
-   - Hanya ucapkan salam pembuka/balasan jika pengguna mengawali pesan dengan salam.
-   - Bila informasi benar-benar tidak tercantum pada Dokumen maupun Profil Instansi, sampaikan secara jujur dan arahkan ke kontak resmi yang tersedia.
-   - JANGAN menggunakan emoji atau simbol grafis berlebihan.
+5. Estimasi Waktu & Durasi:
+   - Bila pengguna menanyakan estimasi waktu selesai atau kalkulasi ulang, berikan kesimpulan durasi hari kerja secara ringkas dan lugas dalam 1–2 paragraf (misal: total estimasi waktu sekitar 10–14 hari kerja operasional Senin s.d. Jumat).
+   - JANGAN membuat simulasi jadwal kalender per hari satu per satu yang panjang dan repetitif.
 
 6. Analisis Perbandingan & Komparasi Antar-SOP:
    - Bila pengguna menanyakan perbandingan (misal: perbedaan peralatan, syarat, waktu, kualifikasi, atau keterkaitan antara dua SOP), lakukan perbandingan langsung terhadap data masing-masing SOP yang tercantum pada Konteks Dokumen Resmi (atau gunakan Tabel Perbandingan Terstruktur bila disediakan).
@@ -1874,7 +1873,7 @@ def generate_response(
             else rag_cfg.get("rag_top_k", _TOP_K)
         )
         active_num_ctx = int(rag_cfg.get("rag_num_ctx", settings.LLM_NUM_CTX))
-        fallback_msg = rag_cfg.get("chatbot_fallback_message") or "Maaf, informasi tersebut tidak ditemukan di dalam dokumen SOP yang tersedia."
+        fallback_msg = rag_cfg.get("chatbot_fallback_message") or "Mohon maaf, informasi terkait hal tersebut belum tersedia di dalam dokumen SOP kami. Jika Anda ingin dibantu langsung oleh tim Diskominfotik, silakan beri tahu saya ya."
         citation_enabled = rag_cfg.get("rag_citation_enabled", True)
 
         # 2. Fast-Path Intent Routing & Agentic Tools dengan Context Memory
@@ -1883,6 +1882,72 @@ def generate_response(
         intent = route_result["intent"]
         route_label = route_result.get("label", "Fast-Path Routing")
         route_params = route_result.get("params", {})
+
+        if intent == "human_escalation":
+            handoff_msg = (
+                "Baik, pesan Anda sudah saya teruskan ke tim kami untuk dibantu lebih lanjut. "
+                "Agar tim kami dapat membantu lebih cepat, silakan tinggalkan **Nama/Instansi** dan **detail kendala** Anda di sini ya. "
+                "Selain itu, Anda juga dapat menghubungi Call Center 112 atau berkonsultasi langsung di kantor Diskominfotik "
+                "(Balai Kota Banda Aceh, Gedung C Lantai 3). Terima kasih!"
+            )
+            if include_debug:
+                yield {
+                    "type": "trace",
+                    "stage": "intent_routing",
+                    "step": 1,
+                    "total_steps": 1,
+                    "label": "Bantuan Tim Diskominfotik (Handover)",
+                    "detail": "Pengguna meminta bantuan langsung dari tim manusia. Meneruskan ke antrean tindak lanjut...",
+                }
+                yield {
+                    "type": "debug",
+                    "chunks": [],
+                    "total_chunks": 0,
+                }
+                yield {
+                    "type": "telemetry",
+                    "model_name": active_llm_model,
+                    "context_tokens": 0,
+                    "num_ctx": active_num_ctx,
+                    "chunks_count": 0,
+                    "is_fallback": True,
+                }
+            session_memory.add_user_message(session_id, query)
+            session_memory.add_assistant_message(session_id, handoff_msg, topic="Permintaan Bantuan Petugas")
+            yield handoff_msg
+            return
+
+        if intent == "human_escalation_followup":
+            followup_ack = (
+                "Terima kasih atas informasinya. Catatan tambahan Anda sudah saya simpan dan diteruskan ke tim Diskominfotik "
+                "untuk ditindaklanjuti. Mohon ditunggu respon dari tim kami ya!"
+            )
+            if include_debug:
+                yield {
+                    "type": "trace",
+                    "stage": "intent_routing",
+                    "step": 1,
+                    "total_steps": 1,
+                    "label": "Catatan Tambahan untuk Petugas",
+                    "detail": "Menyimpan data identitas/kendala pengguna ke antrean tindak lanjut...",
+                }
+                yield {
+                    "type": "debug",
+                    "chunks": [],
+                    "total_chunks": 0,
+                }
+                yield {
+                    "type": "telemetry",
+                    "model_name": active_llm_model,
+                    "context_tokens": 0,
+                    "num_ctx": active_num_ctx,
+                    "chunks_count": 0,
+                    "is_fallback": True,
+                }
+            session_memory.add_user_message(session_id, query)
+            session_memory.add_assistant_message(session_id, followup_ack, topic="Permintaan Bantuan Petugas")
+            yield followup_ack
+            return
 
         if intent == "session_recap":
             is_empty_history = not chat_history or len(chat_history) == 0
@@ -2258,7 +2323,7 @@ PANDUAN KOMUNIKASI HELPDESK:
                     "context_tokens": 0,
                     "num_ctx": active_num_ctx,
                     "chunks_count": 0,
-                    "is_fallback": True,
+                    "is_fallback": False,
                 }
             session_memory.add_user_message(session_id, query)
             session_memory.add_assistant_message(session_id, fallback_msg, topic="Fallback")
@@ -2281,7 +2346,7 @@ PANDUAN KOMUNIKASI HELPDESK:
                     "context_tokens": _estimasi_token_konteks(context_text),
                     "num_ctx": active_num_ctx,
                     "chunks_count": len(debug_chunks),
-                    "is_fallback": True,
+                    "is_fallback": False,
                 }
             msg = (
                 f"Maaf, {entitas} tidak ditemukan di dalam dokumen. "
@@ -2428,15 +2493,34 @@ PANDUAN KOMUNIKASI HELPDESK:
             yield ref_chunk
 
         full_rag_resp = "".join(response_chunks)
-        first_line = context_text.strip().split("\n")[0] if context_text else ""
-        extracted_topic = first_line[:60].strip() if ("SOP" in first_line or "PROSEDUR" in first_line) else "Dokumen SOP"
+        
+        # Ekstrak label SOP nyata dari konteks atau sumber rujukan
+        context_labels = _label_di_konteks(context_text) if context_text else []
+        best_label = context_labels[0] if context_labels else ""
+        if not best_label and sources_text:
+            first_src = sources_text.strip().split("\n")[0].lstrip("- *# ")
+            if "SOP" in first_src or "Halaman" in first_src:
+                best_label = first_src
+
+        prev_topic, prev_entity = session_memory.get_last_context(session_id)
+        
+        # Cek apakah query saat ini adalah meta query
+        meta_words = ["hitung", "kembali", "hari apa", "kapan", "siapa", "dimana", "tadi", "lanjut", "bisa", "koreksi", "ulang"]
+        is_meta_query = any(mw in query.lower() for mw in meta_words) and len(query.split()) <= 5
+
+        if is_meta_query and prev_entity and len(prev_entity) >= 3 and not any(mw in prev_entity.lower() for mw in ["hitung", "kembali", "hari apa"]):
+            active_entity = prev_entity
+        else:
+            active_entity = best_label or prev_entity or resolved_query
+
+        extracted_topic = best_label or prev_topic or "Dokumen SOP"
 
         session_memory.add_user_message(session_id, query)
         session_memory.add_assistant_message(
             session_id,
             full_rag_resp,
             topic=extracted_topic,
-            entity=resolved_query,
+            entity=active_entity,
         )
 
         if include_debug:

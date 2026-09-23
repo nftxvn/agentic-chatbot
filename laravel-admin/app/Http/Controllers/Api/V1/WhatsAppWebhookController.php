@@ -144,7 +144,7 @@ class WhatsAppWebhookController extends Controller
             $this->sendWhatsAppMessage($from, $formattedReply);
 
             // 6. Catat telemetri interaksi WhatsApp (Privasi warga terlindungi: tanpa nomor HP dan tanpa isi pesan)
-            $isFallback = empty($sources) || str_contains($replyText, 'tidak ditemukan');
+            $isFallback = str_contains($replyText, 'terhubung dengan petugas') || str_contains($replyText, 'menindaklanjuti pesan') || str_contains($replyText, 'menindaklanjuti percakapan');
             \App\Models\ChatLog::create([
                 'session_id' => $sessionId,
                 'channel' => 'whatsapp',
