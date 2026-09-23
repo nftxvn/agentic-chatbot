@@ -297,8 +297,8 @@ function TelemetrySection() {
               className="px-3 py-2 text-xs rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none cursor-pointer"
             >
               <option value="all">Semua Status</option>
-              <option value="success">🟢 Terjawab Otomatis (SOP)</option>
-              <option value="fallback">🟠 ⚠️ Perlu Tindak Lanjut Petugas</option>
+              <option value="success">Terjawab Otomatis (SOP)</option>
+              <option value="fallback">Perlu Tindak Lanjut Petugas</option>
             </select>
 
             <button
@@ -391,7 +391,7 @@ function TelemetrySection() {
                       {log.is_fallback ? (
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
                           <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                          ⚠️ Perlu Tindak Lanjut Petugas
+                          Perlu Tindak Lanjut Petugas
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
