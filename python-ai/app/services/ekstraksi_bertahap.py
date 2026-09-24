@@ -206,6 +206,17 @@ def ekstrak_bertahap(
         if maks_halaman is not None and len(diproses) >= maks_halaman:
             break
 
+        # Periksa permintaan jeda SEBELUM memulai OCR halaman berikutnya
+        if penyimpanan.jeda_diminta(document_id):
+            penyimpanan.catat_status(document_id, STATUS_JEDA)
+            penyimpanan.batalkan_jeda(document_id)
+            flush_ollama_cache()
+            return Kemajuan(
+                document_id, STATUS_JEDA, halaman_total,
+                len(sudah) + len(diproses), diproses,
+                time.perf_counter() - mulai,
+            )
+
         try:
             teks, petunjuk = ocr_satu_halaman(nomor, petunjuk)
         except Exception as e:  # noqa: BLE001 - dicatat sebagai status, bukan ditelan
@@ -237,6 +248,7 @@ def ekstrak_bertahap(
         # dengan puluhan detik OCR.
         if penyimpanan.jeda_diminta(document_id):
             penyimpanan.catat_status(document_id, STATUS_JEDA)
+            penyimpanan.batalkan_jeda(document_id)
             flush_ollama_cache()
             return Kemajuan(
                 document_id, STATUS_JEDA, halaman_total,
@@ -370,11 +382,15 @@ class PenyimpananMySQL:
 
     def jeda_diminta(self, document_id: int) -> bool:
         sql = text(
-            "SELECT jeda_diminta FROM ekstraksi_job WHERE document_id = :id"
+            "SELECT jeda_diminta, status FROM ekstraksi_job WHERE document_id = :id"
         )
         with self._engine.connect() as conn:
             baris = conn.execute(sql, {"id": document_id}).fetchone()
-        return bool(baris and baris[0])
+        if not baris:
+            return False
+        is_requested = bool(baris[0])
+        status_str = str(baris[1]).lower() if baris[1] else ""
+        return is_requested or status_str in ("jeda", "paused")
 
     def baca_petunjuk(self, document_id: int) -> str | None:
         sql = text(
@@ -459,17 +475,30 @@ class PenyimpananMySQL:
 
     def minta_jeda(self, document_id: int) -> None:
         """
-        Setel jeda pada ekstraksi. Bila semua halaman sudah terkumpul (halaman_selesai >= halaman_total),
-        langsung alihkan ke 'menunggu_koreksi' agar UI tidak menggantung pada status 'Menjeda...'.
+        Setel jeda pada ekstraksi.
+        Tandai jeda_diminta = 1 pada ekstraksi_job agar worker OCR berhenti di batas halaman.
+        Bila semua halaman sudah terkumpul (halaman_selesai >= halaman_total),
+        langsung alihkan ke 'menunggu_koreksi'.
         """
         sql = text(
             "UPDATE ekstraksi_job SET "
-            "  jeda_diminta = 0, "
+            "  jeda_diminta = CASE "
+            "    WHEN halaman_selesai >= halaman_total AND halaman_total > 0 THEN 0 "
+            "    ELSE 1 "
+            "  END, "
             "  status = CASE "
             "    WHEN halaman_selesai >= halaman_total AND halaman_total > 0 THEN 'menunggu_koreksi' "
-            "    ELSE 'jeda' "
+            "    ELSE status "
             "  END "
             "WHERE document_id = :id"
+        )
+        with self._engine.begin() as conn:
+            conn.execute(sql, {"id": document_id})
+
+    def batalkan_jeda(self, document_id: int) -> None:
+        """Cabut atau reset bendera jeda_diminta kembali ke 0."""
+        sql = text(
+            "UPDATE ekstraksi_job SET jeda_diminta = 0 WHERE document_id = :id"
         )
         with self._engine.begin() as conn:
             conn.execute(sql, {"id": document_id})

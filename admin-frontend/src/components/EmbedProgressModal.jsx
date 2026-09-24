@@ -131,7 +131,7 @@ export default function EmbedProgressModal({
           {/* Progress Percentage Display */}
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wider">
-              {isDone ? "Status Akhir" : "Kemajuan Penyimpanan"}
+              {isDone ? "Status" : "Progres Embedding"}
             </span>
             <span
               className={`text-lg font-black font-mono ${
@@ -160,27 +160,24 @@ export default function EmbedProgressModal({
             />
           </div>
 
-          {/* Live Step Status Box */}
-          <div className="p-3.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)] flex items-start gap-2.5">
-            <div className="mt-0.5 shrink-0">
-              {isDone ? (
-                <div className="w-2 h-2 rounded-full bg-emerald-500" />
-              ) : isFailed ? (
-                <div className="w-2 h-2 rounded-full bg-red-500" />
-              ) : (
-                <div className="w-2 h-2 rounded-full bg-sky-500 animate-ping" />
-              )}
-            </div>
-            <div className="space-y-1 flex-1 min-w-0">
-              <p className="font-semibold text-[var(--text-primary)] m-0 truncate">
-                {isFailed ? errorMessage : statusMessage}
+          {/* Status Message (Clean Text tanpa Dot Pulse) */}
+          <div className="pt-1 space-y-1">
+            <p
+              className={`text-sm font-semibold m-0 leading-snug ${
+                isDone
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : isFailed
+                  ? "text-rose-600 dark:text-rose-400"
+                  : "text-[var(--text-primary)]"
+              }`}
+            >
+              {isFailed ? errorMessage : statusMessage}
+            </p>
+            {!isDone && !isFailed && (
+              <p className="text-xs text-[var(--text-muted)] m-0 font-medium">
+                Proses berjalan di antrean background worker. Halaman tidak perlu di-refresh.
               </p>
-              {!isDone && !isFailed && (
-                <p className="text-[11px] text-[var(--text-muted)] m-0">
-                  Proses berjalan secara live di antrean background worker. Anda tidak perlu me-refresh halaman.
-                </p>
-              )}
-            </div>
+            )}
           </div>
 
           {/* Action Button when Done or Failed */}

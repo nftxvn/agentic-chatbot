@@ -409,6 +409,11 @@ class DocumentController extends Controller
             return ['status' => 'jeda', 'label' => 'Dijeda'];
         }
 
+        // 3b. Menunggu Jeda (Sedang menyelesaikan halaman aktif sebelum jeda)
+        if ($job?->jeda_diminta) {
+            return ['status' => 'processing', 'label' => 'Menjeda...'];
+        }
+
         // 4. Gagal (Failed)
         if ($job?->status === 'gagal' || $status === 'failed') {
             return ['status' => 'failed', 'label' => 'Gagal'];

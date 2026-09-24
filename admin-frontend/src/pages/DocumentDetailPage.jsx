@@ -24,6 +24,7 @@ export default function DocumentDetailPage() {
   const [chunkSearch, setChunkSearch] = useState("");
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
   const [showReplaceModal, setShowReplaceModal] = useState(false);
   const [showAllLogs, setShowAllLogs] = useState(false);
 
@@ -65,12 +66,13 @@ export default function DocumentDetailPage() {
       docLoadedRef.current = true;
       setError(null);
 
-      // Keep polling if processing
+      // Keep polling if processing or waiting for pause to complete on active page
       if (
         doc.status === "processing" ||
         doc.status === "pending" ||
         doc.ekstraksi_status === "berjalan" ||
-        doc.ekstraksi_status === "antre"
+        doc.ekstraksi_status === "antre" ||
+        doc.jeda_diminta
       ) {
         if (fetchTimeout.current) clearTimeout(fetchTimeout.current);
         fetchTimeout.current = setTimeout(fetchDocument, 4000);
@@ -310,7 +312,7 @@ export default function DocumentDetailPage() {
   const confirmReplace = async (e) => {
     if (e) e.preventDefault();
     if (!replaceFile) {
-      alert("Pilih file PDF terlebih dahulu.");
+      showToast("error", "Pilih File", "Pilih file PDF terlebih dahulu.");
       return;
     }
 
@@ -394,11 +396,8 @@ export default function DocumentDetailPage() {
     }
   };
 
-  const handleCancel = async () => {
-    if (
-      !window.confirm("Yakin ingin membatalkan pemrosesan ini secara permanen?")
-    )
-      return;
+  const handleConfirmCancel = async () => {
+    setShowCancelModal(false);
     try {
       await documentsApi.cancel(id);
       showToast("info", "Dibatalkan", "Pemrosesan dokumen telah dibatalkan.");
@@ -1194,7 +1193,7 @@ export default function DocumentDetailPage() {
                             {document.jeda_diminta ? "Menjeda..." : "Jeda"}
                           </button>
                           <button
-                            onClick={handleCancel}
+                            onClick={() => setShowCancelModal(true)}
                             className="py-2 px-3.5 text-xs font-semibold text-[var(--text-muted)] hover:text-rose-500 hover:bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl transition-colors cursor-pointer"
                           >
                             Batal
@@ -1529,6 +1528,17 @@ export default function DocumentDetailPage() {
         confirmText="Hapus"
       />
 
+      {/* Modal Batalkan Pemrosesan Dokumen */}
+      <ConfirmModal
+        isOpen={showCancelModal}
+        title="Batalkan Pemrosesan"
+        message={`Yakin ingin membatalkan pemrosesan dokumen "${document?.title || "ini"}" secara permanen?`}
+        onConfirm={handleConfirmCancel}
+        onCancel={() => setShowCancelModal(false)}
+        confirmText="Hentikan Proses"
+        isDanger={true}
+      />
+
       {/* Modal Ganti File Dokumen Dedicated */}
       {showReplaceModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
@@ -1569,7 +1579,7 @@ export default function DocumentDetailPage() {
                 CSV, TXT, MD, PNG, JPG, JPEG, WEBP.
               </p>
 
-              <div className="p-4 rounded-xl border border-dashed border-[var(--border-color)] bg-[var(--bg-input)] space-y-2">
+              <div className="p-4 rounded-xl border border-dashed border-[var(--border-color)] bg-[var(--bg-input)]">
                 <input
                   type="file"
                   accept=".pdf,.docx,.xlsx,.xls,.csv,.txt,.md,.png,.jpg,.jpeg,.webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/plain,text/markdown,image/png,image/jpeg,image/webp"
@@ -1577,12 +1587,6 @@ export default function DocumentDetailPage() {
                   disabled={replacing}
                   className="w-full text-xs text-[var(--text-secondary)] file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-[var(--bg-card)] file:border file:border-[var(--border-color)] file:text-sky-500 cursor-pointer"
                 />
-                {replaceFile && (
-                  <p className="text-xs text-sky-500 font-mono font-medium">
-                    File terpilih: {replaceFile.name} (
-                    {(replaceFile.size / 1024 / 1024).toFixed(2)} MB)
-                  </p>
-                )}
               </div>
 
               <div className="flex justify-end gap-2.5 pt-2">

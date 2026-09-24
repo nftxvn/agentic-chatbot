@@ -18,10 +18,10 @@ export default function DashboardPage() {
   const [uploadCategoryId, setUploadCategoryId] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadStage, setUploadStage] = useState("idle"); // idle | uploading | processing | done
-  const [processingSeconds, setProcessingSeconds] = useState(5);
+  const [uploadStage, setUploadStage] = useState("idle"); // idle | uploading | done
 
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [cancelTarget, setCancelTarget] = useState(null);
   const [categories, setCategories] = useState([]);
 
   const fetchTimeout = useRef(null);
@@ -130,7 +130,6 @@ export default function DashboardPage() {
     setUploading(true);
     setUploadProgress(0);
     setUploadStage("uploading");
-    setProcessingSeconds(5);
 
     try {
       await documentsApi.upload(
@@ -147,20 +146,15 @@ export default function DashboardPage() {
         },
       );
 
-      // Step 2: Smooth 5-second countdown & progress fill for certainty
-      setUploadStage("processing");
-      for (let s = 5; s >= 1; s--) {
-        setProcessingSeconds(s);
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-
+      // Best Practice: Langsung transisi ke Selesai saat file berhasil disimpan backend
+      setUploadProgress(100);
       setUploadStage("done");
       addAppNotification({
-        title: "Dokumen Baru",
-        message: `Anda baru saja mengunggah dokumen "${uploadTitle}"`,
+        title: "Dokumen Berhasil Diunggah",
+        message: `Dokumen "${uploadTitle}" berhasil ditambahkan dan masuk antrean ekstraksi.`,
         type: "info",
       });
-      await new Promise((r) => setTimeout(r, 800));
+      await new Promise((r) => setTimeout(r, 600));
       setShowModal(false);
       setUploadTitle("");
       setUploadFile(null);
@@ -193,27 +187,36 @@ export default function DashboardPage() {
       });
       fetchData(data.meta?.current_page || 1);
     } catch (err) {
-      alert(err.response?.data?.message || "Gagal menghapus dokumen.");
+      addAppNotification({
+        title: "Gagal Menghapus",
+        message: err.response?.data?.message || "Gagal menghapus dokumen.",
+        type: "warning",
+      });
     } finally {
       setDeleteTarget(null);
     }
   };
 
-  const handleCancelProcess = async (docId, title) => {
-    if (
-      !window.confirm(`Yakin ingin membatalkan pemrosesan dokumen "${title}"?`)
-    )
-      return;
+  const confirmCancelProcess = async () => {
+    if (!cancelTarget) return;
+    const docTitle =
+      cancelTarget.title || cancelTarget.original_filename || "Dokumen";
     try {
-      await documentsApi.cancel(docId);
+      await documentsApi.cancel(cancelTarget.id);
       addAppNotification({
         title: "Proses Dibatalkan",
-        message: `Pemrosesan dokumen "${title}" telah dibatalkan.`,
+        message: `Pemrosesan dokumen "${docTitle}" telah dibatalkan.`,
         type: "warning",
       });
       fetchData(data.meta?.current_page || 1);
     } catch (err) {
-      alert(err.response?.data?.message || "Gagal membatalkan pemrosesan.");
+      addAppNotification({
+        title: "Gagal Membatalkan",
+        message: err.response?.data?.message || "Gagal membatalkan pemrosesan.",
+        type: "warning",
+      });
+    } finally {
+      setCancelTarget(null);
     }
   };
 
@@ -496,9 +499,7 @@ export default function DashboardPage() {
                         {doc.status === "processing" ||
                         doc.status === "pending" ? (
                           <button
-                            onClick={() =>
-                              handleCancelProcess(doc.id, doc.title)
-                            }
+                            onClick={() => setCancelTarget(doc)}
                             className="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-[var(--yellow-color)] hover:bg-[var(--bg-card)] bg-[var(--bg-input)] border border-[var(--border-color)] transition-colors inline-flex items-center gap-1 cursor-pointer"
                             title="Hentikan proses AI dokumen ini"
                           >
@@ -801,74 +802,9 @@ export default function DashboardPage() {
                       </div>
                     )}
 
-                    {/* Stage 2: Processing (100% Uploaded, 5-Second Countdown) */}
-                    {uploadStage === "processing" && (
-                      <div className="space-y-3">
-                        {/* Checkpoint 1: Upload Complete */}
-                        <div className="flex items-center gap-2 text-xs font-bold text-emerald-500">
-                          <svg
-                            className="w-4 h-4 shrink-0"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2.5}
-                              d="M5 13l4 4L19 7"
-                            />
-                          </svg>
-                          <span>File Selesai Terunggah (100%)</span>
-                        </div>
-
-                        {/* Checkpoint 2: 5-Second Countdown Status */}
-                        <div className="flex items-center justify-between gap-3 pt-1 border-t border-[var(--border-color)]">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="w-7 h-7 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] flex items-center justify-center shrink-0">
-                              <svg
-                                className="w-4 h-4 text-amber-500"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2.5}
-                                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                                />
-                              </svg>
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-xs font-bold text-amber-500">
-                                Menyimpan &amp; Mengonfirmasi Dokumen...
-                              </p>
-                              <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                                Selesai dalam {processingSeconds} detik...
-                              </p>
-                            </div>
-                          </div>
-                          <span className="text-sm font-black text-amber-500 tabular-nums shrink-0">
-                            {processingSeconds}s
-                          </span>
-                        </div>
-
-                        {/* Smooth 5-Second Progress Bar */}
-                        <div className="w-full bg-[var(--bg-card)] border border-[var(--border-color)] rounded-full h-2 overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-gradient-to-r from-amber-400 to-amber-500 transition-all duration-1000 linear"
-                            style={{
-                              width: `${((6 - processingSeconds) / 5) * 100}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Stage 3: Done */}
+                    {/* Stage 2: Done */}
                     {uploadStage === "done" && (
-                      <div className="space-y-2">
+                      <div className="space-y-2.5">
                         <div className="flex items-center gap-2.5 text-xs font-bold text-emerald-500">
                           <div className="w-7 h-7 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] flex items-center justify-center shrink-0">
                             <svg
@@ -886,15 +822,17 @@ export default function DashboardPage() {
                             </svg>
                           </div>
                           <div>
-                            <p className="font-bold">
-                              Dokumen Berhasil Disimpan!
+                            <p className="font-bold text-emerald-500">
+                              Dokumen Berhasil Diunggah!
                             </p>
                             <p className="text-xs text-[var(--text-muted)] font-normal">
-                              Menutup modal &amp; memperbarui daftar...
+                              Dokumen masuk antrean ekstraksi AI. Memperbarui daftar...
                             </p>
                           </div>
                         </div>
-                        <div className="w-full bg-emerald-500 rounded-full h-1.5" />
+                        <div className="w-full bg-[var(--bg-card)] border border-[var(--border-color)] rounded-full h-2 overflow-hidden">
+                          <div className="h-full rounded-full bg-emerald-500 w-full transition-all duration-300" />
+                        </div>
                       </div>
                     )}
                   </div>
@@ -946,6 +884,16 @@ export default function DashboardPage() {
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}
         confirmText="Hapus"
+      />
+
+      <ConfirmModal
+        isOpen={!!cancelTarget}
+        title="Batalkan Pemrosesan"
+        message={`Yakin ingin membatalkan pemrosesan dokumen "${cancelTarget?.title || cancelTarget?.original_filename || "ini"}"?`}
+        onConfirm={confirmCancelProcess}
+        onCancel={() => setCancelTarget(null)}
+        confirmText="Hentikan Proses"
+        isDanger={true}
       />
     </div>
   );
