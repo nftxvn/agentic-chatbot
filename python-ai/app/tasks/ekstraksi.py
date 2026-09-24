@@ -115,7 +115,9 @@ def ekstrak_dokumen_task(
     import fitz
     from app.services import pdf_processor
 
-    with fitz.open(file_path) as doc:
+    resolved_path = pdf_processor._resolve_pdf_path(file_path)
+
+    with fitz.open(resolved_path) as doc:
         halaman_total = len(doc)
 
     penyimpanan.mulai_job(document_id, halaman_total)
@@ -125,7 +127,7 @@ def ekstrak_dokumen_task(
         # menimbulkan galat apa pun — halaman lanjutan hanya kehilangan aturan
         # format tabelnya, dan itu baru ketahuan lewat jawaban yang ngawur.
         return pdf_processor.ekstrak_satu_halaman(
-            file_path,
+            resolved_path,
             nomor,
             petunjuk,
             category_prompt=category_prompt,
