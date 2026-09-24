@@ -104,9 +104,11 @@ class Penyimpanan(Protocol):
     ujinya menuntut basis data hidup.
     """
 
+    def dokumen_ada(self, document_id: int) -> bool: ...
+
     def halaman_tersimpan(self, document_id: int) -> set[int]: ...
 
-    def simpan_halaman(self, document_id: int, nomor: int, teks: str) -> None: ...
+    def simpan_halaman(self, document_id: int, nomor: int, teks: str) -> bool: ...
 
     def jeda_diminta(self, document_id: int) -> bool: ...
 
@@ -120,6 +122,8 @@ class Penyimpanan(Protocol):
     def baca_petunjuk(self, document_id: int) -> str | None: ...
 
     def simpan_petunjuk(self, document_id: int, petunjuk: str | None) -> None: ...
+
+    def batalkan_jeda(self, document_id: int) -> None: ...
 
     def reset_ekstraksi(self, document_id: int) -> None: ...
 
@@ -185,6 +189,15 @@ def ekstrak_bertahap(
     fungsi ini berulang kali aman dan selalu meneruskan dari yang terakhir.
     """
     mulai = time.perf_counter()
+
+    # Periksa apakah dokumen masih ada di basis data
+    if not penyimpanan.dokumen_ada(document_id):
+        logger.info("Dokumen %d tidak ditemukan di basis data saat mulai ekstraksi bertahap.", document_id)
+        return Kemajuan(
+            document_id, STATUS_GAGAL, halaman_total, 0,
+            pesan="Dokumen tidak ditemukan di basis data.",
+        )
+
     sudah = penyimpanan.halaman_tersimpan(document_id)
     tersisa = [n for n in range(1, halaman_total + 1) if n not in sudah]
 
@@ -206,7 +219,18 @@ def ekstrak_bertahap(
         if maks_halaman is not None and len(diproses) >= maks_halaman:
             break
 
-        # Periksa permintaan jeda SEBELUM memulai OCR halaman berikutnya
+        # 1. Periksa apakah dokumen masih ada sebelum membuang 20-60 detik waktu inferensi vision
+        if not penyimpanan.dokumen_ada(document_id):
+            logger.info("Dokumen %d telah dihapus dari sistem. Menghentikan ekstraksi bertahap.", document_id)
+            flush_ollama_cache()
+            return Kemajuan(
+                document_id, STATUS_GAGAL, halaman_total,
+                len(sudah) + len(diproses), diproses,
+                time.perf_counter() - mulai,
+                pesan="Dokumen telah dihapus dari sistem.",
+            )
+
+        # 2. Periksa permintaan jeda SEBELUM memulai OCR halaman berikutnya
         if penyimpanan.jeda_diminta(document_id):
             penyimpanan.catat_status(document_id, STATUS_JEDA)
             penyimpanan.batalkan_jeda(document_id)
@@ -220,6 +244,16 @@ def ekstrak_bertahap(
         try:
             teks, petunjuk = ocr_satu_halaman(nomor, petunjuk)
         except Exception as e:  # noqa: BLE001 - dicatat sebagai status, bukan ditelan
+            # Jika dokumen telah dihapus saat inferensi berlangsung, keluar secara bersih
+            if not penyimpanan.dokumen_ada(document_id):
+                logger.info("Dokumen %d telah dihapus saat ekstraksi halaman %d. Ekstraksi dihentikan.", document_id, nomor)
+                flush_ollama_cache()
+                return Kemajuan(
+                    document_id, STATUS_GAGAL, halaman_total,
+                    len(sudah) + len(diproses), diproses,
+                    time.perf_counter() - mulai,
+                    pesan="Dokumen telah dihapus dari sistem.",
+                )
             pesan = f"Halaman {nomor} gagal: {type(e).__name__}: {e}"
             logger.error(pesan)
             penyimpanan.catat_status(document_id, STATUS_GAGAL, pesan)
@@ -229,9 +263,18 @@ def ekstrak_bertahap(
                 time.perf_counter() - mulai, pesan,
             )
 
-        # Disimpan SEBELUM apa pun yang lain. Kalau proses mati satu baris
-        # setelah ini, halaman tadi tetap aman dan tidak perlu di-OCR ulang.
-        penyimpanan.simpan_halaman(document_id, nomor, teks)
+        # 3. Disimpan SEBELUM apa pun yang lain. Kalau dokumen dihapus saat proses berjalan, simpan_halaman mengembalikan False
+        tersimpan = penyimpanan.simpan_halaman(document_id, nomor, teks)
+        if not tersimpan:
+            logger.info("Dokumen %d telah dihapus sebelum menyimpan halaman %d. Menghentikan ekstraksi.", document_id, nomor)
+            flush_ollama_cache()
+            return Kemajuan(
+                document_id, STATUS_GAGAL, halaman_total,
+                len(sudah) + len(diproses), diproses,
+                time.perf_counter() - mulai,
+                pesan="Dokumen telah dihapus dari sistem.",
+            )
+
         penyimpanan.simpan_petunjuk(document_id, petunjuk)
         diproses.append(nomor)
         logger.info(
@@ -280,12 +323,19 @@ class PenyimpananMemori:
         self.status: dict[int, tuple[str, str | None]] = {}
         self.jeda: set[int] = set()
         self.petunjuk: dict[int, str | None] = {}
+        self.dokumen_valid: set[int] = set()
+
+    def dokumen_ada(self, document_id: int) -> bool:
+        if not self.dokumen_valid:
+            return True
+        return document_id in self.dokumen_valid
 
     def halaman_tersimpan(self, document_id: int) -> set[int]:
         return set(self.halaman.get(document_id, {}))
 
-    def simpan_halaman(self, document_id: int, nomor: int, teks: str) -> None:
+    def simpan_halaman(self, document_id: int, nomor: int, teks: str) -> bool:
         self.halaman.setdefault(document_id, {})[nomor] = teks
+        return True
 
     def jeda_diminta(self, document_id: int) -> bool:
         return document_id in self.jeda
@@ -312,6 +362,7 @@ class PenyimpananMemori:
         self.status.pop(document_id, None)
         self.jeda.discard(document_id)
         self.petunjuk.pop(document_id, None)
+        self.dokumen_valid.discard(document_id)
 
     def teks_terkumpul(self, document_id: int) -> list[dict]:
         """Halaman tersimpan dalam bentuk yang diterima chunk_text_hierarchical."""
@@ -372,37 +423,59 @@ class PenyimpananMySQL:
 
     # ── dibaca alur ekstraksi ────────────────────────────────────
 
+    def dokumen_ada(self, document_id: int) -> bool:
+        """Periksa apakah dokumen masih ada di tabel documents."""
+        sql = text("SELECT 1 FROM documents WHERE id = :id")
+        try:
+            with self._engine.connect() as conn:
+                return conn.execute(sql, {"id": document_id}).scalar() is not None
+        except Exception as e:
+            logger.warning("Gagal cek keberadaan dokumen %d: %s", document_id, e)
+            return False
+
     def halaman_tersimpan(self, document_id: int) -> set[int]:
         sql = text(
             "SELECT page_number FROM ekstraksi_halaman "
             "WHERE document_id = :id AND LENGTH(TRIM(COALESCE(text, ''))) > 0"
         )
-        with self._engine.connect() as conn:
-            return {baris[0] for baris in conn.execute(sql, {"id": document_id})}
+        try:
+            with self._engine.connect() as conn:
+                return {baris[0] for baris in conn.execute(sql, {"id": document_id})}
+        except Exception as e:
+            logger.warning("Gagal membaca halaman tersimpan dokumen %d: %s", document_id, e)
+            return set()
 
     def jeda_diminta(self, document_id: int) -> bool:
         sql = text(
             "SELECT jeda_diminta, status FROM ekstraksi_job WHERE document_id = :id"
         )
-        with self._engine.connect() as conn:
-            baris = conn.execute(sql, {"id": document_id}).fetchone()
-        if not baris:
+        try:
+            with self._engine.connect() as conn:
+                baris = conn.execute(sql, {"id": document_id}).fetchone()
+            if not baris:
+                return False
+            is_requested = bool(baris[0])
+            status_str = str(baris[1]).lower() if baris[1] else ""
+            return is_requested or status_str in ("jeda", "paused")
+        except Exception as e:
+            logger.warning("Gagal cek jeda_diminta dokumen %d: %s", document_id, e)
             return False
-        is_requested = bool(baris[0])
-        status_str = str(baris[1]).lower() if baris[1] else ""
-        return is_requested or status_str in ("jeda", "paused")
 
     def baca_petunjuk(self, document_id: int) -> str | None:
         sql = text(
             "SELECT petunjuk_format FROM ekstraksi_job WHERE document_id = :id"
         )
-        with self._engine.connect() as conn:
-            baris = conn.execute(sql, {"id": document_id}).fetchone()
-        return baris[0] if baris else None
+        try:
+            with self._engine.connect() as conn:
+                baris = conn.execute(sql, {"id": document_id}).fetchone()
+            return baris[0] if baris else None
+        except Exception as e:
+            logger.warning("Gagal membaca petunjuk format dokumen %d: %s", document_id, e)
+            return None
 
     # ── ditulis alur ekstraksi ───────────────────────────────────
 
-    def simpan_halaman(self, document_id: int, nomor: int, teks: str) -> None:
+    def simpan_halaman(self, document_id: int, nomor: int, teks: str) -> bool:
         """
         Menulis ulang halaman yang sama aman: kunci utamanya (document_id,
         page_number), jadi mengulang tugas tidak menggandakan baris.
@@ -410,22 +483,40 @@ class PenyimpananMySQL:
         `diperiksa` sengaja TIDAK ikut ditimpa di sini. Kolom itu milik
         korektor; kalau ekstraksi ulang meresetnya diam-diam, pekerjaan
         memeriksa ratusan halaman bisa hilang tanpa ada yang menyadarinya.
+
+        Mengembalikan True jika berhasil disimpan, False jika dokumen sudah
+        dihapus dari basis data (Foreign Key Constraint 1452).
         """
         sql = text(
             "INSERT INTO ekstraksi_halaman (document_id, page_number, text) "
             "VALUES (:id, :nomor, :teks) "
             "ON DUPLICATE KEY UPDATE text = VALUES(text)"
         )
-        with self._engine.begin() as conn:
-            conn.execute(sql, {"id": document_id, "nomor": nomor, "teks": teks})
+        try:
+            with self._engine.begin() as conn:
+                conn.execute(sql, {"id": document_id, "nomor": nomor, "teks": teks})
+            return True
+        except Exception as e:
+            err_str = str(e).lower()
+            if "foreign key constraint" in err_str or "1452" in err_str:
+                logger.warning(
+                    "Dokumen %d telah dihapus dari basis data saat menyimpan halaman %d. Operasi dibatalkan secara bersih.",
+                    document_id, nomor,
+                )
+                return False
+            logger.exception("Gagal menyimpan halaman %d untuk dokumen %d", nomor, document_id)
+            raise
 
     def simpan_petunjuk(self, document_id: int, petunjuk: str | None) -> None:
         sql = text(
             "UPDATE ekstraksi_job SET petunjuk_format = :petunjuk "
             "WHERE document_id = :id"
         )
-        with self._engine.begin() as conn:
-            conn.execute(sql, {"id": document_id, "petunjuk": petunjuk})
+        try:
+            with self._engine.begin() as conn:
+                conn.execute(sql, {"id": document_id, "petunjuk": petunjuk})
+        except Exception as e:
+            logger.warning("Gagal menyimpan petunjuk dokumen %d: %s", document_id, e)
 
     def catat_status(
         self, document_id: int, status: str, pesan: str | None = None
@@ -446,8 +537,11 @@ class PenyimpananMySQL:
             "  ) "
             "WHERE document_id = :id"
         )
-        with self._engine.begin() as conn:
-            conn.execute(sql, {"id": document_id, "status": status, "pesan": pesan})
+        try:
+            with self._engine.begin() as conn:
+                conn.execute(sql, {"id": document_id, "status": status, "pesan": pesan})
+        except Exception as e:
+            logger.warning("Gagal mencatat status '%s' dokumen %d: %s", status, document_id, e)
 
     # ── dipakai endpoint & tugas Celery ──────────────────────────
 

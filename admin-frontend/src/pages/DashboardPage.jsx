@@ -21,7 +21,6 @@ export default function DashboardPage() {
   const [uploadStage, setUploadStage] = useState("idle"); // idle | uploading | done
 
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [cancelTarget, setCancelTarget] = useState(null);
   const [categories, setCategories] = useState([]);
 
   const fetchTimeout = useRef(null);
@@ -197,26 +196,21 @@ export default function DashboardPage() {
     }
   };
 
-  const confirmCancelProcess = async () => {
-    if (!cancelTarget) return;
-    const docTitle =
-      cancelTarget.title || cancelTarget.original_filename || "Dokumen";
+  const handlePauseProcess = async (docId, title) => {
     try {
-      await documentsApi.cancel(cancelTarget.id);
+      await documentsApi.pause(docId);
       addAppNotification({
-        title: "Proses Dibatalkan",
-        message: `Pemrosesan dokumen "${docTitle}" telah dibatalkan.`,
-        type: "warning",
+        title: "Permintaan Jeda",
+        message: `Pemrosesan dokumen "${title}" dijeda di batas halaman aktif.`,
+        type: "info",
       });
       fetchData(data.meta?.current_page || 1);
     } catch (err) {
       addAppNotification({
-        title: "Gagal Membatalkan",
-        message: err.response?.data?.message || "Gagal membatalkan pemrosesan.",
+        title: "Gagal Menjeda",
+        message: err.response?.data?.message || "Server AI tidak merespons.",
         type: "warning",
       });
-    } finally {
-      setCancelTarget(null);
     }
   };
 
@@ -499,27 +493,25 @@ export default function DashboardPage() {
                         {doc.status === "processing" ||
                         doc.status === "pending" ? (
                           <button
-                            onClick={() => setCancelTarget(doc)}
+                            onClick={() =>
+                              handlePauseProcess(doc.id, doc.title || doc.original_filename)
+                            }
                             className="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-[var(--yellow-color)] hover:bg-[var(--bg-card)] bg-[var(--bg-input)] border border-[var(--border-color)] transition-colors inline-flex items-center gap-1 cursor-pointer"
-                            title="Hentikan proses AI dokumen ini"
+                            title="Jeda proses AI dokumen ini"
                           >
                             <svg
                               className="w-3.5 h-3.5"
                               fill="currentColor"
                               viewBox="0 0 24 24"
                             >
-                              <rect
-                                x="6"
-                                y="6"
-                                width="12"
-                                height="12"
-                                rx="1.5"
-                              />
+                              <rect x="6" y="5" width="4" height="14" rx="1" />
+                              <rect x="14" y="5" width="4" height="14" rx="1" />
                             </svg>
-                            Stop
+                            Jeda
                           </button>
                         ) : doc.status === "failed" ||
-                          doc.status === "paused" ? (
+                          doc.status === "paused" ||
+                          doc.status === "jeda" ? (
                           <button
                             onClick={() =>
                               handleResumeProcess(doc.id, doc.title)
@@ -884,16 +876,6 @@ export default function DashboardPage() {
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}
         confirmText="Hapus"
-      />
-
-      <ConfirmModal
-        isOpen={!!cancelTarget}
-        title="Batalkan Pemrosesan"
-        message={`Yakin ingin membatalkan pemrosesan dokumen "${cancelTarget?.title || cancelTarget?.original_filename || "ini"}"?`}
-        onConfirm={confirmCancelProcess}
-        onCancel={() => setCancelTarget(null)}
-        confirmText="Hentikan Proses"
-        isDanger={true}
       />
     </div>
   );

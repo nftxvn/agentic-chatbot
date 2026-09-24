@@ -68,6 +68,10 @@ def ekstrak_dokumen_task(
 
     if ext in [".png", ".jpg", ".jpeg", ".webp"]:
         from app.services import document_processor
+        if not penyimpanan.dokumen_ada(document_id):
+            logger.info("Dokumen gambar %d tidak ada di basis data. Ekstraksi dibatalkan.", document_id)
+            return {"status": "dibatalkan", "pesan": "Dokumen tidak ditemukan"}
+
         penyimpanan.mulai_job(document_id, 1)
         try:
             pages = document_processor.extract_document(
@@ -77,8 +81,15 @@ def ekstrak_dokumen_task(
                 vision_model=vision_model,
                 custom_prompts=custom_prompts,
             )
+            if not penyimpanan.dokumen_ada(document_id):
+                logger.info("Dokumen gambar %d dihapus saat ekstraksi berjalan. Ekstraksi dihentikan.", document_id)
+                return {"status": "dibatalkan", "pesan": "Dokumen telah dihapus"}
+
             text = pages[0]["text"] if pages else ""
-            penyimpanan.simpan_halaman(document_id, 1, text)
+            tersimpan = penyimpanan.simpan_halaman(document_id, 1, text)
+            if not tersimpan:
+                return {"status": "dibatalkan", "pesan": "Dokumen telah dihapus"}
+
             penyimpanan.catat_status(document_id, eb.STATUS_MENUNGGU_KOREKSI)
             try:
                 from app.database import record_document_log, update_document_status
@@ -98,6 +109,10 @@ def ekstrak_dokumen_task(
             logger.info("Dokumen gambar %d: 1 halaman terekstrak, menunggu koreksi admin", document_id)
             return {"status": eb.STATUS_MENUNGGU_KOREKSI, "halaman": 1}
         except Exception as e:
+            if not penyimpanan.dokumen_ada(document_id):
+                logger.info("Dokumen gambar %d telah dihapus dari sistem saat gagal ekstraksi.", document_id)
+                return {"status": "dibatalkan", "pesan": "Dokumen telah dihapus"}
+
             penyimpanan.catat_status(document_id, eb.STATUS_GAGAL, str(e))
             try:
                 from app.database import update_document_status
@@ -114,6 +129,10 @@ def ekstrak_dokumen_task(
 
     import fitz
     from app.services import pdf_processor
+
+    if not penyimpanan.dokumen_ada(document_id):
+        logger.info("Dokumen %d tidak ditemukan di basis data saat memulai tugas Celery. Dibatalkan.", document_id)
+        return {"status": "dibatalkan", "pesan": "Dokumen tidak ditemukan"}
 
     resolved_path = pdf_processor._resolve_pdf_path(file_path)
 
@@ -152,6 +171,10 @@ def ekstrak_dokumen_task(
         penyimpanan,
         maks_halaman=maks_halaman,
     )
+
+    if not penyimpanan.dokumen_ada(document_id):
+        logger.info("Dokumen %d telah dihapus dari basis data saat ekstraksi selesai.", document_id)
+        return {"status": "dibatalkan", "pesan": "Dokumen telah dihapus"}
 
     if hasil.status == eb.STATUS_SELESAI:
         _rapikan_lintas_halaman(document_id, penyimpanan)
@@ -264,6 +287,11 @@ def potong_dan_embed_task(self, document_id: int, custom_kwargs: dict | None = N
     from app.services import embedding_service
 
     penyimpanan = eb.PenyimpananMySQL()
+
+    if not penyimpanan.dokumen_ada(document_id):
+        logger.info("Dokumen %d tidak ada di database saat memulai potong_dan_embed_task. Dibatalkan.", document_id)
+        return {"status": "dibatalkan", "pesan": "Dokumen tidak ditemukan"}
+
     halaman = penyimpanan.teks_terkumpul(document_id)
 
     if not halaman:
@@ -298,12 +326,18 @@ def potong_dan_embed_task(self, document_id: int, custom_kwargs: dict | None = N
         )
 
         def on_embed_progress(pct: int, msg: str) -> None:
+            if not penyimpanan.dokumen_ada(document_id):
+                return
             penyimpanan.catat_kemajuan_embed(
                 document_id,
                 status=eb.STATUS_BERJALAN,
                 persen=pct,
                 pesan=msg,
             )
+
+        if not penyimpanan.dokumen_ada(document_id):
+            logger.info("Dokumen %d telah dihapus sebelum embedding disimpan.", document_id)
+            return {"status": "dibatalkan", "pesan": "Dokumen telah dihapus"}
 
         # Penghapusan ditaruh sedekat mungkin dengan penyimpanan, supaya jeda
         # korpus-kosong sesingkat mungkin bila terjadi kegagalan di antaranya.
@@ -315,10 +349,18 @@ def potong_dan_embed_task(self, document_id: int, custom_kwargs: dict | None = N
             progress_callback=on_embed_progress,
         )
     except Exception as e:  # noqa: BLE001 - dicatat sebagai status, bukan ditelan
+        if not penyimpanan.dokumen_ada(document_id):
+            logger.info("Dokumen %d telah dihapus dari basis data saat potong/embed berjalan.", document_id)
+            return {"status": "dibatalkan", "pesan": "Dokumen telah dihapus"}
+
         pesan = f"Gagal memotong/embed: {type(e).__name__}: {e}"
         logger.exception("Dokumen %d gagal di tahap potong/embed", document_id)
         penyimpanan.catat_status(document_id, eb.STATUS_GAGAL, pesan)
         raise self.retry(exc=e)
+
+    if not penyimpanan.dokumen_ada(document_id):
+        logger.info("Dokumen %d telah dihapus sesudah embedding disimpan.", document_id)
+        return {"status": "dibatalkan", "pesan": "Dokumen telah dihapus"}
 
     penyimpanan.catat_kemajuan_embed(
         document_id,
@@ -326,12 +368,15 @@ def potong_dan_embed_task(self, document_id: int, custom_kwargs: dict | None = N
         persen=100,
         pesan=f"Selesai! {tersimpan} vektor berhasil disimpan ke korpus.",
     )
-    update_document_status(document_id, status="completed", total_chunks=tersimpan)
-    record_document_log(
-        document_id,
-        action="completed",
-        details=f"Dokumen berhasil diindeks ke basis pengetahuan AI ({len(induk)} parent chunks, {len(anak)} child chunks, {tersimpan} vektor).",
-    )
+    try:
+        update_document_status(document_id, status="completed", total_chunks=tersimpan)
+        record_document_log(
+            document_id,
+            action="completed",
+            details=f"Dokumen berhasil diindeks ke basis pengetahuan AI ({len(induk)} parent chunks, {len(anak)} child chunks, {tersimpan} vektor).",
+        )
+    except Exception:
+        logger.exception("Gagal sinkron status completed dokumen %d ke tabel documents", document_id)
 
     logger.info(
         "Dokumen %d selesai: %d induk, %d anak, %d vektor tersimpan",

@@ -292,10 +292,9 @@ class DocumentController extends Controller
             @unlink($filePath);
         }
 
-        $document->recordLog('deleted', 'Dokumen dan seluruh vektor terkait dihapus permanen oleh ' . (Auth::user()?->name ?? 'Admin') . '.');
-
-        // Delete vectors from ChromaDB via Python AI microservice
+        // Batalkan tugas background aktif & bersihkan resource AI
         $client = new AiMicroserviceClient();
+        $client->cancelDocument($document->id);
         $client->deleteDocument($document->id);
 
         // Bersihkan data ekstraksi bertahap dari database
