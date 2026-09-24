@@ -9,6 +9,7 @@ use App\Services\AiMicroserviceClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -160,11 +161,25 @@ class DocumentController extends Controller
             'pdf_file.max'      => 'Ukuran file maksimal 50MB.',
         ]);
 
+        $client = new AiMicroserviceClient();
+
+        // 1. Batalkan tugas ekstraksi aktif di background jika ada
+        $client->cancelDocument($document->id);
+
+        // 2. Hapus berkas fisik lama dari disk storage
         $oldPath = $document->file_path ?? Storage::disk('local')->path($document->storage_path ?? '');
         if ($oldPath && file_exists($oldPath)) {
             @unlink($oldPath);
         }
 
+        // 3. Bersihkan data ekstraksi lama di database (halaman & job)
+        DB::table('ekstraksi_halaman')->where('document_id', $document->id)->delete();
+        DB::table('ekstraksi_job')->where('document_id', $document->id)->delete();
+
+        // 4. Bersihkan embedding vektor lama dari ChromaDB
+        $client->deleteDocument($document->id);
+
+        // 5. Simpan file baru ke storage
         $file             = $request->file('pdf_file');
         $rawFilename      = $file->getClientOriginalName();
         $originalFilename = preg_replace('/[^\w\s\-\.\(\)\[\]]/u', '_', basename($rawFilename));
@@ -175,24 +190,27 @@ class DocumentController extends Controller
         $storagePath      = $file->storeAs('documents', $hashedName, 'local');
         $absolutePath     = Storage::disk('local')->path($storagePath);
 
+        // 6. Reset status dan metadata dokumen di database
         $document->update([
-            'original_name' => $originalFilename,
-            'file_path'     => $absolutePath,
-            'status'        => 'pending',
-            'pdf_type'      => 'unknown',
-            'error_message' => null,
-            'total_pages'   => null,
-            'total_chunks'  => null,
-            'processed_at'  => null,
+            'original_name'   => $originalFilename,
+            'file_path'       => $absolutePath,
+            'status'          => 'pending',
+            'pdf_type'        => 'unknown',
+            'error_message'   => null,
+            'total_pages'     => null,
+            'processed_pages' => 0,
+            'total_chunks'    => null,
+            'processed_at'    => null,
         ]);
 
-        $document->recordLog('replaced', "File diganti dengan \"{$originalFilename}\" oleh " . Auth::user()->name);
+        $document->recordLog('replaced', "File diganti dengan \"{$originalFilename}\" oleh " . (Auth::user()?->name ?? 'Admin'));
 
+        // 7. Mulai proses ekstraksi ulang dari awal
         $this->dispatchToAiService($document, 'overwrite');
 
         return response()->json([
             'success' => true,
-            'message' => 'File dokumen berhasil diganti dan sedang diproses ulang.',
+            'message' => 'File dokumen berhasil diganti dan sedang diproses ulang dari awal.',
             'data'    => ['document' => $this->formatDocument($document->fresh())],
         ]);
     }
@@ -279,6 +297,10 @@ class DocumentController extends Controller
         // Delete vectors from ChromaDB via Python AI microservice
         $client = new AiMicroserviceClient();
         $client->deleteDocument($document->id);
+
+        // Bersihkan data ekstraksi bertahap dari database
+        DB::table('ekstraksi_halaman')->where('document_id', $document->id)->delete();
+        DB::table('ekstraksi_job')->where('document_id', $document->id)->delete();
 
         $document->delete();
 

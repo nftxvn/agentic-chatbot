@@ -279,10 +279,12 @@ class EkstraksiController extends Controller
             ], 404);
         }
 
+        $mtime = file_exists($document->file_path ?? '') ? @filemtime($document->file_path) : time();
+
         return response($res->body(), 200, [
             'Content-Type'   => 'image/jpeg',
             'Cache-Control'  => 'public, max-age=31536000, immutable',
-            'ETag'           => $res->header('ETag') ?? "\"{$document->id}-{$pageNumber}-{$zoom}\"",
+            'ETag'           => $res->header('ETag') ?? "\"{$document->id}-{$pageNumber}-{$zoom}-{$mtime}\"",
             'X-Lebar-Piksel' => $res->header('X-Lebar-Piksel') ?? '',
             'X-Tinggi-Piksel'=> $res->header('X-Tinggi-Piksel') ?? '',
         ]);

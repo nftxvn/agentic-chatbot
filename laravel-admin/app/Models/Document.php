@@ -26,6 +26,7 @@ class Document extends Model
         'category_id',
         'error_message',
         'total_pages',
+        'processed_pages',
         'total_chunks',
         'uploaded_by',
         'processed_at',
@@ -39,6 +40,7 @@ class Document extends Model
         return [
             'processed_at' => 'datetime',
             'total_pages' => 'integer',
+            'processed_pages' => 'integer',
             'total_chunks' => 'integer',
         ];
     }

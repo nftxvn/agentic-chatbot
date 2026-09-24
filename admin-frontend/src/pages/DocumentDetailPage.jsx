@@ -319,11 +319,14 @@ export default function DocumentDetailPage() {
       await documentsApi.replace(id, replaceFile);
       setReplaceFile(null);
       setShowReplaceModal(false);
+      try {
+        localStorage.removeItem(`doc_${id}_last_page`);
+      } catch (e) {}
       setPdfTimestamp(Date.now());
       showToast(
         "success",
         "File Diganti",
-        "File berhasil diunggah dan proses ekstraksi diulang.",
+        "File berhasil diunggah dan proses ekstraksi diulang dari awal.",
       );
       fetchDocument();
     } catch (err) {
@@ -992,6 +995,7 @@ export default function DocumentDetailPage() {
           className="flex flex-col h-full self-stretch min-h-0 overflow-hidden transition-[width] duration-75"
         >
           <ManualCorrectionEditor
+            key={`${document.id}-${pdfTimestamp}`}
             documentId={document.id}
             totalPages={document.total_pages || 1}
             isExtractionCompleted={
@@ -1003,6 +1007,7 @@ export default function DocumentDetailPage() {
                 (document.total_pages || 0) > 0)
             }
             status={currentStatus}
+            timestamp={pdfTimestamp}
             onSaveToCorpusSuccess={fetchDocument}
           />
         </div>

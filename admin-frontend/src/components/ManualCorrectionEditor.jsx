@@ -11,6 +11,7 @@ export default function ManualCorrectionEditor({
   totalPages = 1,
   isExtractionCompleted = false,
   status = "",
+  timestamp = null,
   onSaveToCorpusSuccess,
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -78,6 +79,13 @@ export default function ManualCorrectionEditor({
 
   const maxPages = pageSizes.length || totalPages || 1;
 
+  // Clamp currentPage if totalPages/maxPages shrinks (e.g. after replacing file with fewer pages)
+  useEffect(() => {
+    if (maxPages > 0 && currentPage > maxPages) {
+      setCurrentPage(1);
+    }
+  }, [maxPages, currentPage]);
+
   // Tombol simpan ke korpus hanya aktif jika seluruh halaman sudah selesai diekstrak
   const isReadyToSave =
     isExtractionCompleted ||
@@ -111,9 +119,9 @@ export default function ManualCorrectionEditor({
       imageContainerRef.current.scrollTop = 0;
       imageContainerRef.current.scrollLeft = 0;
     }
-  }, [currentPage, zoom, documentId, imageRetryKey]);
+  }, [currentPage, zoom, documentId, timestamp, imageRetryKey]);
 
-  // Fetch page dimensions once on mount / documentId change
+  // Fetch page dimensions once on mount / documentId change / timestamp change
   const fetchPageSizes = useCallback(async () => {
     try {
       const res = await documentsApi.getPageSizes(documentId);
@@ -150,7 +158,7 @@ export default function ManualCorrectionEditor({
   useEffect(() => {
     fetchPageSizes();
     fetchPages();
-  }, [fetchPageSizes, fetchPages]);
+  }, [fetchPageSizes, fetchPages, timestamp]);
 
   // Sync initial currentText when pages are first fetched
   useEffect(() => {
@@ -904,8 +912,8 @@ export default function ManualCorrectionEditor({
                   <div className="m-auto shrink-0 flex items-center justify-center">
                     <img
                       ref={imgRef}
-                      key={`${documentId}-${currentPage}-${zoom}-${imageRetryKey}`}
-                      src={`${documentsApi.pageImageUrl(documentId, currentPage, zoom)}${imageRetryKey ? `&retry=${imageRetryKey}` : ""}`}
+                      key={`${documentId}-${currentPage}-${zoom}-${timestamp || 0}-${imageRetryKey}`}
+                      src={`${documentsApi.pageImageUrl(documentId, currentPage, zoom)}${timestamp ? `&t=${timestamp}` : ""}${imageRetryKey ? `&retry=${imageRetryKey}` : ""}`}
                       alt={`Halaman ${currentPage}`}
                       draggable={false}
                       onDoubleClick={handleDoubleClick}

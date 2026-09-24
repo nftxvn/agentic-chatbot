@@ -121,6 +121,8 @@ class Penyimpanan(Protocol):
 
     def simpan_petunjuk(self, document_id: int, petunjuk: str | None) -> None: ...
 
+    def reset_ekstraksi(self, document_id: int) -> None: ...
+
 
 @dataclass
 class Kemajuan:
@@ -292,6 +294,12 @@ class PenyimpananMemori:
 
     def batalkan_jeda(self, document_id: int) -> None:
         self.jeda.discard(document_id)
+
+    def reset_ekstraksi(self, document_id: int) -> None:
+        self.halaman.pop(document_id, None)
+        self.status.pop(document_id, None)
+        self.jeda.discard(document_id)
+        self.petunjuk.pop(document_id, None)
 
     def teks_terkumpul(self, document_id: int) -> list[dict]:
         """Halaman tersimpan dalam bentuk yang diterima chunk_text_hierarchical."""
@@ -529,3 +537,11 @@ class PenyimpananMySQL:
                 {"page_number": b[0], "text": b[1]}
                 for b in conn.execute(sql, {"id": document_id})
             ]
+
+    def reset_ekstraksi(self, document_id: int) -> None:
+        """Hapus semua ekstraksi halaman dan data ekstraksi_job untuk document_id."""
+        sql_halaman = text("DELETE FROM ekstraksi_halaman WHERE document_id = :id")
+        sql_job = text("DELETE FROM ekstraksi_job WHERE document_id = :id")
+        with self._engine.begin() as conn:
+            conn.execute(sql_halaman, {"id": document_id})
+            conn.execute(sql_job, {"id": document_id})

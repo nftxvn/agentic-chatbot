@@ -219,8 +219,14 @@ async def delete_document_route(
     _token: str = Depends(verify_token),
 ) -> dict:
     from app.services.embedding_service import delete_document_vectors
+    from app.services.ekstraksi_bertahap import PenyimpananMySQL
     try:
         deleted_count = delete_document_vectors(document_id)
+        try:
+            PenyimpananMySQL().reset_ekstraksi(document_id)
+        except Exception as ex:
+            logger.warning("Gagal membersihkan tabel ekstraksi MySQL untuk dokumen %d: %s", document_id, ex)
+
         logger.info("Dokumen %d: %d vektor berhasil dihapus dari ChromaDB", document_id, deleted_count)
         return {
             "success": True,
@@ -345,12 +351,19 @@ async def citra_halaman(
             detail=_ERROR_MESSAGE,
         ) from e
 
+    from pathlib import Path
+    mtime = 0
+    try:
+        mtime = int(Path(berkas).stat().st_mtime)
+    except Exception:
+        pass
+
     return Response(
         content=data,
         media_type="image/jpeg",
         headers={
             "Cache-Control": "public, max-age=31536000, immutable",
-            "ETag": f'"{document_id}-{page_number}-{zoom}"',
+            "ETag": f'"{document_id}-{page_number}-{zoom}-{mtime}"',
             # Dipakai editor untuk menyiapkan ukuran panel tanpa menunggu
             # gambarnya selesai diurai browser.
             "X-Lebar-Piksel": str(lebar),
