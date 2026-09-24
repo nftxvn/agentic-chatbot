@@ -400,28 +400,26 @@ class DocumentController extends Controller
         }
 
         // 2. Menunggu Verifikasi (All pages extracted, waiting for human admin review)
-        if ($job?->status === 'menunggu_koreksi' || $status === 'menunggu_koreksi') {
+        if ($job?->status === 'menunggu_koreksi' || $status === 'menunggu_koreksi' || ($totalPages > 0 && $donePages >= $totalPages && $job?->status !== 'gagal')) {
             return ['status' => 'menunggu_koreksi', 'label' => 'Menunggu Verifikasi'];
         }
 
-        // 3. Dijeda (Paused)
+        // 3. Sedang Berjalan / Antre (Processing) - Prioritaskan agar background worker aktif langsung tercermin di UI
+        if ($job?->status === 'berjalan' || $job?->status === 'ekstraksi' || $job?->status === 'antre' || $status === 'processing') {
+            if ($job?->jeda_diminta) {
+                return ['status' => 'processing', 'label' => 'Menjeda...'];
+            }
+            return ['status' => 'processing', 'label' => 'Memproses'];
+        }
+
+        // 4. Dijeda (Paused)
         if ($job?->status === 'jeda' || $status === 'paused') {
             return ['status' => 'jeda', 'label' => 'Dijeda'];
         }
 
-        // 3b. Menunggu Jeda (Sedang menyelesaikan halaman aktif sebelum jeda)
-        if ($job?->jeda_diminta) {
-            return ['status' => 'processing', 'label' => 'Menjeda...'];
-        }
-
-        // 4. Gagal (Failed)
+        // 5. Gagal (Failed)
         if ($job?->status === 'gagal' || $status === 'failed') {
             return ['status' => 'failed', 'label' => 'Gagal'];
-        }
-
-        // 5. Sedang Berjalan / Antre (Processing)
-        if ($job?->status === 'berjalan' || $job?->status === 'ekstraksi' || $job?->status === 'antre' || $status === 'processing') {
-            return ['status' => 'processing', 'label' => 'Memproses'];
         }
 
         return [

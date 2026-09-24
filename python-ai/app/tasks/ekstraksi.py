@@ -121,6 +121,15 @@ def ekstrak_dokumen_task(
         halaman_total = len(doc)
 
     penyimpanan.mulai_job(document_id, halaman_total)
+    try:
+        from app.database import update_document_status
+        update_document_status(
+            document_id,
+            status="processing",
+            total_pages=halaman_total,
+        )
+    except Exception:
+        logger.exception("Gagal sinkron status processing dokumen %d ke tabel documents", document_id)
 
     def ocr(nomor: int, petunjuk: str | None) -> tuple[str, str | None]:
         # Catatan format dioper masuk dan keluar. Melewatkannya tidak
