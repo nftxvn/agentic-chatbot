@@ -445,8 +445,9 @@ def _get_semantic_intent_vectors() -> dict[str, list]:
     global _SEMANTIC_INTENT_VECTORS
     if _SEMANTIC_INTENT_VECTORS is None:
         try:
-            from app.services.embedding_service import get_embedding_model
-            model = get_embedding_model()
+            import numpy as np
+            from app.services.embedding_service import encode_texts
+
             anchors = {
                 "chitchat": [
                     "halo hai assalamu'alaikum selamat pagi siang sore malam saleuem",
@@ -460,10 +461,16 @@ def _get_semantic_intent_vectors() -> dict[str, list]:
                     "kita sedang bicara apa tadi tentang apa rangkuman percakapan",
                 ],
             }
-            _SEMANTIC_INTENT_VECTORS = {
-                intent: [model.encode(t, normalize_embeddings=True) for t in texts]
-                for intent, texts in anchors.items()
-            }
+            res_map = {}
+            for intent, texts in anchors.items():
+                embs = encode_texts(texts)
+                norm_embs = []
+                for e in embs:
+                    arr = np.array(e, dtype=float)
+                    norm = np.linalg.norm(arr)
+                    norm_embs.append(arr / (norm if norm > 0 else 1.0))
+                res_map[intent] = norm_embs
+            _SEMANTIC_INTENT_VECTORS = res_map
         except Exception as e:
             logger.warning("Gagal memuat semantic intent vectors: %s", e)
             _SEMANTIC_INTENT_VECTORS = {}
@@ -479,10 +486,15 @@ def classify_semantic_intent(query: str) -> str | None:
     if not vectors_map:
         return None
     try:
-        from app.services.embedding_service import get_embedding_model
         import numpy as np
-        model = get_embedding_model()
-        vq = model.encode(query, normalize_embeddings=True)
+        from app.services.embedding_service import encode_query
+
+        raw_vq = encode_query(query)
+        if not raw_vq:
+            return None
+        arr_vq = np.array(raw_vq, dtype=float)
+        norm_v = np.linalg.norm(arr_vq)
+        vq = arr_vq / (norm_v if norm_v > 0 else 1.0)
 
         scores = {}
         for intent, anchors in vectors_map.items():

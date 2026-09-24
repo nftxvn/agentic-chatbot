@@ -34,8 +34,14 @@ def _get_redis():
 
     if _redis_client is None:
         try:
-            import redis
-            redis_url = os.getenv("CHAT_REDIS_URL", "redis://localhost:6379/2")
+            redis_url = os.getenv("CHAT_REDIS_URL")
+            if not redis_url:
+                broker = settings.CELERY_BROKER_URL
+                if broker and broker.startswith("redis://"):
+                    base = broker.rsplit("/", 1)[0]
+                    redis_url = f"{base}/2"
+                else:
+                    redis_url = "redis://localhost:6379/2"
             _redis_client = redis.from_url(redis_url, socket_timeout=2.0, socket_connect_timeout=2.0)
             _redis_client.ping()
             _redis_available = True

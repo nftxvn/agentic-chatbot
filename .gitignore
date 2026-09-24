@@ -43,13 +43,11 @@ python-ai/.pytest_cache/
 python-ai/.mypy_cache/
 python-ai/.ruff_cache/
 
-# Data & vector DB (generated, tidak di-commit)
+# Data & vector DB
 python-ai/data/
 python-ai/chroma_db/
 python-ai/chromadb/
 python-ai/uploads/
-python-ai/*.db
-python-ai/*.sqlite3
 python-ai/hasil
 python-ai/test_files
 

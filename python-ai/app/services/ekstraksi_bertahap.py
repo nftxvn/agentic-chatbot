@@ -450,8 +450,18 @@ class PenyimpananMySQL:
             )
 
     def minta_jeda(self, document_id: int) -> None:
+        """
+        Setel jeda pada ekstraksi. Bila semua halaman sudah terkumpul (halaman_selesai >= halaman_total),
+        langsung alihkan ke 'menunggu_koreksi' agar UI tidak menggantung pada status 'Menjeda...'.
+        """
         sql = text(
-            "UPDATE ekstraksi_job SET jeda_diminta = 1 WHERE document_id = :id"
+            "UPDATE ekstraksi_job SET "
+            "  jeda_diminta = 0, "
+            "  status = CASE "
+            "    WHEN halaman_selesai >= halaman_total AND halaman_total > 0 THEN 'menunggu_koreksi' "
+            "    ELSE 'jeda' "
+            "  END "
+            "WHERE document_id = :id"
         )
         with self._engine.begin() as conn:
             conn.execute(sql, {"id": document_id})

@@ -61,6 +61,7 @@ services:
       - MYSQL_PASSWORD=agentic_password
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - CHAT_REDIS_URL=redis://redis:6379/2
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - LLM_MODEL_NAME=${LLM_MODEL_NAME:-qwen2.5:7b}
       - VISION_MODEL_NAME=${VISION_MODEL_NAME:-qwen2.5vl:7b-q4_K_M}
@@ -72,6 +73,7 @@ services:
     volumes:
       - ./python-ai:/app
       - ./laravel-admin/storage:/var/www/html/storage
+      - hf_cache:/root/.cache/huggingface
       - /app/__pycache__
     networks:
       - agentic-net
@@ -117,6 +119,7 @@ services:
     volumes:
       - ./python-ai:/app
       - ./laravel-admin/storage:/var/www/html/storage
+      - hf_cache:/root/.cache/huggingface
       - /app/__pycache__
     networks:
       - agentic-net
@@ -214,6 +217,7 @@ services:
 volumes:
   mysql_data:
   redis_data:
+  hf_cache:
 
 networks:
   agentic-net:

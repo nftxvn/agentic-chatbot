@@ -392,13 +392,18 @@ async def simpan_ke_korpus(
         )
 
     if keadaan["status"] == eb.STATUS_BERJALAN:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "Ekstraksi masih berjalan. Tunggu sampai selesai atau jeda "
-                "dulu sebelum menyimpan ke korpus."
-            ),
-        )
+        total = keadaan.get("halaman_total") or 0
+        selesai = keadaan.get("halaman_selesai") or 0
+        if total > 0 and selesai >= total:
+            _penyimpanan().catat_status(document_id, eb.STATUS_MENUNGGU_KOREKSI)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Ekstraksi masih berjalan. Tunggu sampai selesai atau jeda "
+                    "dulu sebelum menyimpan ke korpus."
+                ),
+            )
 
     from app.tasks.ekstraksi import potong_dan_embed_task
 

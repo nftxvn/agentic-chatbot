@@ -17,6 +17,8 @@ from app.config import settings
 from app.database import get_chatbot_rag_config, get_document_names_by_ids
 from app.services import session_memory, tool_router
 from app.services.embedding_service import (
+    encode_query,
+    encode_texts,
     get_chroma_collection,
     get_embedding_model,
     get_reranker_model,
@@ -434,7 +436,6 @@ def _retrieve_context(
     Returns:
         Tuple (context_text, sources_text) atau (context_text, sources_text, debug_chunks).
     """
-    model = get_embedding_model()
     collection = get_chroma_collection()
     reranker = get_reranker_model()
 
@@ -526,9 +527,7 @@ def _retrieve_context(
         aggregated_rrf: dict[str, float] = {}
 
         for q in queries:
-            # show_progress_bar=False: query hanya satu kalimat, bilah kemajuannya
-            # tidak berguna dan mengotori log tiap kali ada pertanyaan masuk.
-            q_embedding = model.encode(q, show_progress_bar=False).tolist()
+            q_embedding = encode_query(q)
 
             # 1a. Vector Search (Semantic) — hasil SUDAH terurut dari yang paling relevan
             try:
