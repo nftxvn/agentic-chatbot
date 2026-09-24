@@ -407,6 +407,13 @@ async def simpan_ke_korpus(
 
     from app.tasks.ekstraksi import potong_dan_embed_task
 
+    _penyimpanan().catat_kemajuan_embed(
+        document_id,
+        status="embedding",
+        persen=5,
+        pesan="Mengirim permintaan embedding ke antrean worker...",
+    )
+
     custom_kwargs = opsi.dict() if opsi else None
     potong_dan_embed_task.delay(document_id, custom_kwargs)
     logger.info("Dokumen %d: potong & embed diantrekan dengan opsi %s", document_id, custom_kwargs)

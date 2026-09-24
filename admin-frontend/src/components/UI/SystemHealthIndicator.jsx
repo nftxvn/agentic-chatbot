@@ -139,7 +139,7 @@ export function SystemHealthIndicator({ isSidebar = false, isCollapsed = false }
           <button
             type="button"
             onClick={toggleDropdown}
-            className={`w-full py-1 text-center font-mono font-black text-xs cursor-pointer select-none bg-transparent border-0 outline-none hover:opacity-80 transition-opacity ${
+            className={`w-full py-1 text-center font-mono font-black text-xs cursor-pointer select-none bg-[var(--bg-input)] rounded-lg border border-[var(--border-color)] outline-none hover:bg-[var(--bg-card)] transition-colors ${
               isAllHealthy ? 'text-emerald-500' : 'text-rose-500'
             }`}
             title={`Status Layanan AI (${activeCount}/4)`}
@@ -150,7 +150,7 @@ export function SystemHealthIndicator({ isSidebar = false, isCollapsed = false }
           <button
             type="button"
             onClick={toggleDropdown}
-            className="w-full flex items-center justify-between py-1 text-xs cursor-pointer select-none group bg-transparent border-0 outline-none hover:opacity-80 transition-opacity"
+            className="w-full flex items-center justify-between px-2.5 py-1 text-xs cursor-pointer select-none group bg-[var(--bg-input)] rounded-lg border border-[var(--border-color)] outline-none hover:bg-[var(--bg-card)] transition-colors"
             title="Klik untuk melihat rincian subsistem AI"
           >
             <span className="font-semibold text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] text-xs">
@@ -169,7 +169,7 @@ export function SystemHealthIndicator({ isSidebar = false, isCollapsed = false }
         <button
           type="button"
           onClick={toggleDropdown}
-          className={`font-mono font-black text-xs bg-transparent border-0 cursor-pointer ${
+          className={`font-mono font-black text-xs px-2 py-0.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] cursor-pointer ${
             isAllHealthy ? 'text-emerald-500' : 'text-rose-500'
           }`}
         >

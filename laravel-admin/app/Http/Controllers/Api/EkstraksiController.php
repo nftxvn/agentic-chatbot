@@ -120,31 +120,38 @@ class EkstraksiController extends Controller
     {
         $document = Document::findOrFail($id);
 
-        // Try reading from MySQL table first for instant response
+        // 1. Coba baca status live dari Python AI (termasuk progress embedding Redis & OCR)
+        $result = $this->client->statusEkstraksi($document->id);
+
+        if ($result['success'] && !empty($result['data'])) {
+            return response()->json([
+                'success' => true,
+                'data'    => $result['data'],
+            ]);
+        }
+
+        // 2. Fallback baca dari tabel MySQL ekstraksi_job
         $job = EkstraksiJob::where('document_id', $document->id)->first();
 
         if ($job) {
+            $total = (int) ($document->total_pages ?: ($job->halaman_total != 100 ? $job->halaman_total : 0));
+            $done  = (int) ($job->halaman_total != 100 ? $job->halaman_selesai : ($document->processed_pages ?? 0));
+            if ($total > 0 && $done > $total) {
+                $done = $total;
+            }
+            $persen = $total > 0 ? min(100, (int) round(($done / $total) * 100)) : 0;
+
             return response()->json([
                 'success' => true,
                 'data'    => [
                     'document_id'     => $document->id,
                     'status'          => $job->status,
                     'jeda_diminta'    => (bool) $job->jeda_diminta,
-                    'halaman_total'   => (int) $job->halaman_total,
-                    'halaman_selesai' => (int) $job->halaman_selesai,
-                    'persen'          => $job->persen,
+                    'halaman_total'   => $total,
+                    'halaman_selesai' => $done,
+                    'persen'          => $persen,
                     'pesan'           => $job->pesan,
                 ],
-            ]);
-        }
-
-        // Fallback to Python AI endpoint
-        $result = $this->client->statusEkstraksi($document->id);
-
-        if ($result['success']) {
-            return response()->json([
-                'success' => true,
-                'data'    => $result['data'],
             ]);
         }
 

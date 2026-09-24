@@ -612,7 +612,7 @@ console.log("Rujukan:", data.sources);`
                 </div>
               </div>
 
-              <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-input)]/40 focus-within:border-sky-500 focus-within:ring-1 focus-within:ring-sky-500 transition-all overflow-hidden">
+              <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-input)] focus-within:border-sky-500 focus-within:ring-1 focus-within:ring-sky-500 transition-all overflow-hidden">
                 <textarea
                   ref={promptTextareaRef}
                   name="rag_system_prompt"
@@ -620,7 +620,7 @@ console.log("Rujukan:", data.sources);`
                   onChange={handleChange}
                   rows={14}
                   placeholder="Tuliskan system prompt di sini..."
-                  className="w-full p-3 font-mono text-xs leading-relaxed bg-transparent text-[var(--text-primary)] focus:outline-none resize-y"
+                  className="w-full p-3 font-mono text-xs leading-relaxed bg-[var(--bg-input)] text-[var(--text-primary)] focus:outline-none resize-y"
                   spellCheck={false}
                 />
               </div>

@@ -46,6 +46,6 @@ class EkstraksiJob extends Model
             return 0;
         }
 
-        return (int) round(($this->halaman_selesai / $this->halaman_total) * 100);
+        return (int) min(100, round(($this->halaman_selesai / $this->halaman_total) * 100));
     }
 }

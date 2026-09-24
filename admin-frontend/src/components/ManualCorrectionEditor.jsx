@@ -65,11 +65,12 @@ export default function ManualCorrectionEditor({
   const [parentOverlap, setParentOverlap] = useState(200);
   const [childSize, setChildSize] = useState(300);
   const [childOverlap, setChildOverlap] = useState(50);
-  const [activeChunkTab, setActiveChunkTab] = useState("anak"); // 'anak' | 'induk'
-  const [showChunkSettings, setShowChunkSettings] = useState(false);
+  const [activeChunkTab, setActiveChunkTab] = useState("all"); // 'all' | 'child' | 'parent'
+  const [selectedParentFilter, setSelectedParentFilter] = useState(null); // number (parent_index) | null
+  const [highlightedParentIndex, setHighlightedParentIndex] = useState(null);
+  const [expandedParents, setExpandedParents] = useState(new Set());
   const [chunkSearchQuery, setChunkSearchQuery] = useState("");
-  const [chunkPage, setChunkPage] = useState(1);
-  const CHUNKS_PER_PAGE = 20;
+  const [copiedContext, setCopiedContext] = useState(false);
 
   // Save to Corpus State
   const [isSavingCorpus, setIsSavingCorpus] = useState(false);
@@ -472,11 +473,23 @@ export default function ManualCorrectionEditor({
         strategy: customParams.strategy ?? selectedPreset,
       };
       const res = await documentsApi.getChunksPreview(documentId, payload);
-      setChunksPreview(res.data || null);
+      const data = res.data || null;
+      setChunksPreview(data);
     } catch (err) {
       alert(err.response?.data?.message || "Gagal memuat pratinjau potongan.");
     } finally {
       setLoadingChunks(false);
+    }
+  };
+
+  const handleCopyText = (text) => {
+    if (!text) return;
+    try {
+      navigator.clipboard.writeText(text);
+      setCopiedContext(true);
+      setTimeout(() => setCopiedContext(false), 2000);
+    } catch (e) {
+      console.warn("Gagal menyalin teks:", e);
     }
   };
 
@@ -1178,14 +1191,14 @@ export default function ManualCorrectionEditor({
                     spellCheck={false}
                     autoCorrect="off"
                     autoCapitalize="off"
-                    className="w-full flex-1 p-4 text-xs font-mono bg-transparent !border-0 text-[var(--text-primary)] focus:!outline-none focus:!ring-0 focus:!shadow-none resize-none leading-relaxed overscroll-contain !rounded-none !shadow-none"
+                    className="w-full flex-1 p-4 text-xs font-mono bg-[var(--bg-card)] !border-0 text-[var(--text-primary)] focus:!outline-none focus:!ring-0 focus:!shadow-none resize-none leading-relaxed overscroll-contain !rounded-none !shadow-none"
                     style={{ overscrollBehavior: "contain", borderRadius: 0, border: "none", outline: "none", boxShadow: "none" }}
                   />
                 );
               })()}
 
               {/* Editor Footer Info */}
-              <div className="flex justify-between items-center px-4 py-2 border-t border-[var(--border-color)]/60 text-xs text-[var(--text-muted)] font-mono shrink-0">
+              <div className="flex justify-between items-center px-4 py-2 border-t border-[var(--border-color)] text-xs text-[var(--text-muted)] font-mono shrink-0">
                 <span>
                   {currentText.length.toLocaleString("id-ID")} karakter
                 </span>
@@ -1392,511 +1405,666 @@ export default function ManualCorrectionEditor({
         </button>
       </div>
 
-      {/* Modal Pratinjau & Kustomisasi Potongan (Chunks) */}
+      {/* Modal Pratinjau & Kustomisasi Potongan (Chunks) - Compact Version */}
       {showChunksModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-4">
-          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-2 sm:p-4">
+          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl w-full max-w-6xl max-h-[90vh] h-[85vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
             {/* Modal Header */}
-            <div className="px-5 py-3.5 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-input)] rounded-t-2xl shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-sky-500 flex items-center justify-center shrink-0">
-                  <svg
-                    className="w-4.5 h-4.5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 6h16M4 10h16M4 14h16M4 18h16"
-                    />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-sm sm:text-base font-bold text-[var(--text-primary)] flex items-center">
-                    <span>Pratinjau & Kustomisasi Potongan (Chunks)</span>
-                    <InfoTooltip
-                      align="left"
-                      position="bottom"
-                      content="Sesuaikan parameter pemecahan teks dokumen menjadi potongan vektor semantik (induk & anak)."
-                    />
-                  </h3>
-                </div>
-              </div>
-
+            <div className="px-4 py-2.5 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-input)] shrink-0">
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowChunkSettings(!showChunkSettings)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
-                    showChunkSettings
-                      ? "bg-sky-500 text-white border-sky-500 shadow-xs"
-                      : "bg-[var(--bg-card)] border-[var(--border-color)] text-[var(--text-primary)] hover:border-sky-500 hover:text-sky-500"
-                  }`}
-                >
-                  <svg
-                    className="w-3.5 h-3.5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
-                    />
-                  </svg>
-                  <span>
-                    {showChunkSettings
-                      ? "Sembunyikan Pengaturan"
-                      : "Kustomisasi Parameter"}
+                <span className="font-bold text-sm text-[var(--text-primary)]">
+                  Kustomisasi Potongan (Chunks)
+                </span>
+                {chunksPreview && chunksPreview.siap && (
+                  <span className="text-xs text-[var(--text-muted)] font-mono">
+                    • {chunksPreview.jumlah_induk} Induk, {chunksPreview.jumlah_anak} Anak
                   </span>
-                </button>
-
-                <button
-                  onClick={() => setShowChunksModal(false)}
-                  className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1.5 rounded-xl hover:bg-[var(--bg-card)] transition-colors cursor-pointer"
-                  title="Tutup"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
+                )}
               </div>
+
+              <button
+                onClick={() => setShowChunksModal(false)}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 rounded-lg hover:bg-[var(--bg-card)] transition-colors cursor-pointer"
+                title="Tutup"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
 
-            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
-              {/* 1. TOP SUMMARY BAR: Document Title, Total Induk, Total Anak */}
-              {chunksPreview && chunksPreview.siap && (
-                <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-2xl text-xs shadow-xs">
-                  <div className="flex items-center gap-2.5 font-bold text-sky-500 flex-1 min-w-[280px]">
-                    <svg
-                      className="w-4 h-4 shrink-0 text-sky-500"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                      />
-                    </svg>
-                    <span className="text-[var(--text-muted)] font-medium">
-                      Dokumen:
-                    </span>
-                    <span className="text-[var(--text-primary)] font-bold truncate">
-                      {chunksPreview.judul || "Dokumen Tanpa Judul"}
-                    </span>
+            {/* Modal Body: 2-Sided Split (Side Kiri: Kustomisasi, Side Kanan: Preview ChromaDB) */}
+            <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden bg-[var(--bg-card)]">
+              {/* SIDE KIRI: Parameter & Strategi */}
+              <div className="w-full lg:w-[320px] xl:w-[340px] shrink-0 border-b lg:border-b-0 lg:border-r border-[var(--border-color)] flex flex-col min-h-0 bg-[var(--bg-card)]">
+                <div className="flex-1 overflow-y-auto p-3.5 space-y-3.5">
+                  {/* 1. Preset Selector (Compact 4-Button Grid) */}
+                  <div className="space-y-1.5">
+                    <div className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                      Preset Strategi
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {CHUNK_PRESETS.map((preset) => {
+                        const isActive = selectedPreset === preset.id;
+                        return (
+                          <button
+                            key={preset.id}
+                            onClick={() => handleSelectPreset(preset.id)}
+                            className={`px-2.5 py-1.5 rounded-lg border text-left transition-all cursor-pointer ${
+                              isActive
+                                ? "bg-sky-500 text-white border-sky-500 shadow-xs"
+                                : "bg-[var(--bg-input)] border-[var(--border-color)] text-[var(--text-primary)] hover:border-sky-500"
+                            }`}
+                          >
+                            <div className="font-bold text-xs truncate">{preset.label}</div>
+                            <div className={`text-[10px] font-mono ${isActive ? "text-sky-100" : "text-[var(--text-muted)]"}`}>
+                              {preset.parentSize} / {preset.childSize} kar
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2.5 text-xs font-bold text-[var(--text-primary)] shrink-0">
-                    <span className="bg-[var(--bg-card)] px-3 py-1.5 rounded-xl border border-[var(--border-color)] flex items-center gap-1.5 shadow-xs">
-                      <span className="text-[var(--text-muted)] font-medium">
-                        Induk:
-                      </span>
-                      <span className="text-sky-500 font-bold">
-                        {chunksPreview.jumlah_induk}
-                      </span>
-                    </span>
-                    <span className="bg-[var(--bg-card)] px-3 py-1.5 rounded-xl border border-[var(--border-color)] flex items-center gap-1.5 shadow-xs">
-                      <span className="text-[var(--text-muted)] font-medium">
-                        Anak:
-                      </span>
-                      <span className="text-emerald-500 font-bold">
-                        {chunksPreview.jumlah_anak}
-                      </span>
-                    </span>
-                  </div>
-                </div>
-              )}
 
-              {/* 2. Preset Selector Banner */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-[var(--text-secondary)] uppercase tracking-wider text-xs">
-                    Preset Parameter Potongan:
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {CHUNK_PRESETS.map((preset) => {
-                    const isActive = selectedPreset === preset.id;
-                    return (
+                  {/* 2. Sliders (Compact 2 Groups) */}
+                  <div className="p-3 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl space-y-2.5">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-[var(--text-primary)]">
+                        Ukuran Karakter
+                      </span>
                       <button
-                        key={preset.id}
-                        onClick={() => handleSelectPreset(preset.id)}
-                        className={`p-2.5 rounded-xl border text-left transition-all ${
-                          isActive
-                            ? "bg-[var(--bg-card)] border-sky-500 text-sky-500 shadow-xs"
-                            : "bg-[var(--bg-input)] border-[var(--border-color)] text-[var(--text-primary)] hover:border-sky-500"
-                        }`}
+                        onClick={() => fetchChunksPreviewWithParams()}
+                        disabled={loadingChunks}
+                        className="px-2.5 py-1 rounded-lg text-xs font-bold bg-sky-500 text-white shadow-xs hover:bg-sky-600 disabled:opacity-50 transition-all flex items-center gap-1 cursor-pointer"
                       >
-                        <div className="font-bold text-xs">{preset.label}</div>
-                        <div className="text-xs text-[var(--text-muted)] mt-0.5 line-clamp-1">
-                          {preset.desc}
-                        </div>
-                        <div className="text-xs font-mono text-[var(--text-secondary)] mt-1 opacity-80">
-                          {preset.parentSize} / {preset.childSize} kar
-                        </div>
+                        <svg
+                          className={`w-3 h-3 ${loadingChunks ? "spin" : ""}`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        <span>Hitung Ulang</span>
                       </button>
-                    );
-                  })}
+                    </div>
+
+                    {/* Induk: Size & Overlap */}
+                    <div className="space-y-1 bg-[var(--bg-card)] p-2.5 rounded-lg border border-[var(--border-color)]">
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="font-bold text-[var(--text-primary)]">Induk (LLM)</span>
+                        <span className="font-mono text-sky-500 font-bold">
+                          {parentSize} kar <span className="text-[var(--text-muted)] font-normal text-[10px]">(ov: {parentOverlap})</span>
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="range"
+                          min="500"
+                          max="3500"
+                          step="50"
+                          value={parentSize}
+                          title={`Ukuran Induk: ${parentSize}`}
+                          onChange={(e) => {
+                            setSelectedPreset("custom");
+                            setParentSize(Number(e.target.value));
+                          }}
+                          className="w-full accent-sky-500 cursor-pointer h-1.5"
+                        />
+                        <input
+                          type="range"
+                          min="50"
+                          max="500"
+                          step="10"
+                          value={parentOverlap}
+                          title={`Overlap Induk: ${parentOverlap}`}
+                          onChange={(e) => {
+                            setSelectedPreset("custom");
+                            setParentOverlap(Number(e.target.value));
+                          }}
+                          className="w-full accent-sky-500 cursor-pointer h-1.5"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Anak: Size & Overlap */}
+                    <div className="space-y-1 bg-[var(--bg-card)] p-2.5 rounded-lg border border-[var(--border-color)]">
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="font-bold text-[var(--text-primary)]">Anak (Vektor)</span>
+                        <span className="font-mono text-emerald-500 font-bold">
+                          {childSize} kar <span className="text-[var(--text-muted)] font-normal text-[10px]">(ov: {childOverlap})</span>
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="range"
+                          min="150"
+                          max="800"
+                          step="25"
+                          value={childSize}
+                          title={`Ukuran Anak: ${childSize}`}
+                          onChange={(e) => {
+                            setSelectedPreset("custom");
+                            setChildSize(Number(e.target.value));
+                          }}
+                          className="w-full accent-emerald-500 cursor-pointer h-1.5"
+                        />
+                        <input
+                          type="range"
+                          min="20"
+                          max="250"
+                          step="10"
+                          value={childOverlap}
+                          title={`Overlap Anak: ${childOverlap}`}
+                          onChange={(e) => {
+                            setSelectedPreset("custom");
+                            setChildOverlap(Number(e.target.value));
+                          }}
+                          className="w-full accent-emerald-500 cursor-pointer h-1.5"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3. Ringkasan Parameter */}
+                  <div className="p-3 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl space-y-2 text-xs">
+                    <div className="font-bold text-[var(--text-secondary)] uppercase tracking-wider text-[11px]">
+                      Ringkasan Potongan
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                      <div className="p-2 bg-[var(--bg-input)] rounded-lg border border-[var(--border-color)]">
+                        <div className="text-[10px] text-[var(--text-muted)]">Potongan Induk</div>
+                        <div className="text-sm font-bold text-sky-500">{chunksPreview?.induk?.length || 0}</div>
+                      </div>
+                      <div className="p-2 bg-[var(--bg-input)] rounded-lg border border-[var(--border-color)]">
+                        <div className="text-[10px] text-[var(--text-muted)]">Potongan Anak</div>
+                        <div className="text-sm font-bold text-emerald-500">{chunksPreview?.anak?.length || 0}</div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* 3. Collapsible Advanced Slider Panel */}
-              {showChunkSettings && (
-                <div className="p-4 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-2xl space-y-4 animate-in fade-in duration-150 shadow-inner">
-                  <div className="flex justify-between items-center border-b border-[var(--border-color)] pb-2">
-                    <span className="font-bold text-xs text-[var(--text-primary)]">
-                      Pengaturan Kustom Ukuran Karakter
-                    </span>
-                    <button
-                      onClick={() => fetchChunksPreviewWithParams()}
-                      disabled={loadingChunks}
-                      className="px-3 py-1 rounded-lg text-xs font-bold bg-sky-500 text-white shadow-xs hover:bg-sky-600 disabled:opacity-50 transition-all flex items-center gap-1.5"
-                    >
-                      <svg
-                        className="w-3.5 h-3.5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                        />
-                      </svg>
-                      <span>Terapkan & Hitung Ulang</span>
-                    </button>
-                  </div>
+              {/* SIDE KANAN: Preview Live (Identik dengan ChromaDB Chunks) */}
+              {(() => {
+                const parentChunks = chunksPreview?.induk || [];
+                const childChunks = chunksPreview?.anak || [];
+                const totalChunksCount = parentChunks.length + childChunks.length;
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-                    {/* 1. Parent Chunk Size Slider */}
-                    <div className="space-y-1.5 bg-[var(--bg-card)] p-3 rounded-xl border border-[var(--border-color)]">
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="font-bold text-[var(--text-primary)] flex items-center">
-                          <span>1. Ukuran Induk</span>
-                          <InfoTooltip
-                            align="left"
-                            content="Ukuran teks konteks utuh yang disimpan untuk disuntikkan ke prompt AI saat pertanyaan cocok."
-                          />
-                        </span>
-                        <span className="font-mono font-bold text-sky-500">
-                          {parentSize} kar.
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="500"
-                        max="3500"
-                        step="50"
-                        value={parentSize}
-                        onChange={(e) => {
-                          setSelectedPreset("custom");
-                          setParentSize(Number(e.target.value));
-                        }}
-                        className="w-full accent-sky-500 cursor-pointer"
-                      />
-                    </div>
+                let activeTabChunks = parentChunks.length > 0 ? parentChunks : childChunks;
+                if (activeChunkTab === "child") {
+                  activeTabChunks = selectedParentFilter !== null
+                    ? childChunks.filter(
+                        (c) => (c.parent_index ?? c.metadata?.parent_index) === selectedParentFilter
+                      )
+                    : childChunks;
+                } else if (activeChunkTab === "parent") {
+                  activeTabChunks = parentChunks;
+                } else if (activeChunkTab === "all") {
+                  activeTabChunks = parentChunks.length > 0 ? parentChunks : childChunks;
+                }
 
-                    {/* 2. Parent Overlap Slider */}
-                    <div className="space-y-1.5 bg-[var(--bg-card)] p-3 rounded-xl border border-[var(--border-color)]">
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="font-bold text-[var(--text-primary)] flex items-center">
-                          <span>2. Overlap Induk</span>
-                          <InfoTooltip
-                            align="left"
-                            content="Jumlah karakter berulang antar potongan induk agar tidak ada konteks terputus di batas potongan."
-                          />
-                        </span>
-                        <span className="font-mono font-bold text-sky-500">
-                          {parentOverlap} kar.
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="50"
-                        max="500"
-                        step="10"
-                        value={parentOverlap}
-                        onChange={(e) => {
-                          setSelectedPreset("custom");
-                          setParentOverlap(Number(e.target.value));
-                        }}
-                        className="w-full accent-sky-500 cursor-pointer"
-                      />
-                    </div>
+                const filteredChunks = activeTabChunks.filter((c) => {
+                  if (!chunkSearchQuery.trim()) return true;
+                  const searchLower = chunkSearchQuery.toLowerCase();
+                  const textStr = (c.teks || c.text || "").toLowerCase();
+                  const pageStr = String(c.halaman || c.page_number || c.metadata?.page_number || "");
+                  const matchesSelf = textStr.includes(searchLower) || pageStr.includes(searchLower);
 
-                    {/* 3. Child Chunk Size Slider */}
-                    <div className="space-y-1.5 bg-[var(--bg-card)] p-3 rounded-xl border border-[var(--border-color)]">
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="font-bold text-[var(--text-primary)] flex items-center">
-                          <span>3. Ukuran Anak</span>
-                          <InfoTooltip
-                            align="left"
-                            content="Ukuran potongan granular yang di-embedding ke database vektor ChromaDB untuk pencarian cepat."
-                          />
-                        </span>
-                        <span className="font-mono font-bold text-sky-500">
-                          {childSize} kar.
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="150"
-                        max="800"
-                        step="25"
-                        value={childSize}
-                        onChange={(e) => {
-                          setSelectedPreset("custom");
-                          setChildSize(Number(e.target.value));
-                        }}
-                        className="w-full accent-sky-500 cursor-pointer"
-                      />
-                    </div>
+                  if (matchesSelf) return true;
 
-                    {/* 4. Child Overlap Slider */}
-                    <div className="space-y-1.5 bg-[var(--bg-card)] p-3 rounded-xl border border-[var(--border-color)]">
-                      <div className="flex justify-between items-center text-xs">
-                        <span className="font-bold text-[var(--text-primary)] flex items-center">
-                          <span>4. Overlap Anak</span>
-                          <InfoTooltip
-                            align="left"
-                            content="Jumlah karakter berulang antar potongan anak untuk menjaga kesinambungan semantik vektor."
-                          />
-                        </span>
-                        <span className="font-mono font-bold text-sky-500">
-                          {childOverlap} kar.
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min="20"
-                        max="250"
-                        step="10"
-                        value={childOverlap}
-                        onChange={(e) => {
-                          setSelectedPreset("custom");
-                          setChildOverlap(Number(e.target.value));
-                        }}
-                        className="w-full accent-sky-500 cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
+                  if (activeChunkTab === "all" && parentChunks.length > 0) {
+                    const pIndex = c.chunk_index !== undefined ? c.chunk_index : parentChunks.indexOf(c);
+                    const children = childChunks.filter(
+                      (ch) => (ch.parent_index ?? ch.metadata?.parent_index) === pIndex
+                    );
+                    return children.some((ch) =>
+                      (ch.teks || ch.text || "").toLowerCase().includes(searchLower)
+                    );
+                  }
 
-              {/* Status Indicator & Tabs */}
-              {loadingChunks ? (
-                <div className="py-14 text-center text-xs text-[var(--text-muted)] italic flex flex-col items-center justify-center gap-2.5">
-                  <span className="spin w-6 h-6 border-2 border-[var(--border-color)] border-t-sky-500 rounded-full" />
-                  <span>Menghitung ulang potongan dokumen...</span>
-                </div>
-              ) : !chunksPreview || !chunksPreview.siap ? (
-                <div className="py-12 text-center text-xs text-[var(--text-muted)] italic">
-                  Belum ada teks halaman yang diekstrak.
-                </div>
-              ) : (
-                <div className="space-y-3.5">
-                  {/* Tabs & Search Bar */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-color)] pb-3">
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => {
-                          setActiveChunkTab("anak");
-                          setChunkPage(1);
-                        }}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                          activeChunkTab === "anak"
-                            ? "bg-sky-500 text-white shadow-xs"
-                            : "bg-[var(--bg-input)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                        }`}
-                      >
-                        Potongan Anak ({chunksPreview.anak?.length || 0})
-                      </button>
-                      <button
-                        onClick={() => {
-                          setActiveChunkTab("induk");
-                          setChunkPage(1);
-                        }}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                          activeChunkTab === "induk"
-                            ? "bg-sky-500 text-white shadow-xs"
-                            : "bg-[var(--bg-input)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                        }`}
-                      >
-                        Potongan Induk ({chunksPreview.induk?.length || 0})
-                      </button>
-                    </div>
+                  return false;
+                });
 
-                    {/* Live Chunk Search Input */}
-                    <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
-                      <input
-                        type="text"
-                        placeholder="Cari kata kunci dalam chunk..."
-                        value={chunkSearchQuery}
-                        onChange={(e) => {
-                          setChunkSearchQuery(e.target.value);
-                          setChunkPage(1);
-                        }}
-                        className="w-full pl-8 pr-3 py-1.5 text-xs bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] focus:outline-none focus:border-sky-500 transition-colors"
-                      />
-                      <svg
-                        className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                      {chunkSearchQuery && (
+                return (
+                  <div className="flex-1 flex flex-col min-h-0 bg-[var(--bg-card)] overflow-hidden">
+                    {/* Toolbar Atas: Chroma-Style Tabs, Dropdown Filter, Search */}
+                    <div className="px-3.5 py-2.5 border-b border-[var(--border-color)] bg-[var(--bg-input)] flex flex-wrap items-center justify-between gap-2.5 shrink-0">
+                      {/* Tabs Bar */}
+                      <div className="flex items-center gap-1 bg-[var(--bg-card)] p-1 rounded-xl border border-[var(--border-color)] text-xs font-bold">
                         <button
                           onClick={() => {
-                            setChunkSearchQuery("");
-                            setChunkPage(1);
+                            setActiveChunkTab("all");
+                            setSelectedParentFilter(null);
                           }}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                          className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                            activeChunkTab === "all"
+                              ? "bg-sky-500 text-white shadow-2xs"
+                              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                          }`}
                         >
-                          ✕
+                          Semua ({totalChunksCount})
                         </button>
+                        <button
+                          onClick={() => {
+                            setActiveChunkTab("child");
+                          }}
+                          className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                            activeChunkTab === "child"
+                              ? "bg-sky-500 text-white shadow-2xs"
+                              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                          }`}
+                        >
+                          Potongan Anak ({childChunks.length})
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveChunkTab("parent");
+                            setSelectedParentFilter(null);
+                          }}
+                          className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                            activeChunkTab === "parent"
+                              ? "bg-sky-500 text-white shadow-2xs"
+                              : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                          }`}
+                        >
+                          Potongan Induk ({parentChunks.length})
+                        </button>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* Parent Dropdown Filter (Tab Anak) */}
+                        {activeChunkTab === "child" && parentChunks.length > 0 && (
+                          <div className="relative inline-flex items-center">
+                            <select
+                              value={selectedParentFilter ?? "all"}
+                              onChange={(e) => {
+                                setSelectedParentFilter(
+                                  e.target.value === "all" ? null : parseInt(e.target.value, 10)
+                                );
+                              }}
+                              className="text-xs bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-sky-500 cursor-pointer font-medium"
+                            >
+                              <option value="all">
+                                Semua Induk ({childChunks.length} Anak)
+                              </option>
+                              {parentChunks.map((p, pIdx) => {
+                                const pIndex = p.chunk_index !== undefined ? p.chunk_index : pIdx;
+                                const cCount = childChunks.filter(
+                                  (ch) => (ch.parent_index ?? ch.metadata?.parent_index) === pIndex
+                                ).length;
+                                const pageN = p.halaman || p.page_number || p.metadata?.page_number || "-";
+                                return (
+                                  <option key={pIdx} value={pIndex}>
+                                    Induk #{pIndex + 1} (Hal. {pageN} • {cCount} anak)
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </div>
+                        )}
+
+                        {/* Search Input */}
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={chunkSearchQuery}
+                            onChange={(e) => setChunkSearchQuery(e.target.value)}
+                            placeholder="Cari chunk..."
+                            className="px-3 pr-7 py-1.5 rounded-xl text-xs bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-sky-500 w-36 sm:w-44"
+                          />
+                          {chunkSearchQuery && (
+                            <button
+                              onClick={() => setChunkSearchQuery("")}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Content Area */}
+                    <div className="flex-1 overflow-y-auto p-3.5 space-y-3.5">
+                      {/* Active Filter Banner (Tab Anak) */}
+                      {activeChunkTab === "child" && selectedParentFilter !== null && (
+                        <div className="flex items-center justify-between px-3.5 py-2.5 bg-[var(--bg-card)] border-2 border-sky-500 rounded-xl text-xs text-[var(--text-primary)] font-semibold shadow-sm animate-in fade-in duration-150">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-6 h-6 rounded-lg bg-sky-500 text-white flex items-center justify-center shrink-0 shadow-2xs font-bold">
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                              </svg>
+                            </div>
+                            <span className="text-[var(--text-primary)]">
+                              Memfilter potongan anak dari:{" "}
+                              <strong className="text-sky-500 font-bold px-2 py-0.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)]">
+                                Induk #{selectedParentFilter + 1}
+                              </strong>{" "}
+                              ({activeTabChunks.length} potongan anak)
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => setSelectedParentFilter(null)}
+                            className="px-3 py-1.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] hover:border-sky-500 hover:text-sky-500 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                          >
+                            <span>✕ Tampilkan Semua Anak</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {loadingChunks ? (
+                        <div className="py-12 text-center text-xs text-[var(--text-muted)] italic flex flex-col items-center justify-center gap-2.5">
+                          <span className="spin w-5 h-5 border-2 border-[var(--border-color)] border-t-sky-500 rounded-full" />
+                          <span>Menghitung ulang potongan...</span>
+                        </div>
+                      ) : !chunksPreview || !chunksPreview.siap ? (
+                        <div className="py-12 text-center text-xs text-[var(--text-muted)] italic">
+                          Belum ada teks halaman yang diekstrak.
+                        </div>
+                      ) : filteredChunks.length === 0 ? (
+                        <div className="py-10 text-center text-xs text-[var(--text-muted)] italic">
+                          Tidak ada chunk yang cocok dengan kriteria filter.
+                        </div>
+                      ) : activeChunkTab === "all" && parentChunks.length > 0 ? (
+                        /* TAB SEMUA: HIERARCHICAL ACCORDION VIEW */
+                        <div className="space-y-3.5">
+                          {filteredChunks.map((c, idx) => {
+                            const parentIdx = c.chunk_index !== undefined ? c.chunk_index : idx;
+                            const isExpanded = expandedParents.has(parentIdx);
+                            const relatedChildren = childChunks.filter(
+                              (ch) => (ch.parent_index ?? ch.metadata?.parent_index) === parentIdx
+                            );
+                            const rawText = c.teks || c.text || "";
+                            const pageNum = c.halaman || c.page_number || c.metadata?.page_number || "-";
+
+                            return (
+                              <div
+                                key={parentIdx}
+                                className={`rounded-xl border transition-all shadow-xs overflow-hidden ${
+                                  isExpanded
+                                    ? "border-sky-500 bg-[var(--bg-card)] ring-1 ring-sky-500/30"
+                                    : "border-[var(--border-color)] bg-[var(--bg-input)] hover:border-sky-500"
+                                }`}
+                              >
+                                {/* Accordion Header */}
+                                <div
+                                  onClick={() => {
+                                    setExpandedParents((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(parentIdx)) next.delete(parentIdx);
+                                      else next.add(parentIdx);
+                                      return next;
+                                    });
+                                  }}
+                                  className="p-3 sm:p-3.5 flex items-center justify-between gap-2.5 cursor-pointer select-none bg-[var(--bg-input)] hover:bg-[var(--bg-card)] transition-colors"
+                                >
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <div className="w-6 h-6 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] flex items-center justify-center text-[var(--text-secondary)] shrink-0">
+                                      <svg
+                                        className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                                          isExpanded ? "rotate-180 text-sky-500" : ""
+                                        }`}
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                      >
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                      </svg>
+                                    </div>
+
+                                    <span className="px-2.5 py-0.5 rounded-full bg-[var(--bg-card)] text-sky-500 font-bold border border-sky-500 text-xs shrink-0">
+                                      Induk #{parentIdx + 1}
+                                    </span>
+
+                                    <span className="font-bold text-[var(--text-primary)] text-xs truncate">
+                                      Hal. {pageNum}
+                                    </span>
+
+                                    <span className="text-xs font-mono text-[var(--text-muted)] hidden sm:inline">
+                                      ({rawText.length} karakter)
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <span className="px-2.5 py-0.5 rounded-full bg-sky-500 text-white font-bold text-xs shadow-2xs">
+                                      {relatedChildren.length} Potongan Anak
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Accordion Body */}
+                                {isExpanded && (
+                                  <div className="p-3.5 sm:p-4 border-t border-[var(--border-color)] bg-[var(--bg-card)] animate-in fade-in duration-150">
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+                                      {/* Kolom 1: Konteks Induk (Master Context AI) */}
+                                      <div className="space-y-2">
+                                        <div className="flex items-center justify-between gap-2 pb-1">
+                                          <div className="flex items-center gap-2">
+                                            <div className="w-5 h-5 rounded-md bg-sky-500 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+                                              1
+                                            </div>
+                                            <div>
+                                              <div className="text-xs font-bold text-sky-500">
+                                                Konteks Rujukan AI (Induk)
+                                              </div>
+                                              <div className="text-[11px] text-[var(--text-muted)]">
+                                                Teks lengkap yang dibaca AI saat menjawab pertanyaan
+                                              </div>
+                                            </div>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <span className="font-mono text-xs text-[var(--text-muted)] shrink-0">
+                                              {rawText.length} kar.
+                                            </span>
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleCopyText(rawText);
+                                              }}
+                                              className="px-2 py-0.5 rounded-md bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-sky-500 hover:text-sky-500 text-[11px] font-bold transition-colors cursor-pointer"
+                                            >
+                                              {copiedContext ? "✓ Tersalin" : "Salin Teks"}
+                                            </button>
+                                          </div>
+                                        </div>
+
+                                        <div className="p-3 bg-[var(--bg-input)] rounded-xl border border-sky-500 text-xs font-mono leading-relaxed whitespace-pre-wrap select-text max-h-72 overflow-y-auto">
+                                          {rawText}
+                                        </div>
+                                      </div>
+
+                                      {/* Kolom 2: Potongan Vektor Anak (ChromaDB Search) */}
+                                      <div className="space-y-2">
+                                        <div className="flex items-center justify-between gap-2 pb-1">
+                                          <div className="flex items-center gap-2">
+                                            <div className="w-5 h-5 rounded-md bg-emerald-500 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+                                              2
+                                            </div>
+                                            <div>
+                                              <div className="text-xs font-bold text-emerald-500">
+                                                Potongan Pencarian Vektor (Anak)
+                                              </div>
+                                              <div className="text-[11px] text-[var(--text-muted)]">
+                                                Potongan terindeks di ChromaDB untuk pencarian pertanyaan
+                                              </div>
+                                            </div>
+                                          </div>
+                                          <span className="text-[11px] font-mono text-[var(--text-muted)] shrink-0">
+                                            {relatedChildren.length === 1 ? "1 bagian utuh" : `${relatedChildren.length} bagian`}
+                                          </span>
+                                        </div>
+
+                                        <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                                          {relatedChildren.length === 0 ? (
+                                            <div className="py-6 text-center text-xs text-[var(--text-muted)] italic bg-[var(--bg-input)] rounded-xl border border-[var(--border-color)]">
+                                              Tidak ada potongan anak untuk induk ini.
+                                            </div>
+                                          ) : (
+                                            relatedChildren.map((ch, chIdx) => {
+                                              const chText = ch.teks || ch.text || "";
+                                              const chPage = ch.halaman || ch.page_number || ch.metadata?.page_number || "-";
+                                              return (
+                                                <div
+                                                  key={chIdx}
+                                                  className="p-3 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl text-xs space-y-1.5 shadow-2xs hover:border-emerald-500 transition-all"
+                                                >
+                                                  <div className="flex justify-between items-center text-xs font-mono text-[var(--text-muted)]">
+                                                    <div className="flex items-center gap-2">
+                                                      <span className="px-2 py-0.5 rounded-md bg-[var(--bg-card)] text-emerald-500 font-bold border border-emerald-500 text-xs">
+                                                        Bagian {chIdx + 1} dari {relatedChildren.length}
+                                                      </span>
+                                                      <span className="font-bold text-[var(--text-primary)]">
+                                                        Hal. {chPage}
+                                                      </span>
+                                                    </div>
+                                                    <span className="text-xs text-[var(--text-muted)]">
+                                                      {chText.length} kar.
+                                                    </span>
+                                                  </div>
+                                                  <p className="whitespace-pre-wrap text-[var(--text-primary)] font-mono leading-relaxed bg-[var(--bg-card)] p-2.5 rounded-lg border border-[var(--border-color)] select-text">
+                                                    {chText}
+                                                  </p>
+                                                </div>
+                                              );
+                                            })
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        /* TAB ANAK & INDUK: GRID CARDS VIEW */
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                          {filteredChunks.map((c, idx) => {
+                            const isParent = activeChunkTab === "parent";
+                            const rawText = c.teks || c.text || "";
+                            const pageNum = c.halaman || c.page_number || c.metadata?.page_number || "-";
+                            const parentIdx = isParent
+                              ? (c.chunk_index !== undefined ? c.chunk_index : idx)
+                              : (c.parent_index !== undefined ? c.parent_index : c.metadata?.parent_index);
+                            const relatedChildren = isParent
+                              ? childChunks.filter(
+                                  (ch) => (ch.parent_index ?? ch.metadata?.parent_index) === parentIdx
+                                )
+                              : [];
+                            const isHighlighted = isParent && highlightedParentIndex === parentIdx;
+
+                            return (
+                              <div
+                                key={idx}
+                                className={`p-3.5 rounded-xl transition-all flex flex-col justify-between space-y-2.5 shadow-sm ${
+                                  isHighlighted
+                                    ? "bg-[var(--bg-card)] border-2 border-sky-500 shadow-md"
+                                    : "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-sky-500"
+                                }`}
+                              >
+                                <div className="flex justify-between items-center text-xs font-mono text-[var(--text-muted)] pb-2 border-b border-[var(--border-color)]">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-[var(--text-primary)]">
+                                      Hal. {pageNum}
+                                    </span>
+                                    <span className="text-xs text-[var(--text-muted)]">
+                                      ({rawText.length} kar.)
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5">
+                                    {isHighlighted && (
+                                      <span className="text-xs px-2.5 py-0.5 rounded-full bg-sky-500 text-white font-bold animate-pulse">
+                                        Induk Terpilih
+                                      </span>
+                                    )}
+
+                                    {isParent ? (
+                                      <span className="px-2.5 py-0.5 rounded-full bg-[var(--bg-card)] text-sky-500 font-bold border border-sky-500 text-xs">
+                                        Induk #{parentIdx + 1}
+                                      </span>
+                                    ) : parentIdx !== undefined ? (
+                                      <button
+                                        onClick={() => {
+                                          setSelectedParentFilter(null);
+                                          setActiveChunkTab("parent");
+                                          setHighlightedParentIndex(parentIdx);
+                                        }}
+                                        className="px-2.5 py-1 rounded-lg bg-[var(--bg-card)] text-sky-500 hover:bg-sky-500 hover:text-white font-bold border border-sky-500 text-xs transition-all flex items-center gap-1.5 cursor-pointer group shadow-2xs"
+                                        title={`Klik untuk melihat Potongan Induk #${parentIdx + 1}`}
+                                      >
+                                        <span>Induk #{parentIdx + 1}</span>
+                                        <svg
+                                          className="w-3 h-3 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          viewBox="0 0 24 24"
+                                        >
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                        </svg>
+                                      </button>
+                                    ) : (
+                                      <span className="px-2 py-0.5 rounded-md bg-[var(--bg-card)] text-[var(--text-secondary)] font-mono font-medium border border-[var(--border-color)] text-xs">
+                                        Chunk #{idx + 1}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <p className="whitespace-pre-wrap break-words text-xs text-[var(--text-primary)] leading-relaxed font-sans flex-1 max-h-56 overflow-y-auto pr-1 select-text">
+                                  {rawText}
+                                </p>
+
+                                {isParent ? (
+                                  <div className="pt-2 border-t border-[var(--border-color)] flex justify-between items-center text-xs">
+                                    <span className="font-mono text-[var(--text-muted)]">
+                                      {relatedChildren.length} potongan anak
+                                    </span>
+                                    <button
+                                      onClick={() => {
+                                        setSelectedParentFilter(parentIdx);
+                                        setActiveChunkTab("child");
+                                        setHighlightedParentIndex(null);
+                                      }}
+                                      disabled={relatedChildren.length === 0}
+                                      className="px-3 py-1.5 rounded-lg text-xs font-bold bg-sky-500 text-white hover:bg-sky-600 disabled:opacity-40 disabled:pointer-events-none transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                                      title={`Lihat potongan anak dari Induk #${parentIdx + 1}`}
+                                    >
+                                      <span>Lihat {relatedChildren.length} Potongan Anak</span>
+                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                                      </svg>
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="pt-2 border-t border-[var(--border-color)] flex justify-between items-center text-xs font-mono text-[var(--text-muted)]">
+                                    <span>Potongan Anak #{idx + 1}</span>
+                                    <span>{rawText.length} kar.</span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
                   </div>
-
-                  {/* Filtered Chunks & Pagination Calculation */}
-                  {(() => {
-                    const rawList =
-                      activeChunkTab === "anak"
-                        ? chunksPreview.anak || []
-                        : chunksPreview.induk || [];
-
-                    const filteredList = chunkSearchQuery.trim()
-                      ? rawList.filter((c) => {
-                          const t = (c.teks || c.text || "").toLowerCase();
-                          const p = String(c.halaman || c.page_number || c.metadata?.page_number || "");
-                          const q = chunkSearchQuery.toLowerCase();
-                          return t.includes(q) || p.includes(q);
-                        })
-                      : rawList;
-
-                    const totalChunkPages = Math.max(1, Math.ceil(filteredList.length / CHUNKS_PER_PAGE));
-                    const safeChunkPage = Math.min(chunkPage, totalChunkPages);
-                    const currentPageChunks = filteredList.slice(
-                      (safeChunkPage - 1) * CHUNKS_PER_PAGE,
-                      safeChunkPage * CHUNKS_PER_PAGE
-                    );
-
-                    return (
-                      <>
-                        {/* Pagination Status Top Bar */}
-                        <div className="flex items-center justify-between text-xs text-[var(--text-muted)] px-1">
-                          <span>
-                            Menampilkan {currentPageChunks.length} dari {filteredList.length} potongan
-                            {chunkSearchQuery ? ` (difilter dari ${rawList.length})` : ""}
-                          </span>
-                          {totalChunkPages > 1 && (
-                            <div className="flex items-center gap-1.5 font-mono text-xs">
-                              <button
-                                onClick={() => setChunkPage((p) => Math.max(1, p - 1))}
-                                disabled={safeChunkPage <= 1}
-                                className="px-2 py-0.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[var(--border-color)] cursor-pointer"
-                              >
-                                ‹ Sebelumnya
-                              </button>
-                              <span className="font-bold text-[var(--text-primary)]">
-                                {safeChunkPage} / {totalChunkPages}
-                              </span>
-                              <button
-                                onClick={() => setChunkPage((p) => Math.min(totalChunkPages, p + 1))}
-                                disabled={safeChunkPage >= totalChunkPages}
-                                className="px-2 py-0.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[var(--border-color)] cursor-pointer"
-                              >
-                                Berikutnya ›
-                              </button>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Chunks List Display (Paginated for Ultra Smooth 60 FPS) */}
-                        <div className="max-h-[380px] overflow-y-auto space-y-2.5 pr-1.5">
-                          {currentPageChunks.length === 0 ? (
-                            <div className="py-12 text-center text-xs text-[var(--text-muted)] italic">
-                              Tidak ada potongan yang cocok dengan kata kunci "{chunkSearchQuery}".
-                            </div>
-                          ) : (
-                            currentPageChunks.map((c, idx) => {
-                              const globalIdx = (safeChunkPage - 1) * CHUNKS_PER_PAGE + idx;
-                              const rawText = c.teks || c.text || "";
-                              const pageNum =
-                                c.halaman ||
-                                c.page_number ||
-                                c.metadata?.page_number ||
-                                "-";
-                              return (
-                                <div
-                                  key={globalIdx}
-                                  className="p-3.5 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl text-xs space-y-1.5 shadow-xs hover:border-sky-500 transition-all"
-                                >
-                                  <div className="flex justify-between items-center text-xs font-mono text-[var(--text-muted)]">
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-bold text-[var(--text-primary)]">
-                                        Hal. {pageNum}
-                                      </span>
-                                      <span className="text-xs text-[var(--text-muted)]">
-                                        ({rawText.length} karakter)
-                                      </span>
-                                    </div>
-                                    <span className="px-2 py-0.5 rounded-full bg-[var(--bg-card)] text-sky-500 font-bold border border-[var(--border-color)] text-xs">
-                                      #{globalIdx + 1}{" "}
-                                      {activeChunkTab === "anak"
-                                        ? c.parent_index !== undefined
-                                          ? `(Induk #${c.parent_index + 1})`
-                                          : ""
-                                        : ""}
-                                    </span>
-                                  </div>
-                                  <p className="whitespace-pre-wrap text-[var(--text-primary)] font-mono leading-relaxed bg-[var(--bg-card)] p-2.5 rounded-lg border border-[var(--border-color)] select-text">
-                                    {rawText}
-                                  </p>
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-              )}
+                );
+              })()}
             </div>
 
             {/* Modal Bottom Footer */}
-            <div className="px-5 py-3 border-t border-[var(--border-color)] bg-[var(--bg-input)] rounded-b-2xl flex flex-wrap justify-between items-center gap-2 shrink-0">
-              <span className="text-xs text-[var(--text-muted)]">
-                Parameter tersimpan akan digunakan saat menekan tombol simpan
-                korpus.
+            <div className="px-4 py-2.5 border-t border-[var(--border-color)] bg-[var(--bg-input)] flex justify-between items-center gap-2 shrink-0">
+              <span className="text-[11px] text-[var(--text-muted)]">
+                Parameter tersimpan digunakan saat Simpan ke ChromaDB.
               </span>
 
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setShowChunksModal(false)}
-                  className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--border-color)] transition-colors cursor-pointer"
+                  className="px-3 py-1 rounded-lg text-xs font-bold bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--border-color)] transition-colors cursor-pointer"
                 >
                   Tutup
                 </button>
@@ -1909,7 +2077,7 @@ export default function ManualCorrectionEditor({
                       ? `Tombol aktif setelah seluruh halaman selesai diekstrak (${pages.length}/${maxPages})`
                       : "Simpan ke ChromaDB"
                   }
-                  className="px-4 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-sky-500 via-sky-500 to-sky-300 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white shadow-md transition-all duration-200 hover:scale-[1.01] disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                  className="px-3.5 py-1 rounded-lg text-xs font-bold bg-sky-500 text-white hover:bg-sky-600 shadow-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 cursor-pointer"
                 >
                   {isSavingCorpus ? (
                     <>
@@ -1918,18 +2086,8 @@ export default function ManualCorrectionEditor({
                     </>
                   ) : (
                     <>
-                      <svg
-                        className="w-3.5 h-3.5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M5 13l4 4L19 7"
-                        />
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
                       <span>Simpan ke ChromaDB</span>
                     </>

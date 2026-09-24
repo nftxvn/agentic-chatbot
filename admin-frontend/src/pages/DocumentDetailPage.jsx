@@ -22,6 +22,10 @@ export default function DocumentDetailPage() {
   const [showChunks, setShowChunks] = useState(false);
   const [loadingChunks, setLoadingChunks] = useState(false);
   const [chunkSearch, setChunkSearch] = useState("");
+  const [chromaActiveTab, setChromaActiveTab] = useState("all"); // 'all' | 'child' | 'parent'
+  const [selectedChromaParentId, setSelectedChromaParentId] = useState(null);
+  const [highlightedChromaChunkId, setHighlightedChromaChunkId] = useState(null);
+  const [expandedChromaParents, setExpandedChromaParents] = useState(new Set());
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showReplaceModal, setShowReplaceModal] = useState(false);
@@ -737,14 +741,53 @@ export default function DocumentDetailPage() {
   const currentStatus = document.ekstraksi_status || document.status;
   const statusBadge = getStatusBadge(currentStatus);
 
-  const filteredChunks = chunks.filter((c) => {
+  const parentChunks = chunks.filter(
+    (c) => c.metadata?.chunk_type === "parent" || String(c.id).includes("_parent_")
+  );
+  const childChunks = chunks.filter(
+    (c) => c.metadata?.chunk_type === "child" || String(c.id).includes("_child_")
+  );
+
+  let activeTabChunks = chunks;
+  if (chromaActiveTab === "child") {
+    activeTabChunks = selectedChromaParentId
+      ? childChunks.filter(
+          (c) =>
+            c.metadata?.parent_id === selectedChromaParentId ||
+            String(c.metadata?.parent_id).endsWith(`_${selectedChromaParentId}`)
+        )
+      : childChunks;
+  } else if (chromaActiveTab === "parent") {
+    activeTabChunks = parentChunks;
+  } else if (chromaActiveTab === "all") {
+    activeTabChunks = parentChunks.length > 0 ? parentChunks : chunks;
+  }
+
+  const filteredChunks = activeTabChunks.filter((c) => {
     if (!chunkSearch.trim()) return true;
     const searchLower = chunkSearch.toLowerCase();
-    return (
+    const matchesSelf =
       c.text?.toLowerCase().includes(searchLower) ||
       String(c.id).toLowerCase().includes(searchLower) ||
-      String(c.metadata?.page_number).includes(searchLower)
-    );
+      String(c.metadata?.page_number).includes(searchLower);
+
+    if (matchesSelf) return true;
+
+    if (chromaActiveTab === "all" && parentChunks.length > 0) {
+      const pIndex = c.metadata?.chunk_index;
+      const children = childChunks.filter(
+        (ch) =>
+          ch.metadata?.parent_id === c.id ||
+          (pIndex !== undefined && ch.metadata?.parent_id === `doc_${document.id}_parent_${pIndex}`)
+      );
+      return children.some(
+        (ch) =>
+          ch.text?.toLowerCase().includes(searchLower) ||
+          String(ch.id).toLowerCase().includes(searchLower)
+      );
+    }
+
+    return false;
   });
 
   return (
@@ -1365,7 +1408,7 @@ export default function DocumentDetailPage() {
 
                   <button
                     onClick={handleDelete}
-                    className="w-full py-2.5 px-3.5 rounded-xl bg-red-500 border border-red-500 text-white hover:bg-transparent hover:text-red-500 font-bold text-xs transition-all flex items-center justify-center gap-2 hover:scale-[1.01]"
+                    className="w-full py-2.5 px-3.5 rounded-xl bg-red-500 border border-red-500 text-white hover:bg-red-600 font-bold text-xs transition-all flex items-center justify-center gap-2 hover:scale-[1.01]"
                   >
                     <svg
                       className="w-4 h-4"
@@ -1391,8 +1434,8 @@ export default function DocumentDetailPage() {
 
       {/* FULL-WIDTH: ChromaDB Vector Chunks */}
       <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm overflow-hidden">
-        <div className="p-4 sm:p-5 border-b border-[var(--border-color)] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[var(--bg-input)]">
-          <div className="flex items-center gap-3">
+        <div className="p-4 sm:p-5 border-b border-[var(--border-color)] flex flex-col md:flex-row md:items-center justify-between gap-3 bg-[var(--bg-input)]">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] flex items-center justify-center text-sky-500 shrink-0">
               <svg
                 className="w-4.5 h-4.5"
@@ -1413,29 +1456,121 @@ export default function DocumentDetailPage() {
                 ChromaDB Chunks
               </h2>
               {chunks.length > 0 && (
-                <span className="px-2 py-0.5 rounded-md text-xs font-medium bg-[var(--bg-input)] text-[var(--text-secondary)] border border-[var(--border-color)]">
-                  {chunks.length} Chunks
+                <span className="px-2 py-0.5 rounded-md text-xs font-medium bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-color)]">
+                  {chunks.length} Vektor
                 </span>
               )}
             </div>
+
+            {/* Chroma Tabs */}
+            {showChunks && chunks.length > 0 && (
+              <div className="flex items-center gap-1 bg-[var(--bg-card)] p-1 rounded-xl border border-[var(--border-color)] text-xs font-bold">
+                <button
+                  onClick={() => {
+                    setChromaActiveTab("all");
+                    setSelectedChromaParentId(null);
+                  }}
+                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                    chromaActiveTab === "all"
+                      ? "bg-sky-500 text-white shadow-2xs"
+                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  }`}
+                >
+                  Semua ({chunks.length})
+                </button>
+                <button
+                  onClick={() => {
+                    setChromaActiveTab("child");
+                  }}
+                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                    chromaActiveTab === "child"
+                      ? "bg-sky-500 text-white shadow-2xs"
+                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  }`}
+                >
+                  Potongan Anak ({childChunks.length})
+                </button>
+                <button
+                  onClick={() => {
+                    setChromaActiveTab("parent");
+                    setSelectedChromaParentId(null);
+                  }}
+                  className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                    chromaActiveTab === "parent"
+                      ? "bg-sky-500 text-white shadow-2xs"
+                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  }`}
+                >
+                  Potongan Induk ({parentChunks.length})
+                </button>
+              </div>
+            )}
           </div>
 
-          <div className="flex items-center gap-2.5">
-            {showChunks && chunks.length > 0 && (
-              <input
-                type="text"
-                value={chunkSearch}
-                onChange={(e) => setChunkSearch(e.target.value)}
-                placeholder="Cari chunk..."
-                className="px-3 py-1.5 rounded-xl text-xs bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-sky-500 w-44 sm:w-56"
-              />
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Parent Dropdown Filter (Tab Anak) */}
+            {showChunks && chromaActiveTab === "child" && parentChunks.length > 0 && (
+              <div className="relative inline-flex items-center">
+                <select
+                  value={selectedChromaParentId ?? "all"}
+                  onChange={(e) => {
+                    setSelectedChromaParentId(
+                      e.target.value === "all" ? null : e.target.value
+                    );
+                  }}
+                  className="text-xs bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-sky-500 cursor-pointer font-medium"
+                >
+                  <option value="all">
+                    Semua Induk ({childChunks.length} Anak)
+                  </option>
+                  {parentChunks.map((p, pIdx) => {
+                    const pIndex =
+                      p.metadata?.chunk_index !== undefined
+                        ? p.metadata.chunk_index
+                        : pIdx;
+                    const pId = p.id || `doc_${document.id}_parent_${pIndex}`;
+                    const cCount = childChunks.filter(
+                      (ch) =>
+                        ch.metadata?.parent_id === pId ||
+                        ch.metadata?.parent_id === `doc_${document.id}_parent_${pIndex}`
+                    ).length;
+                    const pageN = p.metadata?.page_number || "-";
+                    return (
+                      <option key={pId || pIdx} value={pId}>
+                        Induk #{pIndex + 1} (Hal. {pageN} • {cCount} anak)
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
             )}
+
+            {showChunks && chunks.length > 0 && (
+              <div className="relative">
+                <input
+                  type="text"
+                  value={chunkSearch}
+                  onChange={(e) => setChunkSearch(e.target.value)}
+                  placeholder="Cari chunk..."
+                  className="px-3 pr-7 py-1.5 rounded-xl text-xs bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-sky-500 w-40 sm:w-48"
+                />
+                {chunkSearch && (
+                  <button
+                    onClick={() => setChunkSearch("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            )}
+
             <button
               onClick={() => {
                 setShowChunks(!showChunks);
                 if (!showChunks && chunks.length === 0) fetchChunks();
               }}
-              className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] hover:border-sky-500 hover:text-sky-500 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+              className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] hover:border-sky-500 hover:text-sky-500 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
             >
               <svg
                 className={`w-3.5 h-3.5 text-inherit transition-transform duration-200 ${showChunks ? "rotate-180 text-sky-500" : ""}`}
@@ -1456,11 +1591,43 @@ export default function DocumentDetailPage() {
         </div>
 
         {showChunks && (
-          <div className="p-5">
+          <div className="p-4 sm:p-5">
+            {/* Active Parent Filter Banner (ChromaDB Solid Opaque High-Contrast) */}
+            {chromaActiveTab === "child" && selectedChromaParentId && (
+              <div className="flex items-center justify-between px-3.5 py-2.5 bg-[var(--bg-card)] border-2 border-sky-500 rounded-xl text-xs text-[var(--text-primary)] font-semibold shadow-sm animate-in fade-in duration-150 mb-3.5">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-6 h-6 rounded-lg bg-sky-500 text-white flex items-center justify-center shrink-0 shadow-2xs font-bold">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                    </svg>
+                  </div>
+                  <span className="text-[var(--text-primary)]">
+                    Memfilter potongan anak dari:{" "}
+                    <strong className="text-sky-500 font-bold px-2 py-0.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)]">
+                      {(() => {
+                        const m = String(selectedChromaParentId).match(/_parent_(\d+)$/);
+                        if (m) return `Induk #${parseInt(m[1], 10) + 1}`;
+                        const foundIdx = parentChunks.findIndex((p) => p.id === selectedChromaParentId);
+                        if (foundIdx !== -1) return `Induk #${foundIdx + 1}`;
+                        return selectedChromaParentId;
+                      })()}
+                    </strong>{" "}
+                    ({activeTabChunks.length} potongan anak)
+                  </span>
+                </div>
+                <button
+                  onClick={() => setSelectedChromaParentId(null)}
+                  className="px-3 py-1.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] hover:border-sky-500 hover:text-sky-500 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                >
+                  <span>✕ Tampilkan Semua Anak</span>
+                </button>
+              </div>
+            )}
+
             {loadingChunks ? (
               <div className="py-12 text-center text-xs text-[var(--text-muted)] italic flex flex-col items-center justify-center gap-2.5">
                 <span className="spin w-5 h-5 border-2 border-[var(--border-color)] border-t-sky-500 rounded-full" />
-                <span>Memuat data vektor...</span>
+                <span>Memuat data vektor dari ChromaDB...</span>
               </div>
             ) : chunks.length === 0 ? (
               <div className="py-12 text-center text-xs text-[var(--text-muted)] italic">
@@ -1468,34 +1635,319 @@ export default function DocumentDetailPage() {
               </div>
             ) : filteredChunks.length === 0 ? (
               <div className="py-10 text-center text-xs text-[var(--text-muted)] italic">
-                Tidak ada chunk yang cocok dengan &quot;{chunkSearch}&quot;.
+                Tidak ada chunk yang cocok dengan kriteria filter.
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
-                {filteredChunks.map((c, idx) => (
-                  <div
-                    key={c.id || idx}
-                    className="p-3.5 rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-sky-500 transition-all flex flex-col justify-between space-y-2.5 shadow-sm"
-                  >
-                    <div className="flex justify-between items-center text-xs font-mono text-[var(--text-muted)] pb-2 border-b border-[var(--border-color)]">
-                      <span className="font-bold text-[var(--text-primary)]">
-                        Chunk #{idx + 1}
-                      </span>
-                      <span className="px-2 py-0.5 rounded-md bg-[var(--bg-card)] text-[var(--text-secondary)] font-mono font-medium border border-[var(--border-color)] text-xs">
-                        Hal. {c.metadata?.page_number || "-"}
-                      </span>
-                    </div>
+                {filteredChunks.map((c, idx) => {
+                  const isParent =
+                    c.metadata?.chunk_type === "parent" || String(c.id).includes("_parent_");
+                  const isChild =
+                    c.metadata?.chunk_type === "child" || String(c.id).includes("_child_");
 
-                    <p className="whitespace-pre-wrap break-words text-xs text-[var(--text-primary)] leading-relaxed font-sans flex-1 max-h-56 overflow-y-auto pr-1">
-                      {c.text}
-                    </p>
+                  // Parent chunk index / label
+                  const parentIdx =
+                    c.metadata?.chunk_index !== undefined
+                      ? c.metadata.chunk_index
+                      : (() => {
+                          const m = String(c.id).match(/_parent_(\d+)$/);
+                          return m ? parseInt(m[1], 10) : idx;
+                        })();
 
-                    <div className="pt-2 border-t border-[var(--border-color)] flex justify-between items-center text-xs font-mono text-[var(--text-muted)]">
-                      <span>ID: {String(c.id).substring(0, 14)}...</span>
-                      <span>{c.text?.length || 0} kar.</span>
+                  // Child's parent index
+                  let childParentNumber = null;
+                  if (isChild) {
+                    if (c.metadata?.parent_index !== undefined) {
+                      childParentNumber = c.metadata.parent_index + 1;
+                    } else if (c.metadata?.parent_id) {
+                      const m = String(c.metadata.parent_id).match(/_parent_(\d+)$/);
+                      if (m) childParentNumber = parseInt(m[1], 10) + 1;
+                    }
+                  }
+
+                  // Related children for parent chunk
+                  const relatedChildren = isParent
+                    ? childChunks.filter(
+                        (ch) =>
+                          ch.metadata?.parent_id === c.id ||
+                          ch.metadata?.parent_id === `doc_${document.id}_parent_${parentIdx}`
+                      )
+                    : [];
+
+                  // TAB 1: CHROMA HIERARCHICAL ACCORDION (TAB "Semua")
+                  if (chromaActiveTab === "all" && parentChunks.length > 0) {
+                    const pKey = c.id || `doc_${document.id}_parent_${parentIdx}`;
+                    const isExpanded =
+                      expandedChromaParents.has(pKey) || expandedChromaParents.has(c.id);
+
+                    return (
+                      <div
+                        key={c.id || idx}
+                        className={`col-span-1 md:col-span-2 xl:col-span-3 rounded-xl border transition-all shadow-xs overflow-hidden ${
+                          isExpanded
+                            ? "border-sky-500 bg-[var(--bg-card)] ring-1 ring-sky-500/30"
+                            : "border-[var(--border-color)] bg-[var(--bg-input)] hover:border-sky-500"
+                        }`}
+                      >
+                        {/* Accordion Header */}
+                        <div
+                          onClick={() => {
+                            setExpandedChromaParents((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(pKey) || next.has(c.id)) {
+                                next.delete(pKey);
+                                next.delete(c.id);
+                              } else {
+                                next.add(pKey);
+                                next.add(c.id);
+                              }
+                              return next;
+                            });
+                          }}
+                          className="p-3 sm:p-3.5 flex items-center justify-between gap-2.5 cursor-pointer select-none bg-[var(--bg-input)] hover:bg-[var(--bg-card)] transition-colors"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-6 h-6 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] flex items-center justify-center text-[var(--text-secondary)] shrink-0">
+                              <svg
+                                className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                                  isExpanded ? "rotate-180 text-sky-500" : ""
+                                }`}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M19 9l-7 7-7-7"
+                                />
+                              </svg>
+                            </div>
+
+                            <span className="px-2.5 py-0.5 rounded-full bg-[var(--bg-card)] text-sky-500 font-bold border border-sky-500 text-xs shrink-0">
+                              Induk #{parentIdx + 1}
+                            </span>
+
+                            <span className="font-bold text-[var(--text-primary)] text-xs truncate">
+                              Hal. {c.metadata?.page_number || "-"}
+                            </span>
+
+                            <span className="text-xs font-mono text-[var(--text-muted)] hidden sm:inline">
+                              ({c.text?.length || 0} karakter)
+                            </span>
+
+                            <span className="text-xs font-mono text-[var(--text-muted)] hidden md:inline truncate max-w-[160px]">
+                              • ID: {String(c.id).substring(0, 16)}...
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="px-2.5 py-0.5 rounded-full bg-sky-500 text-white font-bold text-xs shadow-2xs">
+                              {relatedChildren.length} Potongan Anak
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Accordion Body */}
+                        {isExpanded && (
+                          <div className="p-3.5 sm:p-4 border-t border-[var(--border-color)] bg-[var(--bg-card)] animate-in fade-in duration-150">
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+                              {/* Kolom 1: Konteks Induk (Master Context AI) */}
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between gap-2 pb-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-5 h-5 rounded-md bg-sky-500 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+                                      1
+                                    </div>
+                                    <div>
+                                      <div className="text-xs font-bold text-sky-500">
+                                        Konteks Rujukan AI (Induk)
+                                      </div>
+                                      <div className="text-[11px] text-[var(--text-muted)]">
+                                        Teks lengkap yang dibaca AI saat menjawab pertanyaan
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <span className="font-mono text-xs text-[var(--text-muted)] shrink-0">
+                                    {c.text?.length || 0} kar.
+                                  </span>
+                                </div>
+
+                                <div className="p-3 bg-[var(--bg-input)] rounded-xl border border-sky-500 text-xs font-mono leading-relaxed whitespace-pre-wrap select-text max-h-72 overflow-y-auto">
+                                  {c.text}
+                                </div>
+                              </div>
+
+                              {/* Kolom 2: Potongan Vektor Anak (ChromaDB Search) */}
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between gap-2 pb-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-5 h-5 rounded-md bg-emerald-500 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+                                      2
+                                    </div>
+                                    <div>
+                                      <div className="text-xs font-bold text-emerald-500">
+                                        Potongan Pencarian Vektor (Anak)
+                                      </div>
+                                      <div className="text-[11px] text-[var(--text-muted)]">
+                                        Potongan terindeks di ChromaDB untuk pencarian pertanyaan
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <span className="text-[11px] font-mono text-[var(--text-muted)] shrink-0">
+                                    {relatedChildren.length === 1 ? "1 bagian utuh" : `${relatedChildren.length} bagian`}
+                                  </span>
+                                </div>
+
+                                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                                  {relatedChildren.length === 0 ? (
+                                    <div className="py-6 text-center text-xs text-[var(--text-muted)] italic bg-[var(--bg-input)] rounded-xl border border-[var(--border-color)]">
+                                      Tidak ada potongan anak untuk induk ini.
+                                    </div>
+                                  ) : (
+                                    relatedChildren.map((ch, chIdx) => (
+                                      <div
+                                        key={ch.id || chIdx}
+                                        className="p-3 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl text-xs space-y-1.5 shadow-2xs hover:border-emerald-500 transition-all"
+                                      >
+                                        <div className="flex justify-between items-center text-xs font-mono text-[var(--text-muted)]">
+                                          <div className="flex items-center gap-2">
+                                            <span className="px-2 py-0.5 rounded-md bg-[var(--bg-card)] text-emerald-500 font-bold border border-emerald-500 text-xs">
+                                              Bagian {chIdx + 1} dari {relatedChildren.length}
+                                            </span>
+                                            <span className="font-bold text-[var(--text-primary)]">
+                                              Hal. {ch.metadata?.page_number || "-"}
+                                            </span>
+                                          </div>
+                                          <span className="text-xs text-[var(--text-muted)]">
+                                            {ch.text?.length || 0} kar.
+                                          </span>
+                                        </div>
+                                        <p className="whitespace-pre-wrap text-[var(--text-primary)] font-mono leading-relaxed bg-[var(--bg-card)] p-2.5 rounded-lg border border-[var(--border-color)] select-text">
+                                          {ch.text}
+                                        </p>
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  // Highlight detection
+                  const isHighlighted =
+                    highlightedChromaChunkId &&
+                    (highlightedChromaChunkId === c.id ||
+                      (isParent &&
+                        highlightedChromaChunkId === `doc_${document.id}_parent_${parentIdx}`));
+
+                  return (
+                    <div
+                      key={c.id || idx}
+                      className={`p-3.5 rounded-xl transition-all flex flex-col justify-between space-y-2.5 shadow-sm ${
+                        isHighlighted
+                          ? "bg-[var(--bg-card)] border-2 border-sky-500 shadow-md"
+                          : "bg-[var(--bg-input)] border border-[var(--border-color)] hover:border-sky-500"
+                      }`}
+                    >
+                      <div className="flex justify-between items-center text-xs font-mono text-[var(--text-muted)] pb-2 border-b border-[var(--border-color)]">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-[var(--text-primary)]">
+                            Hal. {c.metadata?.page_number || "-"}
+                          </span>
+                          <span className="text-xs text-[var(--text-muted)]">
+                            ({c.text?.length || 0} kar.)
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          {isHighlighted && (
+                            <span className="text-xs px-2.5 py-0.5 rounded-full bg-sky-500 text-white font-bold animate-pulse">
+                              Induk Terpilih
+                            </span>
+                          )}
+
+                          {isParent ? (
+                            <span className="px-2.5 py-0.5 rounded-full bg-[var(--bg-card)] text-sky-500 font-bold border border-sky-500 text-xs">
+                              Induk #{parentIdx + 1}
+                            </span>
+                          ) : isChild && childParentNumber !== null ? (
+                            <button
+                              onClick={() => {
+                                setSelectedChromaParentId(null);
+                                setChromaActiveTab("parent");
+                                setHighlightedChromaChunkId(
+                                  c.metadata?.parent_id || `doc_${document.id}_parent_${childParentNumber - 1}`
+                                );
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-[var(--bg-card)] text-sky-500 hover:bg-sky-500 hover:text-white font-bold border border-sky-500 text-xs transition-all flex items-center gap-1.5 cursor-pointer group shadow-2xs"
+                              title={`Klik untuk melihat Potongan Induk #${childParentNumber}`}
+                            >
+                              <span>Induk #{childParentNumber}</span>
+                              <svg
+                                className="w-3 h-3 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                            </button>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-md bg-[var(--bg-card)] text-[var(--text-secondary)] font-mono font-medium border border-[var(--border-color)] text-xs">
+                              Chunk #{idx + 1}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <p className="whitespace-pre-wrap break-words text-xs text-[var(--text-primary)] leading-relaxed font-sans flex-1 max-h-56 overflow-y-auto pr-1 select-text">
+                        {c.text}
+                      </p>
+
+                      {/* Parent Card Action: Lihat X Potongan Anak */}
+                      {isParent && (
+                        <div className="pt-2 border-t border-[var(--border-color)] flex justify-between items-center text-xs">
+                          <span className="font-mono text-[var(--text-muted)]">
+                            {relatedChildren.length} potongan anak
+                          </span>
+                          <button
+                            onClick={() => {
+                              setSelectedChromaParentId(
+                                c.id || `doc_${document.id}_parent_${parentIdx}`
+                              );
+                              setChromaActiveTab("child");
+                              setHighlightedChromaChunkId(null);
+                            }}
+                            disabled={relatedChildren.length === 0}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-sky-500 text-white hover:bg-sky-600 disabled:opacity-40 disabled:pointer-events-none transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                            title={`Lihat potongan anak dari Induk #${parentIdx + 1}`}
+                          >
+                            <span>Lihat {relatedChildren.length} Potongan Anak</span>
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                            </svg>
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Child Card Footer */}
+                      {!isParent && (
+                        <div className="pt-2 border-t border-[var(--border-color)] flex justify-between items-center text-xs font-mono text-[var(--text-muted)]">
+                          <span className="truncate max-w-[140px]" title={String(c.id)}>
+                            ID: {String(c.id).substring(0, 14)}...
+                          </span>
+                          <span>{c.text?.length || 0} kar.</span>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

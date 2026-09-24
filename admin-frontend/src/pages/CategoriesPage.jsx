@@ -919,7 +919,7 @@ export default function CategoriesPage() {
                                             [kunci]: false,
                                           }));
                                         }}
-                                        className="text-[11px] font-medium text-amber-500 hover:text-amber-600 cursor-pointer bg-transparent border-0"
+                                        className="text-[11px] font-medium text-amber-500 hover:text-amber-600 cursor-pointer bg-[var(--bg-card)] border border-[var(--border-color)] px-2 py-0.5 rounded-md"
                                       >
                                         Reset
                                       </button>
@@ -927,7 +927,7 @@ export default function CategoriesPage() {
                                     <button
                                       type="button"
                                       onClick={() => salinTeks(kunci, activeText)}
-                                      className="text-[11px] font-semibold text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer bg-transparent border-0"
+                                      className="text-[11px] font-semibold text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer bg-[var(--bg-card)] border border-[var(--border-color)] px-2 py-0.5 rounded-md"
                                     >
                                       {bagianDisalin === kunci ? "Tersalin" : "Salin"}
                                     </button>

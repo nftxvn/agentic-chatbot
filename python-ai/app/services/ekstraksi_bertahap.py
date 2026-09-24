@@ -601,26 +601,49 @@ class PenyimpananMySQL:
         self, document_id: int, status: str, persen: int, pesan: str | None = None
     ) -> None:
         """
-        Catat kemajuan persentase (0-100%) dan pesan status tahapan embedding ke ekstraksi_job.
+        Catat kemajuan persentase (0-100%) dan pesan status tahapan embedding ke Redis dan ekstraksi_job.
+        TIDAK merusak halaman_total atau halaman_selesai asli dokumen.
         """
+        pct = max(0, min(100, int(persen)))
+
+        # 1. Simpan ke Redis cache untuk polling modal real-time (0-100%)
+        try:
+            from app.services.session_memory import _get_redis
+            r = _get_redis()
+            if r:
+                import json
+                r.setex(
+                    f"doc_embed_progress:{document_id}",
+                    3600,
+                    json.dumps({
+                        "status": status,
+                        "persen": pct,
+                        "pesan": pesan or "",
+                    }),
+                )
+        except Exception as e:
+            logger.warning("Gagal menyimpan progress embed ke Redis untuk dokumen %d: %s", document_id, e)
+
+        # 2. Update ekstraksi_job:
+        # - Bila status 'selesai', perbarui status job ke 'selesai'.
+        # - Bila status 'gagal', perbarui status job ke 'gagal'.
+        # - JANGAN pernah ubah status menjadi 'berjalan' (karena itu milik proses OCR).
+        # - JANGAN pernah ubah halaman_total = 100 atau halaman_selesai = persen.
         sql = text(
             "UPDATE ekstraksi_job SET "
-            "  status = :status, "
-            "  halaman_total = 100, "
-            "  halaman_selesai = :persen, "
+            "  status = CASE "
+            "    WHEN :status IN ('selesai', 'completed') THEN 'selesai' "
+            "    WHEN :status IN ('gagal', 'failed') THEN 'gagal' "
+            "    ELSE status "
+            "  END, "
             "  pesan = :pesan "
             "WHERE document_id = :id"
         )
-        with self._engine.begin() as conn:
-            conn.execute(
-                sql,
-                {
-                    "id": document_id,
-                    "status": status,
-                    "persen": max(0, min(100, persen)),
-                    "pesan": pesan,
-                },
-            )
+        try:
+            with self._engine.begin() as conn:
+                conn.execute(sql, {"id": document_id, "status": status, "pesan": pesan})
+        except Exception as e:
+            logger.warning("Gagal mencatat status embed dokumen %d: %s", document_id, e)
 
     def keadaan(self, document_id: int) -> dict | None:
         """Ringkasan untuk endpoint status. None bila jobnya belum pernah ada."""
@@ -636,8 +659,27 @@ class PenyimpananMySQL:
         total = baris["halaman_total"] or 0
         selesai = baris["halaman_selesai"] or 0
         persen = round(selesai / total * 100) if total else 0
-        if total == 100:
-            persen = selesai
+
+        # Cek jika ada kemajuan embedding aktif di Redis
+        try:
+            from app.services.session_memory import _get_redis
+            r = _get_redis()
+            if r:
+                import json
+                raw = r.get(f"doc_embed_progress:{document_id}")
+                if raw:
+                    info = json.loads(raw)
+                    return {
+                        "document_id": document_id,
+                        "status": info.get("status", baris["status"]),
+                        "jeda_diminta": bool(baris["jeda_diminta"]),
+                        "halaman_total": total,
+                        "halaman_selesai": selesai,
+                        "persen": max(0, min(100, int(info.get("persen", persen)))),
+                        "pesan": info.get("pesan", baris["pesan"]),
+                    }
+        except Exception:
+            pass
 
         return {
             "document_id": document_id,

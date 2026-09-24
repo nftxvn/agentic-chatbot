@@ -435,9 +435,11 @@ class DocumentController extends Controller
         $job = $document->ekstraksiJob;
 
         $savedCount  = $document->relationLoaded('ekstraksiHalaman') ? $document->ekstraksiHalaman->count() : $document->ekstraksiHalaman()->count();
-        $donePages   = max($savedCount, (int) ($document->processed_pages ?? 0), (int) ($job?->halaman_selesai ?? 0));
-        $totalPages  = $document->total_pages ?? $job?->halaman_total ?? 0;
-        $percent     = ($totalPages > 0) ? min(100, (int) round(($donePages / $totalPages) * 100)) : ($job?->persen ?? 0);
+        $realTotal   = (int) ($document->total_pages ?: ($job?->halaman_total && $job->halaman_total != 100 ? $job->halaman_total : $savedCount));
+        $rawDone     = max($savedCount, (int) ($document->processed_pages ?? 0), ($job && $job->halaman_total != 100 ? (int) $job->halaman_selesai : 0));
+        $donePages   = $realTotal > 0 ? min($realTotal, $rawDone) : $rawDone;
+        $totalPages  = $realTotal > 0 ? $realTotal : $donePages;
+        $percent     = ($totalPages > 0) ? min(100, (int) round(($donePages / $totalPages) * 100)) : 0;
 
         $resolved    = $this->resolveEffectiveStatus($document, $donePages, $totalPages);
         $status      = $resolved['status'];
