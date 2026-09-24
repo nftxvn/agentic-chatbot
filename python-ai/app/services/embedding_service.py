@@ -214,33 +214,33 @@ def encode_texts(texts: list[str]) -> list[list[float]]:
     """
     Menghasilkan embedding vektor dari daftar teks.
     Prioritas:
-      1. Model SentenceTransformer dari cache lokal (cepat, 0 latency).
-      2. Ollama Embedding di host (GPU-accelerated di host, tanpa download 2.2GB di container).
-      3. Unduh model SentenceTransformer online (bila Ollama tidak aktif).
+      1. Ollama Embedding di host (GPU-accelerated di host, ultra-cepat 0.05s).
+      2. Model SentenceTransformer dari cache lokal disk.
+      3. Unduh model SentenceTransformer online (fallback terakhir).
     """
     if not texts:
         return []
 
-    # 1. Coba dari cache lokal disk
+    # 1. Prioritas Utama: Coba via Ollama di host (GPU-accelerated)
+    try:
+        return _encode_via_ollama(texts)
+    except Exception:
+        pass
+
+    # 2. Coba dari cache lokal disk
     model = get_embedding_model(local_only=True)
     if model is not None:
         try:
             return model.encode(texts, show_progress_bar=False).tolist()
         except Exception as e:
-            logger.warning("Eksekusi SentenceTransformer lokal gagal (%s). Beralih ke Ollama...", e)
-
-    # 2. Coba via Ollama di host
-    try:
-        return _encode_via_ollama(texts)
-    except Exception as e:
-        logger.warning("Ollama embedding tidak tersedia (%s). Mencoba unduh SentenceTransformer online...", e)
+            logger.warning("Eksekusi SentenceTransformer lokal gagal (%s).", e)
 
     # 3. Fallback: Unduh SentenceTransformer online
     model_online = get_embedding_model(local_only=False)
     if model_online is not None:
         return model_online.encode(texts, show_progress_bar=False).tolist()
 
-    raise RuntimeError("Gagal menghasilkan embedding: Cache lokal tidak ada, Ollama tidak merespon, dan unduhan online gagal.")
+    raise RuntimeError("Gagal menghasilkan embedding: Ollama tidak merespon, cache lokal tidak ada, dan unduhan online gagal.")
 
 
 def encode_query(query: str) -> list[float]:
