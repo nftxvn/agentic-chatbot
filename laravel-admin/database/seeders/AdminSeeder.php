@@ -13,7 +13,7 @@ class AdminSeeder extends Seeder
      */
     public function run(): void
     {
-        User::firstOrCreate(
+        User::updateOrCreate(
             [
                 'email' => 'admin@diskominfotik.go.id',
             ],
