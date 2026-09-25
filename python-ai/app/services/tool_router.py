@@ -187,44 +187,94 @@ def parse_and_sum_durations_from_context(context_text: str) -> dict[str, Any] | 
     if not context_text:
         return None
 
-    # Cari pola 'Waktu: X menit', 'Waktu: X jam', 'Waktu: X hari'
-    time_matches = re.findall(
-        r"(?:waktu|durasi|lama)\s*[:=]\s*(\d+(?:[.,]\d+)?)\s*(menit|jam|hari|detik|hari\s*kerja)",
-        context_text,
-        re.IGNORECASE,
-    )
-    if not time_matches:
+    total_menit = 0.0
+    total_hari = 0.0
+    items = []
+
+    lines = context_text.split('\n')
+    for line in lines:
+        # Cari baris yang mengandung penanda waktu (Waktu:, Durasi:)
+        match = re.search(r"(?:waktu|durasi|lama)\s*[:=]\s*(.+)", line, re.IGNORECASE)
+        if match:
+            time_str = match.group(1).strip()
+            # Ekstrak semua angka + satuan di baris ini
+            sub_matches = re.findall(r"(\d+(?:[.,]\d+)?)\s*(menit|jam|hari|detik)", time_str, re.IGNORECASE)
+            
+            if not sub_matches:
+                continue
+            
+            max_val_in_minutes = 0.0
+            best_unit_str = ""
+            best_hari_val = 0.0
+            
+            for val_str, unit in sub_matches:
+                val = float(val_str.replace(",", "."))
+                u = unit.lower()
+                
+                val_in_minutes = 0.0
+                hari_val = 0.0
+                
+                if "hari" in u:
+                    val_in_minutes = val * 24 * 60
+                    hari_val = val
+                elif "jam" in u:
+                    val_in_minutes = val * 60
+                elif "menit" in u:
+                    val_in_minutes = val
+                elif "detik" in u:
+                    val_in_minutes = val / 60
+                    
+                # Gunakan max-pooling (ambil durasi terlama dalam rentang)
+                if val_in_minutes > max_val_in_minutes:
+                    max_val_in_minutes = val_in_minutes
+                    best_unit_str = f"{int(val) if val.is_integer() else val} {u}"
+                    if "kerja" in time_str.lower() and "hari" in u:
+                        best_unit_str += " kerja"
+                    best_hari_val = hari_val
+                    
+            if max_val_in_minutes > 0:
+                if best_hari_val > 0:
+                    total_hari += best_hari_val
+                else:
+                    total_menit += max_val_in_minutes
+                items.append(best_unit_str)
+
+    # Fallback: Jika sama sekali tidak ada kata "Waktu:" atau "Durasi:"
+    if not items:
         time_matches = re.findall(
             r"\b(\d+(?:[.,]\d+)?)\s*(menit|jam|hari|detik)\b",
             context_text,
             re.IGNORECASE,
         )
-
-    if not time_matches or len(time_matches) < 2:
-        return None
-
-    total_menit = 0.0
-    total_hari = 0.0
-    items = []
-
-    for val_str, unit in time_matches:
-        val = float(val_str.replace(",", "."))
-        u = unit.lower().strip()
-        if "menit" in u:
-            total_menit += val
-            items.append(f"{int(val) if val.is_integer() else val} menit")
-        elif "jam" in u:
-            total_menit += val * 60
-            items.append(f"{int(val) if val.is_integer() else val} jam")
-        elif "hari" in u:
-            total_hari += val
-            items.append(f"{int(val) if val.is_integer() else val} hari" if "kerja" not in u else f"{int(val) if val.is_integer() else val} hari kerja")
-        elif "detik" in u:
-            total_menit += val / 60
-            items.append(f"{int(val) if val.is_integer() else val} detik")
+        if not time_matches or len(time_matches) < 2:
+            return None
+            
+        for val_str, unit in time_matches:
+            val = float(val_str.replace(",", "."))
+            u = unit.lower().strip()
+            if "menit" in u:
+                total_menit += val
+                items.append(f"{int(val) if val.is_integer() else val} menit")
+            elif "jam" in u:
+                total_menit += val * 60
+                items.append(f"{int(val) if val.is_integer() else val} jam")
+            elif "hari" in u:
+                total_hari += val
+                items.append(f"{int(val) if val.is_integer() else val} hari")
+            elif "detik" in u:
+                total_menit += val / 60
+                items.append(f"{int(val) if val.is_integer() else val} detik")
 
     if not items:
         return None
+
+    # Normalisasi sisa waktu jika melebihi 24 jam
+    if total_menit > 0:
+        jam_t = int(total_menit // 60)
+        if jam_t >= 24:
+            tambahan_hari = jam_t // 24
+            total_hari += tambahan_hari
+            total_menit = total_menit - (tambahan_hari * 24 * 60)
 
     hari_str = f"{int(total_hari) if total_hari.is_integer() else total_hari} hari" if total_hari > 0 else ""
 
@@ -240,15 +290,12 @@ def parse_and_sum_durations_from_context(context_text: str) -> dict[str, Any] | 
     else:
         time_part = ""
 
-    if total_hari > 0 and total_menit > 0:
-        formatted_total = f"{hari_str} dan {time_part} (total: {hari_str} + {int(total_menit)} menit)"
+    if total_hari > 0 and time_part:
+        formatted_total = f"{hari_str} dan {time_part}"
     elif total_hari > 0:
         formatted_total = f"{hari_str}"
-    elif total_menit > 0:
-        if jam > 0:
-            formatted_total = f"{time_part} ({int(total_menit)} menit)"
-        else:
-            formatted_total = f"{int(total_menit)} menit"
+    elif time_part:
+        formatted_total = f"{time_part}"
     else:
         formatted_total = "0 menit"
 
@@ -648,9 +695,14 @@ def route_intent(query: str, session_id: str | None = None) -> dict[str, Any]:
 
     # 3. Jalur Direktori Bidang & Unit Kerja (DIPRIORITASKAN dari Fast-Path Umum)
     # Ini mencegah pertanyaan seperti "jam operasional bidang statistik" salah tangkap ke jam kerja umum.
+    _SOP_GUARDS = ["berapa", "kapan", "waktu", "cara", "bagaimana", "syarat", "langkah", "prosedur", "alur", "sop", "mengurus", "urus", "bikin", "buat", "dokumen", "persyaratan", "berkas"]
     active_dirs = get_active_directories()
     for d in active_dirs:
         if _matches_keywords(q, d["keywords"]) or _matches_keywords(search_q, d["keywords"]):
+            # Guard: Jika mengandung kata operasional/SOP, biarkan jatuh (fall-through) ke RAG!
+            if any(g in q_lower or g in search_lower for g in _SOP_GUARDS):
+                continue
+
             # Bangun konteks fakta spesifik unit kerja
             tugas_list = d.get("daftar_tugas") or []
             if isinstance(tugas_list, list):

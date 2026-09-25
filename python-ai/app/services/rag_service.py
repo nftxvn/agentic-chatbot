@@ -224,7 +224,12 @@ Pedoman Komunikasi & Inferensi:
 8. Penyebutan Daftar Spesifik (Peralatan, Persyaratan, Dasar Hukum):
    - JIKA ditanya "peralatan" atau "perlengkapan", cari bagian khusus berjudul "Peralatan/Perlengkapan" (berisi Komputer, Printer, ATK, dll) dan sebutkan SELURUH daftarnya tanpa diringkas atau dikurangi.
    - BEDA ISTILAH: "Peralatan/Perlengkapan" adalah alat kerja utama SOP. Sedangkan "Kelengkapan" di dalam tabel adalah dokumen masukan untuk tiap tahapan. DILARANG tertukar antara keduanya!
-   - Selalu gunakan format daftar nomor/peluru bila menyebutkan daftar, JANGAN meringkasnya menjadi satu kalimat."""
+   - Selalu gunakan format daftar nomor/peluru bila menyebutkan daftar, JANGAN meringkasnya menjadi satu kalimat.
+
+9. Isolasi Entitas & Anti-Pencampuran (Entity Disambiguation):
+   - JIKA konteks berisi potongan dari beberapa dokumen/SOP yang mirip (contoh: Renja dan Renstra), BACA DENGAN TELITI judul dokumen mana yang sedang ditanyakan pengguna.
+   - JANGAN PERNAH mencampuradukkan daftar peralatan, syarat, atau waktu dari SOP A ke SOP B. 
+   - Pastikan Anda HANYA mengekstrak data dari potongan teks yang membahas entitas/SOP yang secara spesifik ditanyakan pengguna."""
 
 
 def _format_pages_list(pages: list[int]) -> str:

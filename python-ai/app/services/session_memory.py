@@ -176,7 +176,7 @@ _PRONOUNS_EXPLICIT = {
 }
 
 _ELLIPTIC_FOLLOWUP_WORDS = {
-    "kapan", "tahun berapa", "tanggal berapa", "pukul berapa", "jam berapa",
+    "tahun berapa", "tanggal berapa", "pukul berapa", "jam berapa",
     "siapa namanya", "namanya", "kontaknya", "nomornya", "alamatnya",
     "syaratnya", "biayanya", "waktunya", "prosesnya", "tahapannya", "langkahnya",
     "bagaimana caranya", "caranya", "durasi", "lama proses", "estimasi", "outputnya",
@@ -200,9 +200,9 @@ _NYA_SUFFIXES = {
 _STANDALONE_TOPIC_MARKERS = {
     "renja", "renstra", "rka", "dpa", "lkjip", "lppd", "sakip", "iku", "pk",
     "magang", "pkl", "kenaikan pangkat", "pangkat", "gaji", "cuti", "pensiun",
-    "subdomain", "domain", "email", "server", "wifi", "internet",
+    "subdomain", "domain", "email", "server", "wifi", "internet", "hosting", "aplikasi", "sistem",
     "jaringan", "perwal", "sk", "csirt", "siber", "smart city", "statistik", "persandian",
-    "bappeda", "walikota", "kadis", "kepala dinas", "sekretaris",
+    "bappeda", "walikota", "kadis", "kepala dinas", "sekretaris", "zoom", "rapat", "sppd", "spt", "dinas"
 }
 
 
