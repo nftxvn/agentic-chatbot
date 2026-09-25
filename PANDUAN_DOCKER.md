@@ -1,4 +1,4 @@
-﻿# Panduan Menjalankan Proyek dengan Docker & Docker Compose
+# Panduan Menjalankan Proyek dengan Docker & Docker Compose
 
 Panduan ini ditujukan agar seluruh tim / rekan kerja dapat menjalankan sistem **Agentic AI & Admin Copilot** di komputer masing-masing secara praktis, fleksibel, dan terisolasi.
 
@@ -67,6 +67,11 @@ Teman Anda bebas menentukan model LLM yang ingin digunakan sesuai kapasitas VRAM
 | **Backend Laravel API** | [http://localhost:8000](http://localhost:8000) | REST API & Sanctum Authentication |
 | **Python AI Microservice** | [http://localhost:8080](http://localhost:8080) | FastAPI RAG Engine & Stream Chat |
 | **Ollama Local Engine** | [http://localhost:11434](http://localhost:11434) | API Engine LLM lokal |
+
+### Akun Login Admin Default
+* **Email**: `admin@diskominfotik.go.id`
+* **Password**: `changeme123`
+
 
 ---
 
