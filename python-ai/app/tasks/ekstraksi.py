@@ -113,18 +113,24 @@ def ekstrak_dokumen_task(
                 logger.info("Dokumen gambar %d telah dihapus dari sistem saat gagal ekstraksi.", document_id)
                 return {"status": "dibatalkan", "pesan": "Dokumen telah dihapus"}
 
-            penyimpanan.catat_status(document_id, eb.STATUS_GAGAL, str(e))
-            try:
-                from app.database import update_document_status
-                update_document_status(
-                    document_id,
-                    status="failed",
-                    error_message=str(e),
-                    total_pages=1,
-                    processed_pages=0,
+            if self.request.retries >= self.max_retries:
+                penyimpanan.catat_status(document_id, eb.STATUS_GAGAL, str(e))
+                try:
+                    from app.database import update_document_status
+                    update_document_status(
+                        document_id,
+                        status="failed",
+                        error_message=str(e),
+                        total_pages=1,
+                        processed_pages=0,
+                    )
+                except Exception:
+                    logger.exception("Gagal sinkron status gagal dokumen %d ke tabel documents", document_id)
+            else:
+                logger.warning(
+                    "Dokumen gambar %d gagal ekstraksi (percobaan %d/%d): %s. Menjadwalkan ulang...",
+                    document_id, self.request.retries + 1, self.max_retries, e,
                 )
-            except Exception:
-                logger.exception("Gagal sinkron status gagal dokumen %d ke tabel documents", document_id)
             raise self.retry(exc=e)
 
     import fitz
@@ -354,8 +360,25 @@ def potong_dan_embed_task(self, document_id: int, custom_kwargs: dict | None = N
             return {"status": "dibatalkan", "pesan": "Dokumen telah dihapus"}
 
         pesan = f"Gagal memotong/embed: {type(e).__name__}: {e}"
-        logger.exception("Dokumen %d gagal di tahap potong/embed", document_id)
-        penyimpanan.catat_status(document_id, eb.STATUS_GAGAL, pesan)
+        logger.exception("Dokumen %d gagal di tahap potong/embed (retry %d/%d)", document_id, self.request.retries, self.max_retries)
+        if self.request.retries >= self.max_retries:
+            penyimpanan.catat_status(document_id, eb.STATUS_GAGAL, pesan)
+            try:
+                from app.database import update_document_status
+                update_document_status(
+                    document_id,
+                    status="failed",
+                    error_message=pesan,
+                )
+            except Exception:
+                logger.exception("Gagal sinkron status failed dokumen %d", document_id)
+        else:
+            penyimpanan.catat_kemajuan_embed(
+                document_id,
+                status=eb.STATUS_BERJALAN,
+                persen=0,
+                pesan=f"Percobaan {self.request.retries + 1}/{self.max_retries} gagal ({e}), menjadwalkan ulang...",
+            )
         raise self.retry(exc=e)
 
     if not penyimpanan.dokumen_ada(document_id):

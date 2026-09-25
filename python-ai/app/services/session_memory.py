@@ -11,6 +11,11 @@ import re
 import time
 from typing import Any
 
+try:
+    import redis
+except ImportError:
+    redis = None
+
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -29,7 +34,7 @@ _redis_available: bool | None = None
 
 def _get_redis():
     global _redis_client, _redis_available
-    if _redis_available is False:
+    if redis is None or _redis_available is False:
         return None
 
     if _redis_client is None:
@@ -181,6 +186,16 @@ _ELLIPTIC_FOLLOWUP_WORDS = {
     "dari awal", "hitung kembali", "koreksi", "hitung ulang",
 }
 
+# Allowlist akhiran -nya untuk pertanyaan lanjutan spesifik (mencegah false positive pada kata 'hanya', 'tanya', 'biasanya')
+_NYA_SUFFIXES = {
+    "syaratnya", "biayanya", "waktunya", "prosesnya", "tahapannya", "langkahnya",
+    "outputnya", "hasilnya", "durasinya", "estimasinya", "persyaratannya",
+    "dokumennya", "berkasnya", "sopnya", "prosedurnya", "mekanismenya",
+    "jadwalnya", "pengajuannya", "pelaksanaannya", "kriterianya", "blankonya",
+    "formatnya", "lampirannya", "alirannya", "tempatnya", "lokasinya", "caranya",
+    "tujuannya", "manfaatnya", "fungsinya", "dasarnya", "landasannya", "aturannya",
+}
+
 # Topik mandiri baru yang benar-benar spesifik (jika kata ini muncul, barulah dianggap topik baru)
 _STANDALONE_TOPIC_MARKERS = {
     "renja", "renstra", "rka", "dpa", "lkjip", "lppd", "sakip", "iku", "pk",
@@ -200,7 +215,7 @@ _RE_SESSION_RECAP = re.compile(
 )
 
 _RE_DOUBT_OR_CORRECTION = re.compile(
-    r"\b(salah|keliru|bukan|bukannya|kok beda|kok salah|kok bisa|kenapa beda|memang iya|masa sih|masa|yakin|beneran|serius|ngaco|bohong|ngibul|gak bener|tidak benar|kurang tepat|tidak tepat|hah|lah|hitung kembali|hitung ulang)\b",
+    r"\b(salah|keliru|bukan|bukannya|kok beda|kok salah|kok bisa|kenapa beda|memang iya|masa sih|yakin|beneran|serius|ngaco|bohong|ngibul|gak bener|tidak benar|kurang tepat|tidak tepat|hitung kembali|hitung ulang)\b",
     re.IGNORECASE,
 )
 
@@ -284,7 +299,8 @@ def resolve_contextual_query(query: str, session_id: str) -> tuple[str, bool]:
     replaced_pronoun = False
     for pat, repl in _COMPARATIVE_PHRASE_PATTERNS:
         if pat.search(resolved):
-            resolved = pat.sub(repl.format(subj=context_subject), resolved)
+            # Gunakan lambda agar karakter khusus/backslash di context_subject tidak memicu regex escape error
+            resolved = pat.sub(lambda m, r=repl, s=context_subject: r.format(subj=s), resolved)
             replaced_pronoun = True
             break
 
@@ -298,8 +314,13 @@ def resolve_contextual_query(query: str, session_id: str) -> tuple[str, bool]:
         # Jika pengguna menanyakan topik baru yang jelas (misal 'sop', 'renja', 'magang'), jangan tempel topik lama!
         return query, False
 
-    # 3. Cek pertanyaan eliptik / akhiran -nya (misal: "berapa lama prosesnya?", "apa syaratnya?", "sudah berapa hari?")
-    has_elliptic = bool(words.intersection(_ELLIPTIC_FOLLOWUP_WORDS)) or any(w.endswith("nya") for w in words)
+    # 3. Cek kata ganti eksplisit, pertanyaan eliptik, atau akhiran -nya yang valid
+    has_explicit_pronoun = bool(words.intersection(_PRONOUNS_EXPLICIT))
+    has_elliptic = (
+        bool(words.intersection(_ELLIPTIC_FOLLOWUP_WORDS))
+        or bool(words.intersection(_NYA_SUFFIXES))
+        or has_explicit_pronoun
+    )
     is_short_fragment = len(words) <= 4 and ("berapa" in words or "kapan" in words or "siapa" in words or "dimana" in words or "bagaimana" in words or "apa" in words)
 
     # 4. Cek pertanyaan keraguan, sanggahan, atau koreksi (misal: "masa sih?", "kok beda?", "yakin 60 menit?")

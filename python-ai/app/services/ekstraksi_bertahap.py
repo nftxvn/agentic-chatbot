@@ -547,19 +547,15 @@ class PenyimpananMySQL:
 
     def mulai_job(self, document_id: int, halaman_total: int) -> None:
         """
-        Buat baris job bila belum ada, dan cabut permintaan jeda yang lama.
-
-        Pencabutan itu penting: 'lanjutkan' dan 'mulai' adalah endpoint yang
-        sama, dan bendera jeda dari putaran sebelumnya masih menyala. Tanpa
-        dicabut, permintaan lanjut akan langsung berhenti lagi di halaman
-        pertama — terlihat seperti tombolnya tidak berfungsi.
+        Buat baris job bila belum ada. Jika baris sudah ada, pertahankan
+        bendera jeda_diminta bila baru saja diset oleh pengguna saat job antre.
         """
         sql = text(
             "INSERT INTO ekstraksi_job "
             "  (document_id, status, jeda_diminta, halaman_total) "
             "VALUES (:id, :status, 0, :total) "
             "ON DUPLICATE KEY UPDATE "
-            "  jeda_diminta = 0, status = :status, halaman_total = :total"
+            "  status = :status, halaman_total = :total"
         )
         with self._engine.begin() as conn:
             conn.execute(

@@ -12,6 +12,9 @@ from dotenv import load_dotenv
 _env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(dotenv_path=_env_path)
 
+os.environ.setdefault("USE_TF", "0")
+os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
+
 
 # ── Mode luring HuggingFace ──────────────────────────────────────
 # sentence_transformers memeriksa pembaruan model ke huggingface.co setiap kali

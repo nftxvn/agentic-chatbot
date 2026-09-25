@@ -417,12 +417,28 @@ def _split_list_preserving_items(list_text: str, max_size: int) -> list[str]:
     raw_items = _list_item_boundary.split(list_text)
     raw_items = [i.strip() for i in raw_items if i.strip()]
     out, current = [], ""
+    fallback_splitter = None
+
     for item in raw_items:
         if current and len(current) + len(item) + 1 > max_size:
             out.append(current)
-            current = item
+            current = ""
+
+        if len(item) > max_size:
+            # Fallback jika satu butir daftar sangat panjang melampaui max_size
+            if current:
+                out.append(current)
+                current = ""
+            if fallback_splitter is None:
+                fallback_splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=max_size,
+                    chunk_overlap=int(max_size * 0.15),
+                )
+            sub_chunks = fallback_splitter.split_text(item)
+            out.extend(sub_chunks)
         else:
             current = f"{current}\n{item}" if current else item
+
     if current:
         out.append(current)
     return out
@@ -791,16 +807,15 @@ def delete_document_vectors(document_id: int) -> int:
     collection = get_chroma_collection()
 
     try:
-        # Cari semua ID yang terkait dengan document_id
+        # Hitung terlebih dahulu untuk pelaporan
         results = collection.get(
             where={"document_id": document_id},
         )
-
-        existing_ids = results["ids"]
-        count = len(existing_ids)
+        count = len(results.get("ids", []))
 
         if count > 0:
-            collection.delete(ids=existing_ids)
+            # Hapus secara native menggunakan metadata where filter agar aman dari limit ID
+            collection.delete(where={"document_id": document_id})
             _invalidate_search_index()
             logger.info(
                 "Berhasil menghapus %d vektor untuk dokumen %d",
@@ -848,8 +863,12 @@ def get_document_chunks(document_id: int) -> list[dict]:
                     "metadata": results["metadatas"][i]
                 })
                 
-        # Urutkan berdasarkan chunk_index agar berurutan
-        chunks.sort(key=lambda x: x["metadata"].get("chunk_index", 0))
+        # Urutkan berdasarkan chunk_type (parent dahulu), lalu nomor halaman dan chunk_index
+        chunks.sort(key=lambda x: (
+            0 if x.get("metadata", {}).get("chunk_type") == "parent" else 1,
+            int(x.get("metadata", {}).get("page_number", 0)),
+            int(x.get("metadata", {}).get("chunk_index", 0)),
+        ))
         return chunks
     except Exception as e:
         logger.error("Gagal mengambil chunk dari ChromaDB (dokumen %d): %s", document_id, str(e))

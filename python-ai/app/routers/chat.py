@@ -6,6 +6,7 @@ berdasarkan dokumen yang sudah diproses.
 
 import json
 import logging
+import re
 import secrets
 from typing import AsyncGenerator
 
@@ -203,37 +204,43 @@ async def chat_stream(
 
 
 def _build_source_references(
-    parsed_sources: list[tuple[int, int | None]],
+    parsed_sources: list[tuple[int | str, int | None]],
 ) -> list[SourceReference]:
     """
-    Melengkapi rujukan sumber dengan nama berkas aslinya.
-
-    Nama diambil dari kolom `original_name` di tabel documents lewat satu query
-    untuk seluruh dokumen yang dirujuk. Sebelumnya `doc_name` selalu null,
-    sehingga pengguna WhatsApp hanya melihat nomor dokumen.
-
-    Kegagalan basis data sengaja tidak dinaikkan: lebih baik pengguna menerima
-    jawaban dengan rujukan bernomor daripada tidak menerima jawaban sama sekali.
+    Melengkapi rujukan sumber dengan nama berkas aslinya atau representasi judul dokumen.
     """
     if not parsed_sources:
         return []
 
+    int_doc_ids = [s[0] for s in parsed_sources if isinstance(s[0], int)]
     names: dict[int, str] = {}
-    try:
-        names = get_document_names(doc_id for doc_id, _ in parsed_sources)
-    except Exception:
-        logger.warning(
-            "Gagal mengambil nama dokumen — doc_name dibiarkan kosong", exc_info=True
-        )
+    if int_doc_ids:
+        try:
+            names = get_document_names(int_doc_ids)
+        except Exception:
+            logger.warning(
+                "Gagal mengambil nama dokumen — doc_name dibiarkan fallback", exc_info=True
+            )
 
-    return [
-        SourceReference(
-            doc_name=names.get(doc_id),
-            document_id=doc_id,
-            page=page_num,
-        )
-        for doc_id, page_num in parsed_sources
-    ]
+    results: list[SourceReference] = []
+    for doc_item, page_num in parsed_sources:
+        if isinstance(doc_item, int):
+            results.append(
+                SourceReference(
+                    doc_name=names.get(doc_item),
+                    document_id=doc_item,
+                    page=page_num,
+                )
+            )
+        else:
+            results.append(
+                SourceReference(
+                    doc_name=str(doc_item),
+                    document_id=None,
+                    page=page_num,
+                )
+            )
+    return results
 
 
 @router.post(
@@ -277,7 +284,7 @@ async def chat_message(
 
         # Kumpulkan seluruh respons dari generator
         reply_parts: list[str] = []
-        parsed_sources: list[tuple[int, int | None]] = []
+        parsed_sources: list[tuple[int | str, int | None]] = []
 
         for chunk in rag_service.generate_response(
             query=request.message,
@@ -293,16 +300,24 @@ async def chat_message(
                 source_lines = chunk.strip().split("\n")
                 for line in source_lines:
                     line = line.strip()
-                    if line.startswith("- Dokumen #"):
-                        # Format: "- Dokumen #12 — Halaman 45"
-                        try:
-                            parts = line.removeprefix("- Dokumen #").split(" — Halaman ")
-                            doc_id = int(parts[0])
-                            page_num = int(parts[1]) if len(parts) > 1 else None
-                            parsed_sources.append((doc_id, page_num))
-                        except (ValueError, IndexError):
-                            # Jika gagal parse, skip
-                            pass
+                    if not line.startswith("- "):
+                        continue
+                    content = line.removeprefix("- ").strip()
+                    first_page = None
+                    if " — Halaman " in content:
+                        doc_part, page_part = content.split(" — Halaman ", 1)
+                        pages = re.findall(r"\d+", page_part)
+                        first_page = int(pages[0]) if pages else None
+                    elif " — " in content:
+                        doc_part = content.split(" — ", 1)[0]
+                    else:
+                        doc_part = content
+
+                    doc_part = doc_part.strip()
+                    if doc_part.startswith("Dokumen #") and doc_part.removeprefix("Dokumen #").isdigit():
+                        parsed_sources.append((int(doc_part.removeprefix("Dokumen #")), first_page))
+                    elif doc_part:
+                        parsed_sources.append((doc_part, first_page))
             else:
                 reply_parts.append(chunk)
 

@@ -101,6 +101,9 @@ async def mulai_ekstraksi(
 
     custom_prompts = payload.custom_prompts or prompt_vars.get("custom_prompts")
 
+    # Cabut permintaan jeda sebelumnya saat pengguna menekan mulai/lanjutkan
+    _penyimpanan().batalkan_jeda(document_id)
+
     from app.tasks.ekstraksi import ekstrak_dokumen_task
 
     ekstrak_dokumen_task.delay(

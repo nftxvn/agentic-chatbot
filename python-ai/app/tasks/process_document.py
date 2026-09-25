@@ -200,7 +200,18 @@ def process_document_task(
             exc_info=True,
         )
 
-        # Update status ke 'failed' dengan pesan error
+        # Retry task jika masih ada kesempatan
+        retry_count = self.request.retries
+        if retry_count < self.max_retries:
+            logger.info(
+                "Mencoba retry task dokumen %d (percobaan %d/%d)...",
+                document_id,
+                retry_count + 1,
+                self.max_retries,
+            )
+            raise self.retry(exc=e, countdown=60 * (retry_count + 1))
+
+        # Sudah melebihi batas retry: Update status ke 'failed' dengan pesan error
         try:
             update_document_status(
                 document_id,
@@ -213,17 +224,4 @@ def process_document_task(
                 document_id,
                 str(db_err),
             )
-
-        # Retry task jika masih ada kesempatan
-        retry_count = self.request.retries
-        if retry_count < self.max_retries:
-            logger.info(
-                "Mencoba retry task dokumen %d (percobaan %d/%d)...",
-                document_id,
-                retry_count + 1,
-                self.max_retries,
-            )
-            raise self.retry(exc=e, countdown=60 * (retry_count + 1))
-
-        # Sudah melebihi batas retry
         raise

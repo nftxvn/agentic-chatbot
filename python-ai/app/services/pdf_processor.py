@@ -7,9 +7,13 @@ import base64
 import logging
 import re
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Any
 
-import fitz  # PyMuPDF
+try:
+    import fitz  # PyMuPDF
+except (ImportError, Exception):
+    fitz = None
+
 import requests
 import time
 
@@ -195,7 +199,7 @@ def detect_pdf_type(file_path: str) -> str:
         raise
 
 
-def _extract_text_from_page(page: fitz.Page) -> str:
+def _extract_text_from_page(page: "fitz.Page") -> str:
     """
     Ekstrak teks dan tabel dari halaman secara native dengan PyMuPDF.
     Hanya membaca teks — tidak mencoba membaca gambar flowchart.
@@ -261,10 +265,13 @@ def _strip_garbage(text: str) -> str:
     text = re.sub(r'<img[^>]+/?>', '', text)
     
     # Bersihkan markdown code fences (misalnya ```markdown ... ```)
-    if text.startswith("```"):
-        lines = text.split('\n')
-        if len(lines) > 2:
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        lines = stripped.split('\n')
+        if len(lines) > 2 and lines[-1].strip().startswith("```"):
             text = '\n'.join(lines[1:-1])
+        elif len(lines) > 1 and lines[0].strip().startswith("```"):
+            text = '\n'.join(lines[1:])
     
     return text.strip()
 
@@ -555,6 +562,9 @@ def vision_extract_general(
             raw = response.json().get("response", "").strip()
             if raw:
                 return _strip_garbage(raw)
+            else:
+                logger.warning(f"Attempt {attempt}/{retries}: Model Vision OCR mengembalikan teks kosong")
+                time.sleep(2)
         except requests.exceptions.RequestException as e:
             last_error = e
             logger.warning(f"Attempt {attempt}/{retries}: Timeout/Error saat vision extract: {e}")

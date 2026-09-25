@@ -53,10 +53,10 @@ _RE_SESSION_RECAP = re.compile(
 
 # Pola regex untuk obrolan santai, kabar, persona, identitas asisten
 _RE_CHITCHAT_CONVERSATIONAL = re.compile(
-    r"\b(apa\s+kabar|gimana\s+kabar|bagaimana\s+kabar|sehat|gimana\s+sehat|kabare|kiban\s+haba|haba\s+kiban|peue\s+haba|peu\s+haba|"
+    r"\b(apa\s+kabar|gimana\s+kabar|bagaimana\s+kabar|gimana\s+sehat|kamu\s+sehat|sehat\s+(?:kah|kan|ga|nggak)|kabare|kiban\s+haba|haba\s+kiban|peue\s+haba|peu\s+haba|"
     r"lagi\s+apa|lagi\s+ngapain|lagi\s+sibuk|kamu\s+lagi\s+apa|"
     r"kamu\s+siapa|anda\s+siapa|siapa\s+kamu|siapa\s+anda|siapa\s+namamu|nama\s+kamu\s+siapa|kamu\s+bisa\s+apa|bisa\s+bantu\s+apa|bisa\s+ngapain|kamu\s+robot|apakah\s+kamu\s+ai|siapa\s+pembuatmu|siapa\s+yang\s+buat\s+kamu|"
-    r"terima\s+kasih|makasih|makasi|thanks|matur\s+nuwun|syukron|teurimong\s+gaseh|mantap|keren|good\s+job|semangat)\b",
+    r"terima\s+kasih|makasih|makasi|thanks|matur\s+nuwun|syukron|teurimong\s+gaseh|mantap|keren|good\s+job)\b",
     re.IGNORECASE,
 )
 
@@ -103,7 +103,7 @@ _RE_CALC_ESTIMASI_WAKTU = re.compile(
 
 # Pola regex untuk deteksi keraguan, sanggahan, atau koreksi jawaban sebelumnya
 _RE_DOUBT_OR_CORRECTION = re.compile(
-    r"\b(salah|keliru|bukan|bukannya|kok beda|kok salah|kok bisa|kenapa beda|memang iya|masa sih|masa|yakin|beneran|serius|ngaco|bohong|ngibul|gak bener|tidak benar|kurang tepat|tidak tepat|hah|lah)\b",
+    r"\b(salah|keliru|bukan|bukannya|kok beda|kok salah|kok bisa|kenapa beda|memang iya|masa sih|yakin|beneran|serius|ngaco|bohong|ngibul|gak bener|tidak benar|kurang tepat|tidak tepat|hitung kembali|hitung ulang)\b",
     re.IGNORECASE,
 )
 
@@ -158,19 +158,22 @@ def _parse_date_from_text(text: str) -> datetime | None:
 
 def _parse_days_count(text: str) -> int | None:
     """Mengekstrak angka jumlah hari kerja dari query."""
-    match = re.search(r"\b(\d+)\s*(?:hari\s*kerja|hari)\b", text, re.IGNORECASE)
+    match = re.search(r"\b(\d+)\s*(?:hari\s*kerja|hari|uroe)\b", text, re.IGNORECASE)
     if match:
         try:
             return int(match.group(1))
         except ValueError:
             pass
 
-    # Cek format angka di depan kata 'hari'
-    match_fallback = re.search(r"\b(\d+)\b", text)
-    if match_fallback:
-        val = int(match_fallback.group(1))
-        if 1 <= val <= 365:
-            return val
+    # Cek format angka hanya jika terdapat kata penanda waktu/durasi eksplisit
+    match_fallback = re.search(r"(?:selama|dalam|waktu|durasi)\s+(\d+)\s*(?:hari|uroe)?\b", text, re.IGNORECASE)
+    if match_fallback and any(w in text.lower() for w in ["hari", "uroe", "kerja"]):
+        try:
+            val = int(match_fallback.group(1))
+            if 1 <= val <= 365:
+                return val
+        except ValueError:
+            pass
 
     return None
 
@@ -201,8 +204,8 @@ def parse_and_sum_durations_from_context(context_text: str) -> dict[str, Any] | 
         return None
 
     total_menit = 0.0
+    total_hari = 0.0
     items = []
-    has_hari = False
 
     for val_str, unit in time_matches:
         val = float(val_str.replace(",", "."))
@@ -214,8 +217,8 @@ def parse_and_sum_durations_from_context(context_text: str) -> dict[str, Any] | 
             total_menit += val * 60
             items.append(f"{int(val) if val.is_integer() else val} jam")
         elif "hari" in u:
-            has_hari = True
-            items.append(f"{int(val) if val.is_integer() else val} hari")
+            total_hari += val
+            items.append(f"{int(val) if val.is_integer() else val} hari" if "kerja" not in u else f"{int(val) if val.is_integer() else val} hari kerja")
         elif "detik" in u:
             total_menit += val / 60
             items.append(f"{int(val) if val.is_integer() else val} detik")
@@ -223,21 +226,36 @@ def parse_and_sum_durations_from_context(context_text: str) -> dict[str, Any] | 
     if not items:
         return None
 
-    if not has_hari:
+    hari_str = f"{int(total_hari) if total_hari.is_integer() else total_hari} hari" if total_hari > 0 else ""
+
+    if total_menit > 0:
         jam = int(total_menit // 60)
         sisa_menit = int(total_menit % 60)
         if jam > 0 and sisa_menit > 0:
-            formatted_total = f"{jam} jam {sisa_menit} menit ({int(total_menit)} menit)"
+            time_part = f"{jam} jam {sisa_menit} menit"
         elif jam > 0:
-            formatted_total = f"{jam} jam ({int(total_menit)} menit)"
+            time_part = f"{jam} jam"
+        else:
+            time_part = f"{int(total_menit)} menit"
+    else:
+        time_part = ""
+
+    if total_hari > 0 and total_menit > 0:
+        formatted_total = f"{hari_str} dan {time_part} (total: {hari_str} + {int(total_menit)} menit)"
+    elif total_hari > 0:
+        formatted_total = f"{hari_str}"
+    elif total_menit > 0:
+        if jam > 0:
+            formatted_total = f"{time_part} ({int(total_menit)} menit)"
         else:
             formatted_total = f"{int(total_menit)} menit"
     else:
-        formatted_total = f"{int(total_menit)} menit (beserta komponen hari)"
+        formatted_total = "0 menit"
 
     return {
         "items": items,
         "total_menit": total_menit,
+        "total_hari": total_hari,
         "formatted_total": formatted_total,
     }
 
@@ -246,7 +264,7 @@ def _enrich_facts_with_date_calculations(facts_text: str) -> str:
     """
     Kalkulator Masa Durasi Waktu:
     Mendeteksi tanggal di dalam fakta resmi dan menghitung selisih masa waktu
-    secara presisi (hari & bulan) hingga hari ini.
+    secara presisi (hari & bulan) hingga hari ini atau hitung mundur ke masa depan.
     """
     now = datetime.now()
     parsed_date = _parse_date_from_text(facts_text)
@@ -255,21 +273,30 @@ def _enrich_facts_with_date_calculations(facts_text: str) -> str:
 
     diff = now - parsed_date
     total_days = diff.days
-    if total_days < 0:
-        return facts_text
-
-    months = total_days // 30
-    remaining_days = total_days % 30
 
     hari_ini_str = f"{_NAMA_HARI[now.weekday()]}, {now.day} {_NAMA_BULAN[now.month]} {now.year}"
     tgl_peristiwa_str = f"{parsed_date.day} {_NAMA_BULAN[parsed_date.month]} {parsed_date.year}"
 
-    calc_note = (
-        f"\n- Data Perhitungan Masa Durasi Waktu (Hingga Hari Ini: {hari_ini_str}):\n"
-        f"  * Selisih masa waktu dari tanggal {tgl_peristiwa_str} sampai hari ini ({hari_ini_str}) adalah TEPAT {total_days} hari "
-        f"(sekitar {months} bulan {remaining_days} hari).\n"
-        f"  * Jika pengguna menanyakan masa waktu, lama berlangsung, atau durasi hari/bulan, rujuk hasil perhitungan ini: {total_days} hari (sekitar {months} bulan {remaining_days} hari)."
-    )
+    if total_days >= 0:
+        months = total_days // 30
+        remaining_days = total_days % 30
+        calc_note = (
+            f"\n- Data Perhitungan Masa Durasi Waktu (Hingga Hari Ini: {hari_ini_str}):\n"
+            f"  * Selisih masa waktu dari tanggal {tgl_peristiwa_str} sampai hari ini ({hari_ini_str}) adalah TEPAT {total_days} hari "
+            f"(sekitar {months} bulan {remaining_days} hari).\n"
+            f"  * Jika pengguna menanyakan masa waktu, lama berlangsung, atau durasi hari/bulan, rujuk hasil perhitungan ini: {total_days} hari (sekitar {months} bulan {remaining_days} hari)."
+        )
+    else:
+        future_days = abs(total_days)
+        months = future_days // 30
+        remaining_days = future_days % 30
+        calc_note = (
+            f"\n- Data Perhitungan Estimasi Waktu ke Depan (Dari Hari Ini: {hari_ini_str}):\n"
+            f"  * Tanggal {tgl_peristiwa_str} adalah {future_days} hari lagi dari hari ini "
+            f"(sekitar {months} bulan {remaining_days} hari ke depan).\n"
+            f"  * Rujuk estimasi waktu ini bila pengguna menanyakan sisa waktu atau hitung mundur."
+        )
+
     return facts_text + calc_note
 
 

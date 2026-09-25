@@ -7,6 +7,7 @@ menggunakan LLM Ollama secara streaming.
 import logging
 import math
 import re
+import threading
 _re = re
 from typing import Generator
 
@@ -26,6 +27,8 @@ from app.services.embedding_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+_bm25_lock = threading.Lock()
 
 # ─────────────────────────────────────────────────────────────
 # KONSTANTA
@@ -119,7 +122,7 @@ _NAMA_BULAN = [
 
 
 _RE_DOUBT_OR_CORRECTION = re.compile(
-    r"\b(salah|keliru|bukan|bukannya|kok beda|kok salah|kok bisa|kenapa beda|memang iya|masa sih|masa|yakin|beneran|serius|ngaco|bohong|ngibul|gak bener|tidak benar|kurang tepat|tidak tepat|hah|lah)\b",
+    r"\b(salah|keliru|bukan|bukannya|kok beda|kok salah|kok bisa|kenapa beda|memang iya|masa sih|yakin|beneran|serius|ngaco|bohong|ngibul|gak bener|tidak benar|kurang tepat|tidak tepat|hitung kembali|hitung ulang)\b",
     re.IGNORECASE,
 )
 
@@ -201,16 +204,27 @@ Pedoman Komunikasi & Inferensi:
    - Hanya ucapkan salam pembuka jika pengguna mengawali pesan dengan salam. JANGAN menggunakan emoji atau simbol grafis berlebihan.
 
 4. Prosedur & Persyaratan SOP:
-   - Bila pengguna baru pertama kali menanyakan alur SOP, sajikan poin langkah (1, 2, 3...) secara terstruktur beserta pelaksana, berkas, dan waktu proses.
+   - HANYA sajikan rincian poin langkah (1, 2, 3...) JIKA pengguna secara spesifik menanyakan "bagaimana alur/prosedur/cara".
+   - JIKA pengguna HANYA menanyakan estimasi waktu, JANGAN sebutkan poin tahapan langkahnya sama sekali.
    - Rujuk bagian 'Kelengkapan', 'Persyaratan', atau 'Kualifikasi Pelaksana' bila ditanyakan syarat permohonan.
 
-5. Estimasi Waktu & Durasi:
-   - Bila pengguna menanyakan estimasi waktu selesai atau kalkulasi ulang, berikan kesimpulan durasi hari kerja secara ringkas dan lugas dalam 1–2 paragraf (misal: total estimasi waktu sekitar 10–14 hari kerja operasional Senin s.d. Jumat).
-   - JANGAN membuat simulasi jadwal kalender per hari satu per satu yang panjang dan repetitif.
+5. Estimasi Waktu & Kalkulasi Kalender:
+   - Bila terdapat blok [DATA PERHITUNGAN WAKTU OTOMATIS] pada Konteks Dokumen, GUNAKAN angka mutlak dan tanggal selesai dari data tersebut. JANGAN menghitung jumlah hari atau memprediksi tanggal kalender sendiri.
+   - Sampaikan estimasi waktu selesai kepada pengguna secara ringkas, lugas, dan natural dalam 1–2 kalimat (contoh: "Total pengerjaan adalah 25 Hari Kerja. Jika dimulai hari ini, maka diperkirakan selesai pada tanggal 30 Oktober 2026").
+   - JANGAN membuat simulasi rincian kalender per hari yang panjang.
 
 6. Analisis Perbandingan & Komparasi Antar-SOP:
    - Bila pengguna menanyakan perbandingan (misal: perbedaan peralatan, syarat, waktu, kualifikasi, atau keterkaitan antara dua SOP), lakukan perbandingan langsung terhadap data masing-masing SOP yang tercantum pada Konteks Dokumen Resmi (atau gunakan Tabel Perbandingan Terstruktur bila disediakan).
-   - Jelaskan secara terstruktur: persamaan di antara keduanya, apa yang hanya ada di SOP pertama, dan apa yang hanya ada di SOP kedua. JANGAN menyatakan informasi tidak ditemukan jika rincian masing-masing SOP sudah ada di konteks."""
+   - Jelaskan secara terstruktur: persamaan di antara keduanya, apa yang hanya ada di SOP pertama, dan apa yang hanya ada di SOP kedua. JANGAN menyatakan informasi tidak ditemukan jika rincian masing-masing SOP sudah ada di konteks.
+
+7. Penulisan Sumber Referensi:
+   - DILARANG KERAS merangkai atau mengetik blok "**Sumber Referensi:**" di akhir kalimat Anda.
+   - Sistem akan menyisipkan sumber referensi secara otomatis, jadi Anda cukup fokus pada isi jawaban saja.
+
+8. Penyebutan Daftar Spesifik (Peralatan, Persyaratan, Dasar Hukum):
+   - JIKA ditanya "peralatan" atau "perlengkapan", cari bagian khusus berjudul "Peralatan/Perlengkapan" (berisi Komputer, Printer, ATK, dll) dan sebutkan SELURUH daftarnya tanpa diringkas atau dikurangi.
+   - BEDA ISTILAH: "Peralatan/Perlengkapan" adalah alat kerja utama SOP. Sedangkan "Kelengkapan" di dalam tabel adalah dokumen masukan untuk tiap tahapan. DILARANG tertukar antara keduanya!
+   - Selalu gunakan format daftar nomor/peluru bila menyebutkan daftar, JANGAN meringkasnya menjadi satu kalimat."""
 
 
 def _format_pages_list(pages: list[int]) -> str:
@@ -234,7 +248,7 @@ def _format_pages_list(pages: list[int]) -> str:
             elif prev == start + 1:
                 ranges.append(f"{start}, {prev}")
             else:
-                ranges.append(f"{start}–{prev}")
+                ranges.append(f"{start}-{prev}")
             start = p
             prev = p
 
@@ -243,7 +257,7 @@ def _format_pages_list(pages: list[int]) -> str:
     elif prev == start + 1:
         ranges.append(f"{start}, {prev}")
     else:
-        ranges.append(f"{start}–{prev}")
+        ranges.append(f"{start}-{prev}")
 
     return f"Halaman {', '.join(ranges)}"
 
@@ -339,43 +353,52 @@ def _get_bm25_index(collection) -> dict:
     ):
         return _bm25_cache
 
-    empty = {"bm25": None, "docs": [], "ids": [], "metas": [],
-             "hierarchical": True, "count": current_count,
-             "version": current_version}
+    with _bm25_lock:
+        # Double check setelah memperoleh lock
+        if (
+            _bm25_cache is not None
+            and _bm25_cache["count"] == current_count
+            and _bm25_cache["version"] == current_version
+        ):
+            return _bm25_cache
 
-    try:
-        from rank_bm25 import BM25Okapi
+        empty = {"bm25": None, "docs": [], "ids": [], "metas": [],
+                 "hierarchical": True, "count": current_count,
+                 "version": current_version}
 
-        all_data = collection.get(where={"chunk_type": "child"})
-        hierarchical = True
-        if not all_data.get("documents"):
-            # Data lama tanpa chunk_type — pakai seluruh koleksi (jalur flat)
-            all_data = collection.get()
-            hierarchical = False
+        try:
+            from rank_bm25 import BM25Okapi
 
-        docs = all_data.get("documents", [])
-        ids = all_data.get("ids", [])
-        metas = all_data.get("metadatas", [])
+            all_data = collection.get(where={"chunk_type": "child"})
+            hierarchical = True
+            if not all_data.get("documents"):
+                # Data lama tanpa chunk_type — pakai seluruh koleksi (jalur flat)
+                all_data = collection.get()
+                hierarchical = False
 
-        tokenized_corpus = [doc.lower().split() for doc in docs]
-        _bm25_cache = {
-            "bm25": BM25Okapi(tokenized_corpus) if tokenized_corpus else None,
-            "docs": docs,
-            "ids": ids,
-            "metas": metas,
-            "hierarchical": hierarchical,
-            "count": current_count,
-            "version": current_version,
-        }
-        logger.info(
-            "Indeks BM25 dibangun: %d chunk (%s) — akan dipakai ulang sampai korpus berubah",
-            len(docs), "hierarchical" if hierarchical else "flat",
-        )
-        return _bm25_cache
-    except Exception as e:
-        logger.warning(f"BM25 initialization failed: {e}")
-        _bm25_cache = None  # jangan cache kegagalan
-        return empty
+            docs = all_data.get("documents", [])
+            ids = all_data.get("ids", [])
+            metas = all_data.get("metadatas", [])
+
+            tokenized_corpus = [doc.lower().split() for doc in docs]
+            _bm25_cache = {
+                "bm25": BM25Okapi(tokenized_corpus) if tokenized_corpus else None,
+                "docs": docs,
+                "ids": ids,
+                "metas": metas,
+                "hierarchical": hierarchical,
+                "count": current_count,
+                "version": current_version,
+            }
+            logger.info(
+                "Indeks BM25 dibangun: %d chunk (%s) — akan dipakai ulang sampai korpus berubah",
+                len(docs), "hierarchical" if hierarchical else "flat",
+            )
+            return _bm25_cache
+        except Exception as e:
+            logger.warning(f"BM25 initialization failed: {e}")
+            _bm25_cache = None  # jangan cache kegagalan
+            return empty
 
 
 def _build_where_filter(
@@ -682,11 +705,13 @@ def _retrieve_context(
                             else:
                                 relative_cutoff = settings.RERANKER_MIN_SCORE
                         else:
-                            # Rasio toleransi: pertahankan chunk yang skornya minimal 50% dari skor peringkat #1
-                            relative_cutoff = max(settings.RERANKER_MIN_SCORE, top_score * 0.50)
-                            # Bila peringkat #1 memiliki keyakinan tinggi (>= 0.15), perketat rasio ke 60%
-                            if top_score >= 0.15:
-                                relative_cutoff = max(relative_cutoff, top_score * 0.60)
+                            # Rasio toleransi: pertahankan chunk yang skornya minimal 50% dari skor peringkat #1 bila positif
+                            if top_score > 0:
+                                relative_cutoff = max(settings.RERANKER_MIN_SCORE, top_score * 0.50)
+                                if top_score >= 0.15:
+                                    relative_cutoff = max(relative_cutoff, top_score * 0.60)
+                            else:
+                                relative_cutoff = settings.RERANKER_MIN_SCORE
 
                         pruned_ids = [
                             cid for cid in ranked_chunk_ids
@@ -857,6 +882,11 @@ def _retrieve_context(
                                     curr_page += 1
                     combined = expanded_combined
 
+                # Batasi maksimum chunk terakumulasi agar tidak meluap melampaui context window LLM
+                max_allowed_chunks = _MAX_CONTEXT_CHUNKS_LIST_QUERY if is_list else (_MAX_CONTEXT_CHUNKS + 6)
+                if len(combined) > max_allowed_chunks:
+                    combined = combined[:max_allowed_chunks]
+
                 # Sort ulang untuk presentasi ke LLM berdasarkan urutan dokumen (page + chunk_index)
                 combined.sort(key=lambda x: (
                     int(x[1].get("page_number", 0)),
@@ -956,7 +986,7 @@ def _retrieve_context(
         sources_lines: list[str] = []
         for d_title in sorted(doc_pages_for_sources.keys()):
             pages_list = sorted(doc_pages_for_sources[d_title])
-            sources_lines.append(f"- {d_title} — {_format_pages_list(pages_list)}")
+            sources_lines.append(f"- {d_title} - {_format_pages_list(pages_list)}")
         for np in sorted(non_page_sources):
             sources_lines.append(f"- {np}")
 
@@ -1654,6 +1684,70 @@ def _build_comparison_hint(context_text: str, query: str) -> str:
     return hint_text + "\n\n---\n\n" + context_text
 
 
+def _build_time_calculation_hint(context_text: str, query: str) -> str:
+    """
+    Kalkulator Terprogram: Melakukan perhitungan durasi absolut dari konteks SOP, 
+    lalu merangkumnya menjadi instruksi matematis pasti untuk LLM.
+    """
+    from app.services import tool_router
+    import re
+
+    blocks = re.split(r"\n---\n", context_text)
+    sop_blocks: dict[str, str] = {}
+    for block in blocks:
+        match = re.search(r"\[Konteks:\s*(.+?)\]", block)
+        if match:
+            sop_name = match.group(1).strip()
+            if sop_name not in sop_blocks:
+                sop_blocks[sop_name] = block
+            else:
+                sop_blocks[sop_name] += "\n" + block
+        else:
+            if "Umum" not in sop_blocks:
+                sop_blocks["Umum"] = block
+            else:
+                sop_blocks["Umum"] += "\n" + block
+
+    hint_lines = [
+        "=== [DATA PERHITUNGAN WAKTU OTOMATIS] ===",
+        "Sistem telah menghitung total waktu prosedural secara matematis mutlak per dokumen:",
+    ]
+
+    found_time = False
+    for sop_name, text_block in sop_blocks.items():
+        calc_result = tool_router.parse_and_sum_durations_from_context(text_block)
+        if calc_result:
+            total_hari = calc_result.get("total_hari", 0)
+            formatted_total = calc_result.get("formatted_total", "")
+            kalender_info = ""
+
+            if total_hari > 0:
+                hari_kerja_bulat = int(total_hari) if total_hari.is_integer() else int(total_hari)
+                est = tool_router.hitung_estimasi_selesai(hari_kerja_bulat)
+                tgl_selesai = est.get("tanggal_selesai", "")
+                if tgl_selesai:
+                    kalender_info = f" (Estimasi selesai jika dimulai hari ini: {tgl_selesai} - potong libur akhir pekan)"
+
+            if formatted_total:
+                hint_lines.append(f"- Waktu SOP {sop_name}: {formatted_total}{kalender_info}")
+                found_time = True
+
+    if not found_time:
+        return context_text
+
+    hint_lines.extend([
+        "",
+        "TUGAS SANGAT KETAT UNTUK AI:",
+        "1. Pilih HANYA SATU waktu SOP dari daftar di atas yang paling relevan dengan pertanyaan pengguna (misal: jika ditanya Renja, pilih Renja saja).",
+        "2. DILARANG KERAS menjumlahkan waktu dari dua SOP yang berbeda (Jangan menjawab 50 hari jika ada 2 SOP yang masing-masing 25 hari!).",
+        "3. DILARANG KERAS membuat daftar bernomor (1, 2, 3...) yang berisi rincian tahapan.",
+        "4. FORMAT JAWABAN WAJIB: 'Berdasarkan SOP [Nama SOP yang dipilih], total waktu yang dibutuhkan adalah [Total Waktu]. [Estimasi Selesai]'",
+        "=========================================\n"
+    ])
+    
+    hint_text = "\n".join(hint_lines)
+    return context_text + "\n\n---\n\n" + hint_text
+
 # ─────────────────────────────────────────────────────────────
 # KEYWORD EXTRACTION & DETEKSI TIPE QUERY
 # ─────────────────────────────────────────────────────────────
@@ -1697,14 +1791,24 @@ def _petunjuk_fokus_label(query: str, context_text: str) -> str:
 def _is_list_query(query: str) -> bool:
     """
     Mendeteksi apakah pertanyaan pengguna meminta katalog/daftar panjang seluruh SOP
-    (misal: 'daftar seluruh SOP', 'sebutkan semua SOP di diktum kedua').
-    JANGAN mencocokkan pertanyaan spesifik seperti 'apa saja syarat...', 'apa saja berkas...'.
+    (misal: 'daftar seluruh SOP', 'sebutkan semua SOP di diktum kedua', 'ada berapa SOP').
+    JANGAN mencocokkan pertanyaan spesifik seperti 'apa saja syarat...', 'apa saja berkas...', atau detail di dalam suatu SOP.
     """
     query_lower = query.lower()
+
+    # Pengecualian: jika menanyakan rincian spesifik di dalam suatu SOP (syarat, langkah, perlengkapan, durasi, dll.)
+    specific_exclusions = [
+        "syarat", "persyaratan", "langkah", "tahapan", "perlengkapan", "output", "hasil",
+        "waktu", "durasi", "lama", "biaya", "pelaksana", "penanggung jawab", "dasar hukum",
+    ]
+    if any(ex in query_lower for ex in specific_exclusions):
+        if not any(k in query_lower for k in ["seluruh sop", "semua sop", "total sop", "ada berapa sop", "katalog sop"]):
+            return False
+
     global_list_triggers = [
-        "daftar sop", "daftar seluruh", "semua sop", "seluruh sop",
-        "macam-macam sop", "jenis-jenis sop", "list sop", "diktum kedua",
-        "ada berapa sop", "total sop", "katalog sop"
+        "daftar seluruh sop", "daftar semua sop", "daftar sop yang ada", "daftar sop diskominfotik",
+        "semua sop", "seluruh sop", "macam-macam sop", "jenis-jenis sop", "list sop", "diktum kedua",
+        "ada berapa sop", "total sop", "katalog sop", "apa saja sop yang ada", "apa saja sop di"
     ]
     return any(k in query_lower for k in global_list_triggers)
 
@@ -1756,6 +1860,7 @@ def _stream_jawaban(
     """
     messages = [SystemMessage(content=system_prompt)]
     if chat_history:
+        import re
         for msg in chat_history[-4:]:
             role = msg.get("role")
             cnt = msg.get("content", "")
@@ -1763,7 +1868,9 @@ def _stream_jawaban(
                 if role == "user":
                     messages.append(HumanMessage(content=cnt))
                 elif role == "assistant":
-                    messages.append(AIMessage(content=cnt))
+                    # Sanitize: Remove previous system-appended citations to break the LLM's pattern recognition
+                    cnt_bersih = re.sub(r"(?i)\n*?\**Sumber Referensi:\**.*", "", cnt, flags=re.DOTALL)
+                    messages.append(AIMessage(content=cnt_bersih))
     messages.append(HumanMessage(content=query))
 
     jendela_dicoba = [num_ctx]
@@ -1784,6 +1891,7 @@ def _stream_jawaban(
                 reasoning=False,
                 keep_alive=_OLLAMA_KEEP_ALIVE,
                 client_kwargs={"timeout": _OLLAMA_TIMEOUT},
+                stop=["**Sumber Referensi:**", "Sumber Referensi:"]
             )
             for chunk in llm.stream(messages):
                 if chunk.content:
@@ -2410,6 +2518,7 @@ PANDUAN KOMUNIKASI HELPDESK:
             return
 
         context_text = _build_comparison_hint(context_text, resolved_query)
+        context_text = _build_time_calculation_hint(context_text, resolved_query)
         context_text += _petunjuk_fokus_label(resolved_query, context_text)
 
         now_str = _get_current_date_info()
@@ -2430,16 +2539,7 @@ PANDUAN KOMUNIKASI HELPDESK:
         if "{institution_info}" not in active_prompt_template and "Profil Instansi Terkini" not in formatted_template and "Informasi Dasar Instansi" not in formatted_template:
             formatted_template = f"{formatted_template}\n\nProfil Instansi Terkini:\n{_get_institution_info()}"
 
-        calc_duration_info = tool_router.parse_and_sum_durations_from_context(context_text)
-        if calc_duration_info and any(kw in resolved_query.lower() for kw in ["waktu", "durasi", "lama", "menit", "jam", "hari", "berapa", "hitung", "total"]):
-            dur_items_str = " + ".join(calc_duration_info["items"])
-            dur_hint = (
-                f"\n\n[Perhitungan Akurat Sistem]:\n"
-                f"- Rincian Waktu Tahapan: {dur_items_str}\n"
-                f"- Total Akumulasi Durasi: TEPAT {calc_duration_info['formatted_total']}\n"
-                f"- Instruksi: Jika menyajikan total waktu pelaksanaan, gunakan hasil perhitungan matematis di atas."
-            )
-            context_text += dur_hint
+
 
         if "{context}" in formatted_template:
             system_prompt = formatted_template.replace("{context}", context_text)
