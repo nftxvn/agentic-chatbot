@@ -2428,7 +2428,12 @@ PANDUAN KOMUNIKASI HELPDESK:
                 return_chunks_info=False,
             )
 
-        if not context_text:
+        facts_context = route_params.get("facts_context", "")
+        if facts_context:
+            # Plan B: Gabungkan fakta instansi dari Fast-Path dengan dokumen PDF
+            context_text = f"{facts_context}\n\n{context_text}"
+
+        if not context_text.strip():
             if include_debug:
                 yield {
                     "type": "telemetry",

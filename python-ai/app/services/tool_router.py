@@ -721,12 +721,12 @@ def route_intent(query: str, session_id: str | None = None) -> dict[str, Any]:
             )
 
             return {
-                "intent": "augmented_knowledge",
+                "intent": "rag",
                 "params": {
                     "facts_context": facts,
                     "source_title": d["nama_bidang"],
                     "category": "direktori",
-                    "search_query": search_q,
+                    "query": search_q,
                     "raw_query": q,
                 },
                 "label": f"Fakta Direktori: {d['nama_bidang']}",
@@ -744,12 +744,12 @@ def route_intent(query: str, session_id: str | None = None) -> dict[str, Any]:
             )
             facts = _enrich_facts_with_date_calculations(facts)
             return {
-                "intent": "augmented_knowledge",
+                "intent": "rag",
                 "params": {
                     "facts_context": facts,
                     "source_title": fp["title"],
                     "category": fp["category"],
-                    "search_query": search_q,
+                    "query": search_q,
                     "raw_query": q,
                 },
                 "label": f"Fakta Instansi [{cat_label}]: {fp['title']}",
