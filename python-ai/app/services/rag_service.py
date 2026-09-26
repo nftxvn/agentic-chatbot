@@ -2299,7 +2299,8 @@ PANDUAN KOMUNIKASI HELPDESK:
 5. Akhiri dengan kalimat penutup khas helpdesk yang ramah dan menawarkan bantuan lanjutan jika diperlukan (misal: 'Ada yang dapat kami bantu lagi terkait layanan Diskominfotik?').
 6. Bila pertanyaan menggunakan Bahasa Aceh (misal: 'Saleuem', 'soe nan...', 'pat kanto...'), pahami maksudnya dan respon secara santun dalam Bahasa Indonesia dengan salam santun khas Aceh.
 7. JANGAN menggunakan emoji atau karakter grafis.
-8. JANGAN mengarang informasi di luar fakta resmi di atas."""
+8. ATURAN WAJIB (ANTI-HALUSINASI): Jawab HANYA menggunakan informasi yang tertulis secara eksplisit pada blok FAKTA RESMI INSTANSI TERVERIFIKASI di atas.
+9. JIKA fakta di atas TIDAK memuat jawaban atau angka yang ditanyakan pengguna, ANDA WAJIB menjawab: "Maaf, informasi spesifik mengenai hal tersebut tidak tercantum dalam wawasan saya." DILARANG KERAS menggunakan wawasan umum Anda untuk menebak atau mengarang prosedur/angka/jadwal."""
 
             estimasi_token = _estimasi_token_konteks(system_prompt)
             if include_debug:
