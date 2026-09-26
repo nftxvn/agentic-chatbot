@@ -5,8 +5,10 @@ use App\Http\Controllers\Api\DocumentCategoryController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\EkstraksiController;
 use App\Http\Controllers\Api\ForgotPasswordController;
+use App\Http\Controllers\Api\InternalTicketController;
 use App\Http\Controllers\Api\ResetPasswordController;
 use App\Http\Controllers\Api\SettingController;
+use App\Http\Controllers\Api\TicketController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -128,6 +130,17 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('models',              [SettingController::class, 'getAvailableModels'])->name('api.settings.models.get');
         Route::post('models/benchmark',   [SettingController::class, 'benchmarkModel'])->name('api.settings.models.benchmark');
     });
+
+    // Live Chat & Helpdesk Tickets (Admin)
+    Route::prefix('tickets')->group(function () {
+        Route::get('/',               [TicketController::class, 'index'])->name('api.tickets.index');
+        Route::get('/stats',          [TicketController::class, 'stats'])->name('api.tickets.stats');
+        Route::get('/{id}',           [TicketController::class, 'show'])->name('api.tickets.show');
+        Route::post('/{id}/assign',   [TicketController::class, 'assign'])->name('api.tickets.assign');
+        Route::patch('/{id}/status',  [TicketController::class, 'updateStatus'])->name('api.tickets.status');
+        Route::get('/{id}/messages',  [TicketController::class, 'messages'])->name('api.tickets.messages');
+        Route::post('/{id}/messages', [TicketController::class, 'reply'])->name('api.tickets.reply');
+    });
 });
 
 // ── Public Inbound Webhooks (WhatsApp & Telegram) ─────────────────────────
@@ -142,5 +155,12 @@ Route::prefix('v1')->middleware('auth.apikey')->group(function () {
     Route::post('chat',        [\App\Http\Controllers\Api\V1\ChatController::class, 'message'])->name('api.v1.chat.message');
     Route::post('chat/stream', [\App\Http\Controllers\Api\V1\ChatController::class, 'stream'])->name('api.v1.chat.stream');
 });
+
+// ── Internal Service Gateway (Python AI Handoff Dispatch) ─────────────────
+Route::prefix('v1/internal')->middleware('auth.internal')->group(function () {
+    Route::post('chat-tickets', [InternalTicketController::class, 'storeOrUpdate'])->name('api.v1.internal.chat-tickets');
+    Route::post('tickets',      [InternalTicketController::class, 'storeOrUpdate'])->name('api.v1.internal.tickets');
+});
+
 
 

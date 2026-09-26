@@ -11,6 +11,7 @@ import DocumentDetailPage from './pages/DocumentDetailPage'
 import ChatbotSettingsPage from './pages/ChatbotSettingsPage'
 import IntegrationsPage from './pages/IntegrationsPage'
 import MonitoringPage from './pages/MonitoringPage'
+import LiveChatPage from './pages/LiveChatPage'
 
 function AppLoader() {
   return (
@@ -130,9 +131,11 @@ export default function App() {
             <Route path="/dashboard"          element={<DashboardPage />} />
             <Route path="/categories"         element={<CategoriesPage />} />
             <Route path="/documents/:id"      element={<DocumentDetailPage />} />
+            <Route path="/live-chat"          element={<LiveChatPage />} />
             <Route path="/settings/chatbot"   element={<ChatbotSettingsPage />} />
             <Route path="/integrations"       element={<IntegrationsPage />} />
             <Route path="/monitoring"         element={<MonitoringPage />} />
+            <Route path="/helpdesk"           element={<Navigate to="/live-chat" replace />} />
             {/* Backward compatibility redirects */}
             <Route path="/chat-logs"          element={<Navigate to="/monitoring?tab=telemetri" replace />} />
             <Route path="/mesin"              element={<Navigate to="/monitoring?tab=hardware" replace />} />

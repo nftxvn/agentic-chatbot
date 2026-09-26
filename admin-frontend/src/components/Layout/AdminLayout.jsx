@@ -63,6 +63,25 @@ const NAV_ITEMS = [
     ),
   },
   {
+    to: "/live-chat",
+    label: "Live Chat & Tiket",
+    icon: (
+      <svg
+        className="w-5 h-5"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={1.75}
+          d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a.75.75 0 01-.774-.823l.235-2.115C3.301 16.597 2.25 14.43 2.25 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"
+        />
+      </svg>
+    ),
+  },
+  {
     to: "/settings/chatbot",
     label: "Chatbot & RAG",
     icon: (
@@ -133,6 +152,12 @@ const QUICK_FEATURES = [
     label: "Kategori",
     desc: "Kelola profil OCR, prompt ekstraksi & variabel dokumen",
     to: "/categories",
+  },
+  {
+    id: "f-live-chat",
+    label: "Live Chat & Tiket",
+    desc: "Balas pesan percakapan warga yang dialihkan (Human Handoff) secara langsung",
+    to: "/live-chat",
   },
   {
     id: "f-chatbot",

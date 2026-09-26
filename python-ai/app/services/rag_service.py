@@ -35,10 +35,10 @@ _bm25_lock = threading.Lock()
 # ─────────────────────────────────────────────────────────────
 
 # Jumlah dokumen konteks yang diambil per query oleh vector store
-_TOP_K = 8
+_TOP_K = 4
 
 # Jumlah chunk maksimum yang dikirim ke LLM setelah multi-query aggregation.
-_MAX_CONTEXT_CHUNKS = 10
+_MAX_CONTEXT_CHUNKS = 4
 
 # Limit lebih longgar khusus untuk query bertipe daftar/list lengkap
 _MAX_CONTEXT_CHUNKS_LIST_QUERY = 20
@@ -470,7 +470,7 @@ def _retrieve_context(
     check_query = original_query if original_query else query
     is_list = _is_list_query(check_query)
     base_k = top_k_override if top_k_override is not None else _TOP_K
-    max_chunks = _MAX_CONTEXT_CHUNKS_LIST_QUERY if is_list else max(base_k + 2, _MAX_CONTEXT_CHUNKS)
+    max_chunks = _MAX_CONTEXT_CHUNKS_LIST_QUERY if is_list else _MAX_CONTEXT_CHUNKS
 
     # Bila reranker aktif, perluas pencarian awal (Stage 1 High Recall) agar kandidat lebih komprehensif
     if reranker is not None:
@@ -888,7 +888,7 @@ def _retrieve_context(
                     combined = expanded_combined
 
                 # Batasi maksimum chunk terakumulasi agar tidak meluap melampaui context window LLM
-                max_allowed_chunks = _MAX_CONTEXT_CHUNKS_LIST_QUERY if is_list else (_MAX_CONTEXT_CHUNKS + 6)
+                max_allowed_chunks = _MAX_CONTEXT_CHUNKS_LIST_QUERY if is_list else _MAX_CONTEXT_CHUNKS
                 if len(combined) > max_allowed_chunks:
                     combined = combined[:max_allowed_chunks]
 
