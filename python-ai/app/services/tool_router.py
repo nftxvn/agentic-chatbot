@@ -614,6 +614,7 @@ _NAME_STOPWORDS = {
     "hormat", "info", "informasi", "kendala", "masalah", "keluhan", "keperluan", "perihal",
     "dari", "staf", "pegawai", "kantor", "instansi", "opd", "dinas", "badan", "bagian", "bidang",
     "kementerian", "di", "ke", "pada", "untuk", "atas", "nama", "dengan", "saya", "kami", "adalah",
+    "dan", "serta", "yg", "yang", "juga", "atau", "pun",
 }
 
 _AGENCY_ALIASES = {
@@ -719,8 +720,8 @@ def extract_citizen_escalation_details(text: str) -> dict[str, str | None]:
     # Bersihkan simbol markdown bullets dan bolding agar parsing key-value tahan terhadap copy-paste template
     clean_txt = re.sub(r"[*_•\-]+", " ", text)
 
-    # 1. Format Terstruktur Key-Value (e.g. Nama: Budi, Instansi: Dinkes, Instansi/OPD: Kemenkes)
-    m_name_kv = re.search(r"(?:nama|name)\s*[:=]\s*([^,\/\n\|\.]+)", clean_txt, re.IGNORECASE)
+    # 1. Format Terstruktur Key-Value (e.g. Nama: Budi, Nama saya: Budi, Instansi: Dinkes, Instansi/OPD: Kemenkes)
+    m_name_kv = re.search(r"(?:nama(?:\s*(?:saya|ku))?|name)\s*[:=]\s*([^,\/\n\|\.]+)", clean_txt, re.IGNORECASE)
     if m_name_kv:
         cand = _clean_extracted_name(m_name_kv.group(1))
         if cand:
@@ -741,9 +742,9 @@ def extract_citizen_escalation_details(text: str) -> dict[str, str | None]:
     # 2. Pola Alami Bahasa Indonesia untuk Nama
     if not details["citizen_name"]:
         name_patterns = [
-            r"(?:nama\s*(?:saya|ku)?|namaku|atas\s+nama|panggil\s+saja)\s*(?:adalah|:|=)?\s*([A-Za-z\s'\.]{2,35}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|kendala|masalah|keperluan|ingin|mau|tolong|\.|\,|\n|$))",
-            r"(?:perkenalkan\s+saya|saya|dengan|aku)\s+([A-Za-z\s'\.]{2,30}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|\.|\,|\n|$))",
-            r"\bnama\s+([A-Za-z\s'\.]{2,30}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|\.|\,|\n|$))",
+            r"(?:nama\s*(?:saya|ku)?|namaku|atas\s+nama|panggil\s+saja)\s*(?:adalah|:|=)?\s*([A-Za-z\s'\.]{2,35}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|kendala|masalah|keperluan|ingin|mau|tolong|dan|serta|\.|\,|\n)|$)",
+            r"(?:perkenalkan\s+saya|saya|dengan|aku)\s+([A-Za-z\s'\.]{2,30}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|kendala|masalah|keperluan|ingin|mau|tolong|dan|serta|\.|\,|\n)|$)",
+            r"\bnama\s+([A-Za-z\s'\.]{2,30}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|kendala|masalah|keperluan|ingin|mau|tolong|dan|serta|\.|\,|\n)|$)",
             r"^([A-Za-z\s'\.]{2,30}?)\s+(?:dari|instansi|asal|kantor|staf|pegawai)\s+",
         ]
         for pat in name_patterns:

@@ -23,6 +23,7 @@ class EntityExtractorService
         'hormat', 'info', 'informasi', 'kendala', 'masalah', 'keluhan', 'keperluan', 'perihal',
         'dari', 'staf', 'pegawai', 'kantor', 'instansi', 'opd', 'dinas', 'badan', 'bagian', 'bidang',
         'kementerian', 'di', 'ke', 'pada', 'untuk', 'atas', 'nama', 'dengan', 'saya', 'kami', 'adalah',
+        'dan', 'serta', 'yg', 'yang', 'juga', 'atau', 'pun',
     ];
 
     /**
@@ -88,8 +89,8 @@ class EntityExtractorService
         // Bersihkan simbol markdown bullets dan bolding agar parsing key-value tahan terhadap copy-paste template
         $cleanText = preg_replace('/[*_•\-]+/', ' ', $text);
 
-        // 1. Ekstraksi format terstruktur Key-Value (e.g. Nama: Budi, Instansi: Dinkes, Instansi/OPD: Kemenkes)
-        if (preg_match('/(?:nama|name)\s*[:=]\s*([^,\/\n\|\.]+)/i', $cleanText, $m)) {
+        // 1. Ekstraksi format terstruktur Key-Value (e.g. Nama: Budi, Nama saya: Budi, Instansi: Dinkes, Instansi/OPD: Kemenkes)
+        if (preg_match('/(?:nama(?:\s*(?:saya|ku))?|name)\s*[:=]\s*([^,\/\n\|\.]+)/i', $cleanText, $m)) {
             $cand = self::cleanName($m[1]);
             if ($cand) {
                 $name = $cand;
@@ -113,9 +114,9 @@ class EntityExtractorService
         // 2. Ekstraksi Nama Bahasa Indonesia berbasis Pola Percakapan Alami
         if (!$name) {
             $namePatterns = [
-                '/(?:nama\s*(?:saya|ku)?|namaku|atas\s+nama|panggil\s+saja)\s*(?:adalah|:|=)?\s*([A-Za-z\s\'\.]{2,35}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|kendala|masalah|keperluan|ingin|mau|tolong|\.|\,|\n|$))/i',
-                '/(?:perkenalkan\s+saya|saya|dengan|aku)\s+([A-Za-z\s\'\.]{2,30}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|\.|\,|\n|$))/i',
-                '/\bnama\s+([A-Za-z\s\'\.]{2,30}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|\.|\,|\n|$))/i',
+                '/(?:nama\s*(?:saya|ku)?|namaku|atas\s+nama|panggil\s+saja)\s*(?:adalah|:|=)?\s*([A-Za-z\s\'\.]{2,35}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|kendala|masalah|keperluan|ingin|mau|tolong|dan|serta|\.|\,|\n)|$)/i',
+                '/(?:perkenalkan\s+saya|saya|dengan|aku)\s+([A-Za-z\s\'\.]{2,30}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|kendala|masalah|keperluan|ingin|mau|tolong|dan|serta|\.|\,|\n)|$)/i',
+                '/\bnama\s+([A-Za-z\s\'\.]{2,30}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|kendala|masalah|keperluan|ingin|mau|tolong|dan|serta|\.|\,|\n)|$)/i',
                 '/^([A-Za-z\s\'\.]{2,30}?)\s+(?:dari|instansi|asal|kantor|staf|pegawai)\s+/i',
             ];
 
