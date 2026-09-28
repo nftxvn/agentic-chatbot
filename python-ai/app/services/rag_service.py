@@ -2059,18 +2059,53 @@ def generate_response(
         route_params = route_result.get("params", {})
 
         if intent == "human_escalation":
-            handoff_msg = (
-                "Baik, pesan Anda sudah saya teruskan ke tim kami untuk dibantu lebih lanjut. "
-                "Agar tim kami dapat membantu lebih cepat, silakan tinggalkan **Nama/Instansi** dan **detail kendala** Anda di sini ya. "
-                "Selain itu, Anda juga dapat menghubungi Call Center 112 atau berkonsultasi langsung di kantor Diskominfotik "
-                "(Balai Kota Banda Aceh, Gedung C Lantai 3). Terima kasih!"
-            )
-            # Dispatch awal ke Laravel
+            extracted = tool_router.extract_citizen_escalation_details(query)
+            c_name = extracted.get("citizen_name")
+            c_agency = extracted.get("citizen_agency")
+            c_issue = extracted.get("issue_summary")
+
+            # Scan history session jika nama / instansi belum ditemukan di prompt saat ini
+            if not c_name or not c_agency:
+                for turn in chat_history:
+                    if turn.get("role") == "user":
+                        u_txt = turn.get("content", "")
+                        hist_ext = tool_router.extract_citizen_escalation_details(u_txt)
+                        if not c_name and hist_ext.get("citizen_name"):
+                            c_name = hist_ext["citizen_name"]
+                        if not c_agency and hist_ext.get("citizen_agency"):
+                            c_agency = hist_ext["citizen_agency"]
+                        if (not c_issue or c_issue == query) and hist_ext.get("issue_summary") and hist_ext["issue_summary"] != u_txt:
+                            c_issue = hist_ext["issue_summary"]
+                        elif (not c_issue or c_issue == query) and u_txt and not any(kw in u_txt.lower() for kw in ["halo", "hai", "selamat", "admin", "hubungi"]):
+                            c_issue = f"Pertanyaan: {u_txt[:120]}"
+
+            if c_name:
+                greeting_target = f"Bapak/Ibu {c_name}" + (f" dari {c_agency}" if c_agency else "")
+                handoff_msg = (
+                    f"Baik {greeting_target}, permintaan Anda sedang saya teruskan ke Petugas Helpdesk Diskominfotik untuk dibantu lebih lanjut.\n\n"
+                    "Jika ada detail kendala tambahan yang ingin disampaikan, silakan ketik langsung di sini ya.\n\n"
+                    "Selain itu, Anda juga dapat berkonsultasi langsung di kantor Diskominfotik (Balai Kota Banda Aceh, Gedung C Lantai 3) atau Call Center 112. Terima kasih!"
+                )
+            else:
+                handoff_msg = (
+                    "Baik, permintaan Anda sedang saya teruskan ke Petugas Helpdesk Diskominfotik.\n\n"
+                    "Agar petugas kami dapat langsung memproses kendala Anda dengan cepat, mohon balas dengan format singkat berikut:\n\n"
+                    "📋 **Format Data Bantuan:**\n"
+                    "• **Nama:** [Nama Lengkap Anda]\n"
+                    "• **Instansi/OPD:** [Nama Dinas / Badan / Kantor / Kementerian]\n"
+                    "• **Kendala:** [Rincian masalah / keperluan Anda]\n\n"
+                    "*(Contoh: Nama: Naufal / Instansi: Kemenkes / Kendala: Uang makan belum cair)*\n\n"
+                    "Selain itu, Anda juga dapat berkonsultasi langsung di kantor Diskominfotik (Balai Kota Banda Aceh, Gedung C Lantai 3) atau Call Center 112. Terima kasih!"
+                )
+
+            # Dispatch awal ke Laravel dengan metadata yang teridentifikasi
             _dispatch_ticket_to_laravel(
                 session_id=session_id,
                 message=query,
                 intent="human_escalation",
-                issue_summary=query,
+                citizen_name=c_name,
+                citizen_agency=c_agency,
+                issue_summary=c_issue or query,
             )
 
             if include_debug:
@@ -2105,6 +2140,16 @@ def generate_response(
             c_agency = route_params.get("citizen_agency")
             c_issue = route_params.get("issue_summary") or query
 
+            if not c_name or not c_agency:
+                for turn in chat_history:
+                    if turn.get("role") == "user":
+                        u_txt = turn.get("content", "")
+                        hist_ext = tool_router.extract_citizen_escalation_details(u_txt)
+                        if not c_name and hist_ext.get("citizen_name"):
+                            c_name = hist_ext["citizen_name"]
+                        if not c_agency and hist_ext.get("citizen_agency"):
+                            c_agency = hist_ext["citizen_agency"]
+
             # Dispatch tindak lanjut info warga ke Laravel
             _dispatch_ticket_to_laravel(
                 session_id=session_id,
@@ -2120,9 +2165,9 @@ def generate_response(
                 greeting_target += f" dari {c_agency}"
 
             followup_ack = (
-                f"Terima kasih atas informasinya, {greeting_target}. "
-                "Catatan kendala Anda sudah saya catat dan langsung diteruskan ke antrean tim Helpdesk Diskominfotik "
-                "untuk ditindaklanjuti. Mohon ditunggu respon dari tim kami ya!"
+                f"Terima kasih atas informasinya, {greeting_target}.\n\n"
+                "Data identitas dan rincian kendala Anda sudah tersimpan dan otomatis disinkronkan ke antrean Petugas Helpdesk Diskominfotik. "
+                "Petugas kami akan segera merespons pesan Anda di sini. Mohon ditunggu ya!"
             )
             if include_debug:
                 yield {
@@ -2248,7 +2293,7 @@ Instruksi:
             return
 
         if intent == "chitchat":
-            is_simple_hi = bool(re.match(r"^(?:halo|hai|hay|hei|hi|hello|assalamu['\s]?alaikum|ass|askum|saleuem|saleum|kru\s+seumangat|p|ping|tes|test)[\s,.-]*$", query.strip().lower()))
+            is_simple_hi = bool(re.match(r"^(?:halo|hai|hay|hei|heyy|hi|hello|helo|hoi|hoy|oy|oi|woy|woi|uy|yo|assalamu['\s]?alaikum|ass|askum|saleuem|saleum|kru\s+seumangat|p|ping|tes|test)[\s,.-]*$", query.strip().lower()))
             is_followup = bool(chat_history and len(chat_history) > 0)
 
             if is_simple_hi and not is_followup:

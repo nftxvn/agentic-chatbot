@@ -22,6 +22,8 @@ export default function LiveChatPage() {
   const [selectedFile, setSelectedFile] = useState(null)
   const [filePreviewUrl, setFilePreviewUrl] = useState(null)
   const [previewModalImg, setPreviewModalImg] = useState(null)
+  const [ticketToDelete, setTicketToDelete] = useState(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const statsGridRef = useRef(null)
   const messagesContainerRef = useRef(null)
@@ -255,6 +257,43 @@ export default function LiveChatPage() {
     }
   }
 
+  const handleDeleteTicket = async (ticket) => {
+    if (!ticket) return
+    setIsDeleting(true)
+    try {
+      await ticketsApi.delete(ticket.id)
+      addAppNotification({
+        title: 'Tiket Berhasil Dihapus',
+        message: `Tiket #${ticket.id} (${ticket.citizen_name || 'Warga'}) telah dihapus secara permanen.`,
+        type: 'success',
+      })
+
+      // Update local state
+      setTickets((prev) => prev.filter((t) => t.id !== ticket.id))
+      setStats((prev) => ({
+        ...prev,
+        total: Math.max(0, (prev.total || 1) - 1),
+        [ticket.status]: Math.max(0, (prev[ticket.status] || 1) - 1),
+      }))
+
+      if (selectedTicket?.id === ticket.id) {
+        setSelectedTicket(null)
+        setMessages([])
+      }
+
+      setTicketToDelete(null)
+    } catch (err) {
+      console.error('Failed to delete ticket:', err)
+      addAppNotification({
+        title: 'Gagal Menghapus Tiket',
+        message: err?.response?.data?.message || 'Terjadi kesalahan saat menghapus tiket.',
+        type: 'warning',
+      })
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   const getStatusBadge = (status) => {
     switch (status) {
       case 'open':
@@ -439,15 +478,20 @@ export default function LiveChatPage() {
                   <div
                     key={t.id}
                     onClick={() => handleSelectTicket(t)}
-                    className={`p-3.5 cursor-pointer transition-colors flex flex-col gap-1.5 ${
+                    className={`group p-3.5 cursor-pointer transition-colors flex flex-col gap-1.5 ${
                       isSelected
                         ? 'bg-sky-500/10 border-l-4 border-l-sky-500'
                         : 'hover:bg-[var(--bg-input)]'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <div className="font-bold text-xs text-[var(--text-primary)] truncate">
-                        {t.citizen_name || 'Warga / Anonim'}
+                      <div className="font-bold text-xs text-[var(--text-primary)] truncate flex items-center gap-1.5">
+                        <span>{t.citizen_name || 'Warga / Anonim'}</span>
+                        {t.citizen_agency && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-sky-500/10 text-sky-600 dark:text-sky-400 font-medium truncate max-w-[110px]">
+                            {t.citizen_agency}
+                          </span>
+                        )}
                       </div>
                       <span className="text-[10px] uppercase font-semibold text-[var(--text-muted)] shrink-0">
                         {t.channel || 'web'}
@@ -484,6 +528,11 @@ export default function LiveChatPage() {
                   <div>
                     <div className="font-bold text-sm text-[var(--text-primary)] flex items-center gap-2">
                       <span>{selectedTicket.citizen_name || 'Warga / Anonim'}</span>
+                      {selectedTicket.citizen_agency && (
+                        <span className="text-xs px-2 py-0.5 rounded-md bg-sky-500/10 text-sky-600 dark:text-sky-400 font-medium border border-sky-500/20">
+                          {selectedTicket.citizen_agency}
+                        </span>
+                      )}
                       {getStatusBadge(selectedTicket.status)}
                     </div>
                     <div className="text-xs text-[var(--text-secondary)] flex items-center gap-2 mt-0.5">
@@ -494,12 +543,12 @@ export default function LiveChatPage() {
                   </div>
                 </div>
 
-                {/* Status Action Buttons */}
+                {/* Status & Delete Action Buttons */}
                 <div className="flex items-center gap-2">
                   {selectedTicket.status === 'open' && (
                     <button
                       onClick={() => handleStatusChange('in_progress')}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-sky-500 text-white hover:bg-sky-600 transition-colors shadow-sm cursor-pointer"
+                      className="px-3.5 py-2 text-xs font-bold rounded-xl bg-sky-500 text-white hover:bg-sky-600 transition-colors shadow-sm cursor-pointer"
                     >
                       Ambil Tiket
                     </button>
@@ -507,7 +556,7 @@ export default function LiveChatPage() {
                   {selectedTicket.status !== 'resolved' && (
                     <button
                       onClick={() => handleStatusChange('resolved')}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 transition-colors shadow-sm cursor-pointer"
+                      className="px-3.5 py-2 text-xs font-bold rounded-xl bg-emerald-500 text-white hover:bg-emerald-600 transition-colors shadow-sm cursor-pointer"
                     >
                       Tandai Selesai
                     </button>
@@ -515,11 +564,22 @@ export default function LiveChatPage() {
                   {selectedTicket.status === 'resolved' && (
                     <button
                       onClick={() => handleStatusChange('in_progress')}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[var(--bg-input)] text-[var(--text-secondary)] hover:text-sky-500 border border-[var(--border-color)] transition-colors cursor-pointer"
+                      className="px-3.5 py-2 text-xs font-bold rounded-xl bg-[var(--bg-input)] text-[var(--text-secondary)] hover:text-sky-500 border border-[var(--border-color)] transition-colors cursor-pointer"
                     >
                       Buka Kembali
                     </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => setTicketToDelete(selectedTicket)}
+                    title="Hapus Tiket"
+                    className="px-3.5 py-2 text-xs font-bold rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500 hover:text-white border border-rose-500/30 transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    <span>Hapus Tiket</span>
+                  </button>
                 </div>
               </div>
 
@@ -839,6 +899,82 @@ export default function LiveChatPage() {
           )}
         </div>
       </div>
+
+      {/* Delete Ticket Confirmation Modal */}
+      {ticketToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div
+            className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-5 sm:p-6 max-w-md w-full shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center shrink-0">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-[var(--text-primary)]">Hapus Tiket Antrean</h3>
+                <p className="text-xs text-[var(--text-secondary)]">Konfirmasi penghapusan tiket bantuan</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-[var(--bg-input)] rounded-xl border border-[var(--border-color)] text-xs space-y-1.5">
+              <div className="flex justify-between text-[var(--text-secondary)]">
+                <span>Nomor Tiket:</span>
+                <span className="font-mono font-bold text-[var(--text-primary)]">{ticketToDelete.ticket_number || `#${ticketToDelete.id}`}</span>
+              </div>
+              <div className="flex justify-between text-[var(--text-secondary)]">
+                <span>Warga / Pengirim:</span>
+                <span className="font-bold text-[var(--text-primary)]">{ticketToDelete.citizen_name || 'Warga / Anonim'}</span>
+              </div>
+              {ticketToDelete.citizen_agency && (
+                <div className="flex justify-between text-[var(--text-secondary)]">
+                  <span>Instansi:</span>
+                  <span className="font-semibold text-sky-500">{ticketToDelete.citizen_agency}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-[var(--text-secondary)]">
+                <span>Kanal:</span>
+                <span className="uppercase font-semibold text-[var(--text-muted)]">{ticketToDelete.channel || 'web'}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+              Apakah Anda yakin ingin menghapus tiket ini? Seluruh riwayat obrolan, catatan internal, dan berkas lampiran pada tiket ini akan dihapus secara permanen dari basis data.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setTicketToDelete(null)}
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-[var(--bg-input)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-color)] transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => handleDeleteTicket(ticketToDelete)}
+                className="px-4 py-2 text-xs font-bold rounded-lg bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-50 transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
+              >
+                {isDeleting ? (
+                  <>
+                    <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Menghapus...</span>
+                  </>
+                ) : (
+                  <span>Ya, Hapus Tiket</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Image Lightbox Modal Zoom */}
       {previewModalImg && (

@@ -135,9 +135,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('tickets')->group(function () {
         Route::get('/',               [TicketController::class, 'index'])->name('api.tickets.index');
         Route::get('/stats',          [TicketController::class, 'stats'])->name('api.tickets.stats');
+        Route::post('/bulk-delete',   [TicketController::class, 'bulkDestroy'])->name('api.tickets.bulk-destroy');
         Route::get('/{id}',           [TicketController::class, 'show'])->name('api.tickets.show');
         Route::post('/{id}/assign',   [TicketController::class, 'assign'])->name('api.tickets.assign');
         Route::patch('/{id}/status',  [TicketController::class, 'updateStatus'])->name('api.tickets.status');
+        Route::delete('/{id}',        [TicketController::class, 'destroy'])->name('api.tickets.destroy');
         Route::get('/{id}/messages',  [TicketController::class, 'messages'])->name('api.tickets.messages');
         Route::post('/{id}/messages', [TicketController::class, 'reply'])->name('api.tickets.reply');
         Route::get('/{id}/attachments/{filename}', [TicketController::class, 'downloadAttachment'])->name('api.tickets.attachments.show');

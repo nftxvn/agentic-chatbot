@@ -104,10 +104,19 @@ class WhatsAppWebhookController extends Controller
             ->first();
 
         if ($activeTicket) {
+            // Auto-enrich ticket metadata (Nama, Instansi, Kendala) from ongoing message
+            \App\Services\EntityExtractorService::enrichTicket($activeTicket, $messageText);
+
+            if (empty($activeTicket->citizen_contact)) {
+                $activeTicket->citizen_contact = $from;
+            }
+
+            $senderDisplayName = $activeTicket->citizen_name ?: 'Warga WhatsApp';
+
             $msg = $activeTicket->messages()->create([
                 'sender_type' => 'citizen',
                 'sender_id' => null,
-                'sender_name' => $activeTicket->citizen_name ?: 'Warga WhatsApp',
+                'sender_name' => $senderDisplayName,
                 'message' => $messageText,
                 'is_internal_note' => false,
             ]);
@@ -121,6 +130,7 @@ class WhatsAppWebhookController extends Controller
             Log::info('Pesan WhatsApp diteruskan langsung ke Live Chat (Human Takeover)', [
                 'ticket_id' => $activeTicket->id,
                 'from' => $from,
+                'citizen_name' => $senderDisplayName,
                 'message' => substr($messageText, 0, 80),
             ]);
 

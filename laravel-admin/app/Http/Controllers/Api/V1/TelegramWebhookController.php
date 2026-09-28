@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\AppSetting;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -38,15 +39,40 @@ class TelegramWebhookController extends Controller
             return response()->json(['status' => 'ignored', 'reason' => 'telegram_disabled']);
         }
 
-        $chatId = $request->input('message.chat.id');
-        $messageText = $request->input('message.text');
+        // 1. Anti-Looping / Deduplikasi Update Telegram (Mencegah retry otomatis Telegram saat respon AI > 5 detik)
+        $updateId = $request->input('update_id');
+        if ($updateId) {
+            $lockKey = "telegram:update:{$updateId}";
+            if (!Cache::add($lockKey, 1, 180)) {
+                Log::info("Pesan Telegram duplikat diabaikan (Update ID #{$updateId} sedang/sudah diproses).");
+                return response()->json(['status' => 'ignored', 'reason' => 'duplicate_update_id']);
+            }
+        }
+
+        $chatId = $request->input('message.chat.id') ?? $request->input('edited_message.chat.id');
+        $messageId = $request->input('message.message_id') ?? $request->input('edited_message.message_id');
+        $messageText = trim($request->input('message.text') ?? $request->input('message.caption') ?? '');
         $fromName = $request->input('message.from.first_name', 'User');
+
+        if ($chatId && $messageId) {
+            $msgLockKey = "telegram:msg:{$chatId}:{$messageId}";
+            if (!Cache::add($msgLockKey, 1, 180)) {
+                Log::info("Pesan Telegram duplikat diabaikan (Chat #{$chatId}, Msg #{$messageId}).");
+                return response()->json(['status' => 'ignored', 'reason' => 'duplicate_message_id']);
+            }
+        }
 
         if (empty($chatId) || empty($messageText)) {
             return response()->json(['status' => 'ignored', 'reason' => 'no_text_or_chat_id']);
         }
 
-        if (trim($messageText) === '/start') {
+        if ($messageText === '/start' || $messageText === '/reset' || $messageText === '/help') {
+            try {
+                \Illuminate\Support\Facades\Redis::connection()->select(2);
+                \Illuminate\Support\Facades\Redis::del("chatbot:session:telegram-{$chatId}");
+            } catch (\Exception $e) {
+                // Ignore
+            }
             $messageText = 'Halo';
         }
 
@@ -79,10 +105,19 @@ class TelegramWebhookController extends Controller
             ->first();
 
         if ($activeTicket) {
+            // Auto-enrich ticket metadata (Nama, Instansi, Kendala) from ongoing message
+            \App\Services\EntityExtractorService::enrichTicket($activeTicket, $messageText, $fromName);
+
+            if (empty($activeTicket->citizen_contact)) {
+                $activeTicket->citizen_contact = $fromUsername ? "@{$fromUsername} (ID: {$chatId})" : "ID: {$chatId}";
+            }
+
+            $senderDisplayName = $activeTicket->citizen_name ?: ($fromName ?: 'Warga Telegram');
+
             $msg = $activeTicket->messages()->create([
                 'sender_type' => 'citizen',
                 'sender_id' => null,
-                'sender_name' => $fromName ?: ($activeTicket->citizen_name ?: 'Warga Telegram'),
+                'sender_name' => $senderDisplayName,
                 'message' => $messageText,
                 'is_internal_note' => false,
             ]);
@@ -96,6 +131,7 @@ class TelegramWebhookController extends Controller
             Log::info('Pesan Telegram diteruskan langsung ke Live Chat (Human Takeover)', [
                 'ticket_id' => $activeTicket->id,
                 'chat_id' => $chatId,
+                'from' => $senderDisplayName,
                 'message' => substr($messageText, 0, 80),
             ]);
 
@@ -155,6 +191,8 @@ class TelegramWebhookController extends Controller
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
             'query' => $text,
             'session_id' => 'telegram-' . $chatId,
+            'citizen_name' => $fromName,
+            'citizen_contact' => $fromUsername ? "@{$fromUsername} (ID: {$chatId})" : (string) $chatId,
         ]));
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             'Authorization: Bearer ' . $aiToken,

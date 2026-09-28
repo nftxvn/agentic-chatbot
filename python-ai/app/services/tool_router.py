@@ -10,6 +10,7 @@ Mendukung:
 
 from datetime import datetime, timedelta
 import logging
+import math
 import re
 from typing import Any
 
@@ -80,7 +81,7 @@ _RE_HUMAN_HANDOFF = re.compile(
 
 # Pola regex untuk sapaan dan uji coba (Termasuk Sapaan Bahasa Aceh & Santun)
 _RE_GREETING = re.compile(
-    r"^(?:(?:halo+|hai+|hay+|hei+|heyy+|hi+|hello+|assalamu['\s]?alaikum(?:\s+wr\s+wb|\s+warahmatullahi\s+wabarakatuh)?|ass|askum|"
+    r"^(?:(?:halo+|hai+|hay+|hei+|heyy+|hi+|hello+|helo+|hoi+|hoy+|oy+|oi+|woy+|woi+|uy+|yo+|assalamu['\s]?alaikum(?:\s+wr\s+wb|\s+warahmatullahi\s+wabarakatuh)?|ass|askum|"
     r"saleuem(?:\s+teuka)?|saleum(?:\s+teuka)?|kru\s+seumangat|kiban\s+haba|haba\s+kiban|peue\s+haba|peu\s+haba|"
     r"selamat\s+(?:pagi|siang|sore|malam)|pagi|siang|sore|malam|"
     r"tes|test|ping|p|testing|tes\s+123|test\s+123|"
@@ -510,13 +511,26 @@ def _matches_keywords(raw_text: str, keywords: list[str]) -> bool:
 # AI-NATIVE SEMANTIC INTENT CLASSIFIER (Cosine Similarity)
 # ─────────────────────────────────────────────────────────────
 
-_SEMANTIC_INTENT_VECTORS: dict[str, list] | None = None
+_SEMANTIC_INTENT_VECTORS: dict[str, list[list[float]]] | None = None
 
-def _get_semantic_intent_vectors() -> dict[str, list]:
+
+def _norm_vector(v: list[float]) -> list[float]:
+    """Normalisasi vektor L2 norm menggunakan pustaka standar math."""
+    norm = math.sqrt(sum(float(x) * float(x) for x in v))
+    if norm <= 0:
+        return [float(x) for x in v]
+    return [float(x) / norm for x in v]
+
+
+def _dot_vectors(v1: list[float], v2: list[float]) -> float:
+    """Dot product antara dua vektor."""
+    return sum(float(a) * float(b) for a, b in zip(v1, v2))
+
+
+def _get_semantic_intent_vectors() -> dict[str, list[list[float]]]:
     global _SEMANTIC_INTENT_VECTORS
     if _SEMANTIC_INTENT_VECTORS is None:
         try:
-            import numpy as np
             from app.services.embedding_service import encode_texts
 
             anchors = {
@@ -545,11 +559,7 @@ def _get_semantic_intent_vectors() -> dict[str, list]:
             res_map = {}
             for intent, texts in anchors.items():
                 embs = encode_texts(texts)
-                norm_embs = []
-                for e in embs:
-                    arr = np.array(e, dtype=float)
-                    norm = np.linalg.norm(arr)
-                    norm_embs.append(arr / (norm if norm > 0 else 1.0))
+                norm_embs = [_norm_vector(e) for e in embs]
                 res_map[intent] = norm_embs
             _SEMANTIC_INTENT_VECTORS = res_map
         except Exception as e:
@@ -567,19 +577,16 @@ def classify_semantic_intent(query: str) -> str | None:
     if not vectors_map:
         return None
     try:
-        import numpy as np
         from app.services.embedding_service import encode_query
 
         raw_vq = encode_query(query)
         if not raw_vq:
             return None
-        arr_vq = np.array(raw_vq, dtype=float)
-        norm_v = np.linalg.norm(arr_vq)
-        vq = arr_vq / (norm_v if norm_v > 0 else 1.0)
+        vq = _norm_vector(raw_vq)
 
         scores = {}
         for intent, anchors in vectors_map.items():
-            scores[intent] = max(float(np.dot(vq, a)) for a in anchors)
+            scores[intent] = max((_dot_vectors(vq, a) for a in anchors), default=0.0)
 
         best_intent = max(scores, key=scores.get)
         best_score = scores[best_intent]
@@ -596,26 +603,181 @@ def classify_semantic_intent(query: str) -> str | None:
         return None
 
 
+_NAME_STOPWORDS = {
+    "mau", "ingin", "butuh", "perlu", "ada", "hendak", "belum", "tidak", "tak", "bukan",
+    "sedang", "baru", "sudah", "telah", "minta", "mohon", "bertanya", "tanya", "bingung",
+    "rasa", "kira", "cuma", "hanya", "kan", "ini", "itu", "warga", "masyarakat", "umum",
+    "seorang", "seseorang", "admin", "petugas", "operator", "cs", "pihak", "siapa",
+    "bantuan", "cara", "cepat", "mudah", "baik", "bisa", "boleh", "dapat", "tolong",
+    "halo", "hai", "selamat", "pagi", "siang", "sore", "malam", "assalamualaikum",
+    "waalaikumsalam", "terima", "kasih", "makasih", "bapak", "ibu", "pak", "bu", "mas", "mbak",
+    "hormat", "info", "informasi", "kendala", "masalah", "keluhan", "keperluan", "perihal",
+    "dari", "staf", "pegawai", "kantor", "instansi", "opd", "dinas", "badan", "bagian", "bidang",
+    "kementerian", "di", "ke", "pada", "untuk", "atas", "nama", "dengan", "saya", "kami", "adalah",
+}
+
+_AGENCY_ALIASES = {
+    "kemenkes": "Kementerian Kesehatan",
+    "kemendikbud": "Kementerian Pendidikan dan Kebudayaan",
+    "kemenag": "Kementerian Agama",
+    "kemendagri": "Kementerian Dalam Negeri",
+    "kemenkeu": "Kementerian Keuangan",
+    "kemenkumham": "Kemenkumham",
+    "diskominfo": "Diskominfotik",
+    "diskominfotik": "Diskominfotik",
+    "kominfo": "Diskominfotik",
+    "bappeda": "Bappeda",
+    "bkpsdm": "BKPSDM",
+    "bpkk": "BPKK",
+    "bpbd": "BPBD",
+    "dinkes": "Dinas Kesehatan",
+    "diskes": "Dinas Kesehatan",
+    "disdik": "Dinas Pendidikan dan Kebudayaan",
+    "disdikbud": "Dinas Pendidikan dan Kebudayaan",
+    "disdukcapil": "Disdukcapil",
+    "dukcapil": "Disdukcapil",
+    "dishub": "Dinas Perhubungan",
+    "dinsos": "Dinas Sosial",
+    "pupr": "Dinas PUPR",
+    "dlhk": "DLHK3",
+    "dlhk3": "DLHK3",
+    "dpmptsp": "DPMPTSP",
+    "inspektorat": "Inspektorat",
+    "setda": "Setda Kota Banda Aceh",
+    "setdako": "Setdako Banda Aceh",
+    "satpol": "Satpol PP & WH",
+    "satpolpp": "Satpol PP & WH",
+    "satpol pp": "Satpol PP & WH",
+    "uin": "UIN Ar-Raniry",
+    "uin ar raniry": "UIN Ar-Raniry",
+    "uin ar-raniry": "UIN Ar-Raniry",
+    "ar raniry": "UIN Ar-Raniry",
+    "ar-raniry": "UIN Ar-Raniry",
+    "usk": "Universitas Syiah Kuala",
+    "unsyiah": "Universitas Syiah Kuala",
+    "unida": "Universitas Iskandar Muda",
+    "ummuha": "Universitas Muhammadiyah Aceh",
+    "poltekkes": "Poltekkes Kemenkes Aceh",
+    "bbpmp": "BBPMP Aceh",
+    "lan": "Puslatbang KHAN LAN RI",
+}
+
+
+def _clean_extracted_name(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    trimmed = raw.strip(" \t\n\r.,:;!?-/|")
+    cleaned = re.sub(r"[^A-Za-z\s'\.]", "", trimmed).strip()
+    words = cleaned.split()
+    if not words:
+        return None
+
+    valid_words = []
+    for w in words:
+        if w.lower() in _NAME_STOPWORDS:
+            if valid_words:
+                break
+            continue
+        valid_words.append(w)
+
+    if not valid_words:
+        return None
+
+    if len(valid_words) > 4:
+        valid_words = valid_words[:4]
+
+    final_name = " ".join(valid_words).title()
+    return final_name if len(final_name) >= 2 else None
+
+
+def _clean_extracted_agency(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    raw_trim = raw.strip(" \t\n\r.,:;!?-/|")
+    lower = raw_trim.lower()
+    if not re.match(r"^(?:dinas|badan|bagian|bidang|kementerian|kecamatan|puskesmas|rsud|setda|inspektorat)\b", lower, flags=re.IGNORECASE):
+        lower = re.sub(r"^(?:dari|staf\s+di|staf|pegawai\s+di|pegawai|kantor|opd|instansi|asal)\s+", "", lower).strip(" \t\n\r.,:;!?-/|")
+
+    sorted_aliases = sorted(_AGENCY_ALIASES.items(), key=lambda x: len(x[0]), reverse=True)
+    for alias, canonical in sorted_aliases:
+        if lower == alias or lower.startswith(alias + " ") or lower.startswith(alias + ","):
+            suffix = lower[len(alias):].strip(" ,-")
+            if not suffix or suffix in canonical.lower():
+                return canonical
+            return f"{canonical} {suffix.title()}".strip()
+
+    res = lower.title()
+    for acr in ["OPD", "SPPD", "SOP", "BKPSDM", "Bappeda", "BPKK", "BPBD", "RSUD", "UPTD", "DLHK3", "Disdukcapil", "DPMPTSP"]:
+        res = re.sub(rf"\b{acr}\b", acr, res, flags=re.IGNORECASE)
+    return res if len(res) >= 2 else None
+
+
 def extract_citizen_escalation_details(text: str) -> dict[str, str | None]:
     """Mengekstrak informasi Nama, Instansi, dan Kendala dari pesan tindak lanjut warga."""
     details = {"citizen_name": None, "citizen_agency": None, "issue_summary": None}
     
-    # 1. Ekstraksi Nama
-    m_name = re.search(r"(?:nama\s+(?:saya|ku)?|nama)\s*[:=]?\s*([A-Za-z\s'\.]+?)(?=\s+(?:dari|instansi|asal|kantor|kendala|masalah|keperluan|\.|\n|$))", text, re.IGNORECASE)
-    if m_name:
-        details["citizen_name"] = m_name.group(1).strip()
+    # Bersihkan simbol markdown bullets dan bolding agar parsing key-value tahan terhadap copy-paste template
+    clean_txt = re.sub(r"[*_•\-]+", " ", text)
 
-    # 2. Ekstraksi Instansi
-    m_agency = re.search(r"(?:dari|instansi|asal|kantor|dinas|kementerian)\s*[:=]?\s*([A-Za-z0-9\s'\.\-_]+?)(?=\s+(?:kendala|masalah|keluhan|keperluan|\.|\n|$))", text, re.IGNORECASE)
-    if m_agency:
-        details["citizen_agency"] = m_agency.group(1).strip()
+    # 1. Format Terstruktur Key-Value (e.g. Nama: Budi, Instansi: Dinkes, Instansi/OPD: Kemenkes)
+    m_name_kv = re.search(r"(?:nama|name)\s*[:=]\s*([^,\/\n\|\.]+)", clean_txt, re.IGNORECASE)
+    if m_name_kv:
+        cand = _clean_extracted_name(m_name_kv.group(1))
+        if cand:
+            details["citizen_name"] = cand
 
-    # 3. Ekstraksi Kendala / Masalah
-    m_issue = re.search(r"(?:kendala|masalah|keluhan|keperluan|perihal)\s*(?:saya|kami)?\s*[:=]?\s*(.*)", text, re.IGNORECASE | re.DOTALL)
-    if m_issue:
-        details["issue_summary"] = m_issue.group(1).strip()
-    else:
-        details["issue_summary"] = text.strip()
+    m_agency_kv = re.search(r"(?:instansi(?:\s*\/\s*opd)?|opd|unit\s+kerja|kantor|asal)\s*[:=]\s*([^,\/\n\|\.]+)", clean_txt, re.IGNORECASE)
+    if m_agency_kv:
+        cand = _clean_extracted_agency(m_agency_kv.group(1))
+        if cand:
+            details["citizen_agency"] = cand
+
+    m_issue_kv = re.search(r"(?:kendala|masalah|keluhan|keperluan|perihal|kebutuhan)\s*[:=]\s*(.+)", clean_txt, re.IGNORECASE | re.DOTALL)
+    if m_issue_kv:
+        raw_issue = m_issue_kv.group(1).strip()
+        raw_issue = re.sub(r"^(?:saya|kami|adalah|yaitu)?\s*[:=]?\s*", "", raw_issue, flags=re.IGNORECASE)
+        details["issue_summary"] = raw_issue.strip()
+
+    # 2. Pola Alami Bahasa Indonesia untuk Nama
+    if not details["citizen_name"]:
+        name_patterns = [
+            r"(?:nama\s*(?:saya|ku)?|namaku|atas\s+nama|panggil\s+saja)\s*(?:adalah|:|=)?\s*([A-Za-z\s'\.]{2,35}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|kendala|masalah|keperluan|ingin|mau|tolong|\.|\,|\n|$))",
+            r"(?:perkenalkan\s+saya|saya|dengan|aku)\s+([A-Za-z\s'\.]{2,30}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|\.|\,|\n|$))",
+            r"\bnama\s+([A-Za-z\s'\.]{2,30}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|\.|\,|\n|$))",
+            r"^([A-Za-z\s'\.]{2,30}?)\s+(?:dari|instansi|asal|kantor|staf|pegawai)\s+",
+        ]
+        for pat in name_patterns:
+            m = re.search(pat, text, re.IGNORECASE)
+            if m:
+                cand = _clean_extracted_name(m.group(1))
+                if cand:
+                    details["citizen_name"] = cand
+                    break
+
+    # 3. Pola Alami Bahasa Indonesia untuk Instansi
+    if not details["citizen_agency"]:
+        agency_patterns = [
+            r"(?:dari|staf\s+(?:di|pada|ke)?|pegawai\s+(?:di|pada|ke)?|kantor|bagian|bidang|opd|instansi|asal)\s*[:=]?\s*([A-Za-z0-9\s'\.\-_]{2,50}?)(?=\s+(?:mau|ingin|butuh|perlu|tolong|mohon|kendala|masalah|keluhan|keperluan|\.|\,|\n|$))",
+            r"\b(dinas\s+[a-z0-9\s\.\-_]+|badan\s+[a-z0-9\s\.\-_]+|kementerian\s+[a-z0-9\s\.\-_]+|universitas\s+[a-z0-9\s\.\-_]+|kampus\s+[a-z0-9\s\.\-_]+|inspektorat(?:\s+[a-z0-9\s\.\-_]+)?|setda(?:ko)?(?:\s+[a-z0-9\s\.\-_]+)?|sekretariat\s+daerah(?:\s+[a-z0-9\s\.\-_]+)?|satpol\s*pp(?:\s*&\s*wh)?|kecamatan\s+[a-z0-9\s\.\-_]+|camat\s+[a-z0-9\s\.\-_]+|puskesmas\s+[a-z0-9\s\.\-_]+|rsud\s+[a-z0-9\s\.\-_]+|bagian\s+[a-z0-9\s\.\-_]+|bidang\s+[a-z0-9\s\.\-_]+)\b",
+            r"\b(kemenkes|kemendikbud|kemenag|kemendagri|kemenkeu|kemenkumham|bappeda|bkpsdm|bpkk|bpbd|diskominfo[a-z]*|dinkes|diskes|disdikbud|disdik|dishub|dinsos|pupr|dlhk3?|dpmptsp|uin(?:\s+ar[\s\-]raniry)?|usk|unsyiah|unida|ummuha|poltekkes)(?:\s+[a-z0-9\s\.\-_]+)?\b",
+        ]
+        for pat in agency_patterns:
+            m = re.search(pat, text, re.IGNORECASE)
+            if m:
+                cand = _clean_extracted_agency(m.group(1))
+                if cand:
+                    details["citizen_agency"] = cand
+                    break
+
+    # 4. Ringkasan Kendala
+    if not details["issue_summary"]:
+        m_nat_issue = re.search(r"(?:kendala|masalah|keluhan|keperluan|perihal)\s*(?:saya|kami)?\s*[:=]?\s*(.+)", text, re.IGNORECASE | re.DOTALL)
+        if m_nat_issue:
+            raw_issue = m_nat_issue.group(1).strip()
+            raw_issue = re.sub(r"^(?:saya|kami|adalah|yaitu)?\s*[:=]?\s*", "", raw_issue, flags=re.IGNORECASE)
+            details["issue_summary"] = raw_issue.strip()
+        else:
+            details["issue_summary"] = text.strip()
 
     return details
 
@@ -671,7 +833,8 @@ def route_intent(query: str, session_id: str | None = None) -> dict[str, Any]:
 
     # 0.2 Jalur Chitchat, Sapaan & Persona Asisten (Prioritaskan sapaan agar tidak disalahartikan sebagai rincian kendala)
     is_greeting_or_chitchat = bool(sem_intent == "chitchat" or _RE_GREETING.match(q_lower) or _RE_CHITCHAT_CONVERSATIONAL.search(q_lower))
-    is_explicit_intro = bool(re.search(r"(?:nama\s+(?:saya|ku)?|instansi\s+|kantor\s+|dinas\s+|dari\s+[a-z]+|kendala\s+(?:saya|kami)?|keluhan\s+(?:saya|kami)?|masalah\s+(?:saya|kami)?|keperluan\s+(?:saya|kami)?)", q_lower))
+    clean_intro_test = re.sub(r"[*_•\-]+", " ", q_lower)
+    is_explicit_intro = bool(re.search(r"(?:nama\s*(?:saya|ku)?\s*[:=]?|instansi\s*[:=/\(\s]|opd\s*[:=/\(\s]|kantor\s*[:=/\(\s]|dinas\s+|dari\s+[a-z]+|kendala\s*(?:saya|kami)?\s*[:=]?|keluhan\s*(?:saya|kami)?\s*[:=]?|masalah\s*(?:saya|kami)?\s*[:=]?|keperluan\s*(?:saya|kami)?\s*[:=]?)", clean_intro_test))
 
     if is_greeting_or_chitchat and not is_explicit_intro:
         return {

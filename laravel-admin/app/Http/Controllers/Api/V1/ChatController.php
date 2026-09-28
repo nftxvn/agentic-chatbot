@@ -87,10 +87,14 @@ class ChatController extends Controller
             ->first();
 
         if ($activeTicket) {
+            \App\Services\EntityExtractorService::enrichTicket($activeTicket, $validated['query']);
+
+            $senderDisplayName = $activeTicket->citizen_name ?: 'Warga';
+
             $msg = $activeTicket->messages()->create([
                 'sender_type' => 'citizen',
                 'sender_id' => null,
-                'sender_name' => $activeTicket->citizen_name ?: 'Warga',
+                'sender_name' => $senderDisplayName,
                 'message' => $validated['query'],
                 'is_internal_note' => false,
             ]);
@@ -223,10 +227,14 @@ class ChatController extends Controller
             ->first();
 
         if ($activeTicket) {
+            \App\Services\EntityExtractorService::enrichTicket($activeTicket, $validated['query']);
+
+            $senderDisplayName = $activeTicket->citizen_name ?: 'Warga';
+
             $msg = $activeTicket->messages()->create([
                 'sender_type' => 'citizen',
                 'sender_id' => null,
-                'sender_name' => $activeTicket->citizen_name ?: 'Warga',
+                'sender_name' => $senderDisplayName,
                 'message' => $validated['query'],
                 'is_internal_note' => false,
             ]);

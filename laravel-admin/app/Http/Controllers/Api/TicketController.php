@@ -385,4 +385,87 @@ class TicketController extends Controller
             }
         }
     }
+
+    /**
+     * DELETE /api/tickets/{id}
+     * Delete a single ticket and its associated data/attachments.
+     */
+    public function destroy(Request $request, int $id): JsonResponse
+    {
+        $ticket = ChatTicket::findOrFail($id);
+        $sessionId = $ticket->session_id;
+        $ticketNumber = $ticket->ticket_number;
+
+        // 1. Delete attached files from local private storage
+        try {
+            \Illuminate\Support\Facades\Storage::disk('local')->deleteDirectory("private/tickets/{$ticket->id}");
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning("Gagal menghapus folder berkas tiket #{$ticket->id}: " . $e->getMessage());
+        }
+
+        // 2. Clean up AI session memory in Redis
+        try {
+            if (!empty($sessionId)) {
+                \Illuminate\Support\Facades\Redis::connection()->select(2);
+                \Illuminate\Support\Facades\Redis::del("chatbot:session:{$sessionId}");
+            }
+        } catch (\Exception $e) {
+            // Ignore Redis errors
+        }
+
+        // 3. Delete ticket records (messages cascade delete automatically)
+        $ticket->delete();
+
+        \Illuminate\Support\Facades\Log::info("Tiket {$ticketNumber} (#{$id}) berhasil dihapus oleh admin ID: " . ($request->user()?->id ?? 'unknown'));
+
+        return response()->json([
+            'success' => true,
+            'message' => "Tiket {$ticketNumber} berhasil dihapus.",
+        ]);
+    }
+
+    /**
+     * POST /api/tickets/bulk-delete
+     * Delete multiple tickets by IDs.
+     */
+    public function bulkDestroy(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'integer|exists:chat_tickets,id',
+        ]);
+
+        $tickets = ChatTicket::whereIn('id', $validated['ids'])->get();
+        $deletedCount = 0;
+
+        foreach ($tickets as $ticket) {
+            try {
+                \Illuminate\Support\Facades\Storage::disk('local')->deleteDirectory("private/tickets/{$ticket->id}");
+            } catch (\Exception $e) {
+                // Ignore
+            }
+
+            try {
+                if (!empty($ticket->session_id)) {
+                    \Illuminate\Support\Facades\Redis::connection()->select(2);
+                    \Illuminate\Support\Facades\Redis::del("chatbot:session:{$ticket->session_id}");
+                }
+            } catch (\Exception $e) {
+                // Ignore
+            }
+
+            $ticket->delete();
+            $deletedCount++;
+        }
+
+        \Illuminate\Support\Facades\Log::info("Sebanyak {$deletedCount} tiket berhasil dihapus massal oleh admin ID: " . ($request->user()?->id ?? 'unknown'));
+
+        return response()->json([
+            'success' => true,
+            'message' => "{$deletedCount} tiket berhasil dihapus.",
+            'data' => [
+                'deleted_count' => $deletedCount,
+            ],
+        ]);
+    }
 }

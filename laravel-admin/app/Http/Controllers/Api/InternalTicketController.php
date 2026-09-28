@@ -37,6 +37,28 @@ class InternalTicketController extends Controller
         $issueSummary = $validated['issue_summary'] ?? null;
         $channel = $validated['channel'] ?? 'widget';
 
+        // Contextual Entity Extraction from session memory & incoming message
+        $extracted = \App\Services\EntityExtractorService::extractFromSessionHistory(
+            $validated['session_id'],
+            $citizenName
+        );
+
+        // Also check if current message contains entities
+        $msgExtracted = \App\Services\EntityExtractorService::extractFromText($validated['message'], $citizenName);
+
+        if (empty($citizenName)) {
+            $citizenName = $msgExtracted['name'] ?: ($extracted['name'] ?? null);
+        }
+        if (empty($citizenAgency)) {
+            $citizenAgency = $msgExtracted['agency'] ?: ($extracted['agency'] ?? null);
+        }
+        if (empty($issueSummary) || strtolower(trim($issueSummary)) === strtolower(trim($validated['message']))) {
+            $issueSummary = $msgExtracted['issue_summary'] ?: ($extracted['issue_summary'] ?: Str::limit($validated['message'], 150));
+        }
+        if (empty($citizenContact)) {
+            $citizenContact = $msgExtracted['contact'] ?: ($extracted['contact'] ?? null);
+        }
+
         $ticket = null;
 
         // 1. If explicit ticket_id supplied, locate that ticket

@@ -68,5 +68,21 @@ export const ticketsApi = {
     const res = await api.post(`/api/tickets/${id}/messages`, { message })
     return res.data
   },
+
+  /**
+   * Menghapus satu tiket beserta seluruh pesan dan lampirannya
+   */
+  delete: async (id) => {
+    const res = await api.delete(`/api/tickets/${id}`)
+    return res.data
+  },
+
+  /**
+   * Menghapus beberapa tiket sekaligus (bulk delete)
+   */
+  bulkDelete: async (ids) => {
+    const res = await api.post('/api/tickets/bulk-delete', { ids })
+    return res.data
+  },
 }
 
