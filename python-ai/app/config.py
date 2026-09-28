@@ -97,7 +97,7 @@ class Settings:
     RERANKER_ENABLED: bool = _env_bool("RERANKER_ENABLED", "true")
     RERANKER_TOP_CANDIDATES: int = int(os.getenv("RERANKER_TOP_CANDIDATES", "25"))
     # Ambang batas skor CrossEncoder (0.0 - 1.0). Potongan di bawah nilai ini disaring sebagai false-positive.
-    RERANKER_MIN_SCORE: float = float(os.getenv("RERANKER_MIN_SCORE", "0.01"))
+    RERANKER_MIN_SCORE: float = float(os.getenv("RERANKER_MIN_SCORE", "0.10"))
 
     # --- Vector DB (ChromaDB) ---
     _raw_chroma_dir: str = os.getenv("CHROMA_PERSIST_DIR", "./data/chromadb")

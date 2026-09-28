@@ -800,21 +800,23 @@ def _retrieve_context(
                 if reranker is not None and any(x[3] is not None for x in combined):
                     combined.sort(key=lambda x: (x[3] if x[3] is not None else -1.0), reverse=True)
                     top_parent_score = combined[0][3] if combined[0][3] is not None else 0.0
-                    if top_parent_score > 0 and len(combined) > 1:
+                    min_confidence = max(0.10, settings.RERANKER_MIN_SCORE)
+                    if top_parent_score < min_confidence:
+                        logger.info("Relevance Gate: Skor parent reranker teratas (%.4f) < threshold (%.4f). Mengabaikan konteks.", top_parent_score, min_confidence)
+                        combined = []
+                    elif len(combined) > 1:
                         if is_list:
                             if top_parent_score >= 0.90:
                                 parent_cutoff = 0.90
                             elif top_parent_score >= 0.70:
                                 parent_cutoff = max(0.50, top_parent_score * 0.60)
                             else:
-                                parent_cutoff = settings.RERANKER_MIN_SCORE
+                                parent_cutoff = min_confidence
                         else:
-                            parent_cutoff = max(settings.RERANKER_MIN_SCORE, top_parent_score * 0.50)
+                            parent_cutoff = max(min_confidence, top_parent_score * 0.50)
                             if top_parent_score >= 0.15:
                                 parent_cutoff = max(parent_cutoff, top_parent_score * 0.60)
-                        pruned_combined = [x for x in combined if (x[3] is not None and x[3] >= parent_cutoff)]
-                        if pruned_combined:
-                            combined = pruned_combined
+                        combined = [x for x in combined if (x[3] is not None and x[3] >= parent_cutoff)]
                 else:
                     combined.sort(key=lambda x: x[2], reverse=True)
 
