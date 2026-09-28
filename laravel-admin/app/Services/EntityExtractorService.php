@@ -31,11 +31,24 @@ class EntityExtractorService
      */
     protected static array $agencyAliases = [
         'kemenkes' => 'Kementerian Kesehatan',
+        'kemkes' => 'Kementerian Kesehatan',
         'kemendikbud' => 'Kementerian Pendidikan dan Kebudayaan',
+        'kemedikbud' => 'Kementerian Pendidikan dan Kebudayaan',
+        'kemdikbud' => 'Kementerian Pendidikan dan Kebudayaan',
+        'kemendikbudristek' => 'Kementerian Pendidikan dan Kebudayaan',
+        'kemendiknas' => 'Kementerian Pendidikan dan Kebudayaan',
         'kemenag' => 'Kementerian Agama',
+        'kemag' => 'Kementerian Agama',
         'kemendagri' => 'Kementerian Dalam Negeri',
+        'kemendag' => 'Kementerian Perdagangan',
         'kemenkeu' => 'Kementerian Keuangan',
         'kemenkumham' => 'Kemenkumham',
+        'kemenko' => 'Kementerian Koordinator',
+        'kemenhub' => 'Kementerian Perhubungan',
+        'kemenpan' => 'KemenPAN-RB',
+        'kemenpanrb' => 'KemenPAN-RB',
+        'kemkominfo' => 'Kementerian Komunikasi dan Digital',
+        'komdigi' => 'Kementerian Komunikasi dan Digital',
         'diskominfo' => 'Diskominfotik',
         'diskominfotik' => 'Diskominfotik',
         'kominfo' => 'Diskominfotik',
@@ -89,20 +102,23 @@ class EntityExtractorService
         // Bersihkan simbol markdown bullets dan bolding agar parsing key-value tahan terhadap copy-paste template
         $cleanText = preg_replace('/[*_•\-]+/', ' ', $text);
 
+        // Pola lookahead pembatas agar tidak merebut kunci berikutnya dalam 1 baris
+        $nextKeyPattern = '(?=\s+(?:nama|instansi|opd|unit\s+kerja|kantor|asal|kendala|masalah|keluhan|keperluan|perihal|kebutuhan|hp|wa|telepon|kontak|telp|no)\s*[:=]|$|\n|\,|\/|\|)';
+
         // 1. Ekstraksi format terstruktur Key-Value (e.g. Nama: Budi, Nama saya: Budi, Instansi: Dinkes, Instansi/OPD: Kemenkes)
-        if (preg_match('/(?:nama(?:\s*(?:saya|ku))?|name)\s*[:=]\s*([^,\/\n\|\.]+)/i', $cleanText, $m)) {
+        if (preg_match('/(?:nama(?:\s*(?:saya|ku))?|name)\s*[:=]\s*([^,\/\n\|\.]+?)' . $nextKeyPattern . '/i', $cleanText, $m)) {
             $cand = self::cleanName($m[1]);
             if ($cand) {
                 $name = $cand;
             }
         }
-        if (preg_match('/(?:instansi(?:\s*\/\s*opd)?|opd|unit\s+kerja|kantor|asal)\s*[:=]\s*([^,\/\n\|\.]+)/i', $cleanText, $m)) {
+        if (preg_match('/(?:instansi(?:\s*\/\s*opd)?|opd|unit\s+kerja|kantor|asal)\s*[:=]\s*([^,\/\n\|\.]+?)' . $nextKeyPattern . '/i', $cleanText, $m)) {
             $cand = self::cleanAgency($m[1]);
             if ($cand) {
                 $agency = $cand;
             }
         }
-        if (preg_match('/(?:kendala|masalah|keluhan|keperluan|perihal|kebutuhan)\s*[:=]\s*(.+)/is', $cleanText, $m)) {
+        if (preg_match('/(?:kendala|masalah|keluhan|keperluan|perihal|kebutuhan)\s*[:=]\s*(.+?)' . $nextKeyPattern . '/is', $cleanText, $m)) {
             $rawIssue = trim($m[1]);
             $rawIssue = preg_replace('/^(?:saya|kami|adalah|yaitu)?\s*[:=]?\s*/i', '', $rawIssue);
             $issue = trim($rawIssue);
@@ -270,11 +286,15 @@ class EntityExtractorService
         $entities = self::extractFromText($incomingText, $senderName);
         $updated = false;
 
-        // 1. Perbarui Nama jika saat ini masih kosong / default ('Warga', 'Warga / Anonim', dsb.)
+        $hasExplicitName = (bool) preg_match('/(?:nama(?:\s*(?:saya|ku))?|name)\s*[:=]/i', $incomingText);
+        $hasExplicitAgency = (bool) preg_match('/(?:instansi(?:\s*\/\s*opd)?|opd|unit\s+kerja|kantor|asal)\s*[:=]/i', $incomingText);
+        $hasExplicitIssue = (bool) preg_match('/(?:kendala|masalah|keluhan|keperluan|perihal|kebutuhan)\s*[:=]/i', $incomingText);
+
+        // 1. Perbarui Nama jika saat ini masih kosong / default ('Warga', 'Warga / Anonim', dsb.) atau user memberikan nama eksplisit
         $currentName = trim($ticket->citizen_name ?? '');
         $isGenericName = empty($currentName) || in_array(strtolower($currentName), ['warga', 'warga / anonim', 'warga telegram', 'warga whatsapp', 'user', 'anonim', 'defaultuser']);
 
-        if ($isGenericName && !empty($entities['name'])) {
+        if (!empty($entities['name']) && ($isGenericName || $hasExplicitName)) {
             $ticket->citizen_name = $entities['name'];
             $updated = true;
 
@@ -289,13 +309,13 @@ class EntityExtractorService
             }
         }
 
-        // 2. Perbarui Instansi jika belum ada
-        if (empty($ticket->citizen_agency) && !empty($entities['agency'])) {
+        // 2. Perbarui Instansi jika belum ada atau user memberikan instansi eksplisit
+        if (!empty($entities['agency']) && (empty($ticket->citizen_agency) || $hasExplicitAgency)) {
             $ticket->citizen_agency = $entities['agency'];
             $updated = true;
         }
 
-        // 3. Perbarui Ringkasan Masalah jika saat ini hanya generic "hubungi admin" atau kosong atau sapaan
+        // 3. Perbarui Ringkasan Masalah jika saat ini generic atau user memberikan rincian kendala eksplisit
         $currentIssue = strtolower(trim($ticket->issue_summary ?? ''));
         $isGenericIssue = empty($currentIssue) 
             || str_contains($currentIssue, 'hubungi admin')
@@ -306,10 +326,10 @@ class EntityExtractorService
             || str_contains($currentIssue, 'selamat')
             || str_starts_with($currentIssue, 'pertanyaan:');
 
-        if ($isGenericIssue && !empty($entities['issue_summary'])) {
+        if (!empty($entities['issue_summary']) && ($isGenericIssue || $hasExplicitIssue)) {
             $ticket->issue_summary = Str::limit($entities['issue_summary'], 250);
             $updated = true;
-        } elseif ($isGenericIssue && !empty($entities['agency']) && !empty($ticket->citizen_name)) {
+        } elseif ($isGenericIssue && !empty($ticket->citizen_agency) && !empty($ticket->citizen_name)) {
             $ticket->issue_summary = "Bantuan koordinasi untuk {$ticket->citizen_name} ({$ticket->citizen_agency})";
             $updated = true;
         }

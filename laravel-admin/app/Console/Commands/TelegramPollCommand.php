@@ -205,6 +205,15 @@ class TelegramPollCommand extends Command
 
                     // 1. KONDISI: Ada Tiket Aktif (Pesan Teks / Foto langsung diteruskan ke Petugas)
                     if ($activeTicket) {
+                        // Auto-enrich ticket metadata (Nama, Instansi, Kendala) from ongoing message
+                        \App\Services\EntityExtractorService::enrichTicket($activeTicket, $text, $fromName);
+
+                        if (empty($activeTicket->citizen_contact)) {
+                            $activeTicket->citizen_contact = $username ? "@{$username} (ID: {$chatId})" : "ID: {$chatId}";
+                        }
+
+                        $senderDisplayName = $activeTicket->citizen_name ?: ($fromName ?: 'Warga Telegram');
+
                         $attachments = [];
                         if (!empty($photoFileId)) {
                             $att = \App\Services\AttachmentService::downloadTelegramPhoto($token, $photoFileId, $activeTicket->id, $text);
@@ -218,7 +227,7 @@ class TelegramPollCommand extends Command
                         $msg = $activeTicket->messages()->create([
                             'sender_type' => 'citizen',
                             'sender_id' => null,
-                            'sender_name' => $displayName,
+                            'sender_name' => $senderDisplayName,
                             'message' => $msgText,
                             'attachments' => !empty($attachments) ? $attachments : null,
                             'is_internal_note' => false,

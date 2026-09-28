@@ -619,11 +619,24 @@ _NAME_STOPWORDS = {
 
 _AGENCY_ALIASES = {
     "kemenkes": "Kementerian Kesehatan",
+    "kemkes": "Kementerian Kesehatan",
     "kemendikbud": "Kementerian Pendidikan dan Kebudayaan",
+    "kemedikbud": "Kementerian Pendidikan dan Kebudayaan",
+    "kemdikbud": "Kementerian Pendidikan dan Kebudayaan",
+    "kemendikbudristek": "Kementerian Pendidikan dan Kebudayaan",
+    "kemendiknas": "Kementerian Pendidikan dan Kebudayaan",
     "kemenag": "Kementerian Agama",
+    "kemag": "Kementerian Agama",
     "kemendagri": "Kementerian Dalam Negeri",
+    "kemendag": "Kementerian Perdagangan",
     "kemenkeu": "Kementerian Keuangan",
     "kemenkumham": "Kemenkumham",
+    "kemenko": "Kementerian Koordinator",
+    "kemenhub": "Kementerian Perhubungan",
+    "kemenpan": "KemenPAN-RB",
+    "kemenpanrb": "KemenPAN-RB",
+    "kemkominfo": "Kementerian Komunikasi dan Digital",
+    "komdigi": "Kementerian Komunikasi dan Digital",
     "diskominfo": "Diskominfotik",
     "diskominfotik": "Diskominfotik",
     "kominfo": "Diskominfotik",
@@ -720,20 +733,23 @@ def extract_citizen_escalation_details(text: str) -> dict[str, str | None]:
     # Bersihkan simbol markdown bullets dan bolding agar parsing key-value tahan terhadap copy-paste template
     clean_txt = re.sub(r"[*_•\-]+", " ", text)
 
+    # Pola lookahead pembatas agar tidak merebut kunci berikutnya dalam 1 baris
+    next_key_pat = r"(?=\s+(?:nama|instansi|opd|unit\s+kerja|kantor|asal|kendala|masalah|keluhan|keperluan|perihal|kebutuhan|hp|wa|telepon|kontak|telp|no)\s*[:=]|$|\n|\,|\/|\|)"
+
     # 1. Format Terstruktur Key-Value (e.g. Nama: Budi, Nama saya: Budi, Instansi: Dinkes, Instansi/OPD: Kemenkes)
-    m_name_kv = re.search(r"(?:nama(?:\s*(?:saya|ku))?|name)\s*[:=]\s*([^,\/\n\|\.]+)", clean_txt, re.IGNORECASE)
+    m_name_kv = re.search(r"(?:nama(?:\s*(?:saya|ku))?|name)\s*[:=]\s*([^,\/\n\|\.]+?)" + next_key_pat, clean_txt, re.IGNORECASE)
     if m_name_kv:
         cand = _clean_extracted_name(m_name_kv.group(1))
         if cand:
             details["citizen_name"] = cand
 
-    m_agency_kv = re.search(r"(?:instansi(?:\s*\/\s*opd)?|opd|unit\s+kerja|kantor|asal)\s*[:=]\s*([^,\/\n\|\.]+)", clean_txt, re.IGNORECASE)
+    m_agency_kv = re.search(r"(?:instansi(?:\s*\/\s*opd)?|opd|unit\s+kerja|kantor|asal)\s*[:=]\s*([^,\/\n\|\.]+?)" + next_key_pat, clean_txt, re.IGNORECASE)
     if m_agency_kv:
         cand = _clean_extracted_agency(m_agency_kv.group(1))
         if cand:
             details["citizen_agency"] = cand
 
-    m_issue_kv = re.search(r"(?:kendala|masalah|keluhan|keperluan|perihal|kebutuhan)\s*[:=]\s*(.+)", clean_txt, re.IGNORECASE | re.DOTALL)
+    m_issue_kv = re.search(r"(?:kendala|masalah|keluhan|keperluan|perihal|kebutuhan)\s*[:=]\s*(.+?)" + next_key_pat, clean_txt, re.IGNORECASE | re.DOTALL)
     if m_issue_kv:
         raw_issue = m_issue_kv.group(1).strip()
         raw_issue = re.sub(r"^(?:saya|kami|adalah|yaitu)?\s*[:=]?\s*", "", raw_issue, flags=re.IGNORECASE)
