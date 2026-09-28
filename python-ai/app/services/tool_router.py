@@ -607,14 +607,19 @@ _NAME_STOPWORDS = {
     "mau", "ingin", "butuh", "perlu", "ada", "hendak", "belum", "tidak", "tak", "bukan",
     "sedang", "baru", "sudah", "telah", "minta", "mohon", "bertanya", "tanya", "bingung",
     "rasa", "kira", "cuma", "hanya", "kan", "ini", "itu", "warga", "masyarakat", "umum",
-    "seorang", "seseorang", "admin", "petugas", "operator", "cs", "pihak", "siapa",
-    "bantuan", "cara", "cepat", "mudah", "baik", "bisa", "boleh", "dapat", "tolong",
-    "halo", "hai", "selamat", "pagi", "siang", "sore", "malam", "assalamualaikum",
-    "waalaikumsalam", "terima", "kasih", "makasih", "bapak", "ibu", "pak", "bu", "mas", "mbak",
-    "hormat", "info", "informasi", "kendala", "masalah", "keluhan", "keperluan", "perihal",
-    "dari", "staf", "pegawai", "kantor", "instansi", "opd", "dinas", "badan", "bagian", "bidang",
-    "kementerian", "di", "ke", "pada", "untuk", "atas", "nama", "dengan", "saya", "kami", "adalah",
-    "dan", "serta", "yg", "yang", "juga", "atau", "pun",
+    "seorang", "seseorang", "orang", "admin", "petugas", "operator", "cs", "helpdesk", "pihak", "siapa",
+    "manusia", "staf", "staff", "tim", "bantuan", "cara", "cepat", "mudah", "baik", "bisa",
+    "boleh", "dapat", "tolong", "dong", "halo", "hai", "selamat", "pagi", "siang", "sore",
+    "malam", "assalamualaikum", "waalaikumsalam", "terima", "kasih", "makasih", "bapak",
+    "ibu", "pak", "bu", "mas", "mbak", "hormat", "info", "informasi", "kendala", "masalah",
+    "keluhan", "keperluan", "perihal", "kebutuhan", "dari", "kantor", "instansi", "opd",
+    "dinas", "badan", "bagian", "bidang", "kementerian", "lembaga", "kecamatan", "puskesmas",
+    "di", "ke", "pada", "untuk", "atas", "nama", "dengan", "sama", "saya", "kami", "kita",
+    "adalah", "yaitu", "dan", "serta", "yg", "yang", "juga", "atau", "pun", "karena", "sebab",
+    "bicara", "berbicara", "ngobrol", "ngomong", "diskusi", "konsultasi", "konsul", "chat",
+    "chatting", "hubung", "hubungi", "menghubungi", "dihubungi", "sambung", "sambungkan",
+    "hubungkan", "alih", "alihkan", "kontak", "mengontak", "pesan", "kirim", "bertemu",
+    "ketemu", "panggil", "langsung",
 }
 
 _AGENCY_ALIASES = {
@@ -758,9 +763,9 @@ def extract_citizen_escalation_details(text: str) -> dict[str, str | None]:
     # 2. Pola Alami Bahasa Indonesia untuk Nama
     if not details["citizen_name"]:
         name_patterns = [
-            r"(?:nama\s*(?:saya|ku)?|namaku|atas\s+nama|panggil\s+saja)\s*(?:adalah|:|=)?\s*([A-Za-z\s'\.]{2,35}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|kendala|masalah|keperluan|ingin|mau|tolong|dan|serta|\.|\,|\n)|$)",
-            r"(?:perkenalkan\s+saya|saya|dengan|aku)\s+([A-Za-z\s'\.]{2,30}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|kendala|masalah|keperluan|ingin|mau|tolong|dan|serta|\.|\,|\n)|$)",
-            r"\bnama\s+([A-Za-z\s'\.]{2,30}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|kendala|masalah|keperluan|ingin|mau|tolong|dan|serta|\.|\,|\n)|$)",
+            r"(?:nama\s*(?:saya|ku)?|namaku|atas\s+nama|panggil\s+saja)\s*(?:adalah|:|=)?\s*([A-Za-z\s'\.]{2,35}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|kendala|masalah|keperluan|ingin|mau|tolong|dan|serta|\.|\,|\n|$))",
+            r"(?:perkenalkan\s+(?:nama\s+)?saya|perkenalkan)\s+([A-Za-z\s'\.]{2,30}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|kendala|masalah|keperluan|ingin|mau|tolong|dan|serta|\.|\,|\n|$))",
+            r"(?:saya|dengan|aku)\s+([A-Za-z\s'\.]{2,30}?)\s+(?:dari|staf\s+(?:di|pada|ke)?|pegawai\s+(?:di|pada|ke)?|kantor|opd|instansi|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas)\b",
             r"^([A-Za-z\s'\.]{2,30}?)\s+(?:dari|instansi|asal|kantor|staf|pegawai)\s+",
         ]
         for pat in name_patterns:
@@ -776,7 +781,7 @@ def extract_citizen_escalation_details(text: str) -> dict[str, str | None]:
         agency_patterns = [
             r"(?:dari|staf\s+(?:di|pada|ke)?|pegawai\s+(?:di|pada|ke)?|kantor|bagian|bidang|opd|instansi|asal)\s*[:=]?\s*([A-Za-z0-9\s'\.\-_]{2,50}?)(?=\s+(?:mau|ingin|butuh|perlu|tolong|mohon|kendala|masalah|keluhan|keperluan|\.|\,|\n|$))",
             r"\b(dinas\s+[a-z0-9\s\.\-_]+|badan\s+[a-z0-9\s\.\-_]+|kementerian\s+[a-z0-9\s\.\-_]+|universitas\s+[a-z0-9\s\.\-_]+|kampus\s+[a-z0-9\s\.\-_]+|inspektorat(?:\s+[a-z0-9\s\.\-_]+)?|setda(?:ko)?(?:\s+[a-z0-9\s\.\-_]+)?|sekretariat\s+daerah(?:\s+[a-z0-9\s\.\-_]+)?|satpol\s*pp(?:\s*&\s*wh)?|kecamatan\s+[a-z0-9\s\.\-_]+|camat\s+[a-z0-9\s\.\-_]+|puskesmas\s+[a-z0-9\s\.\-_]+|rsud\s+[a-z0-9\s\.\-_]+|bagian\s+[a-z0-9\s\.\-_]+|bidang\s+[a-z0-9\s\.\-_]+)\b",
-            r"\b(kemenkes|kemendikbud|kemenag|kemendagri|kemenkeu|kemenkumham|bappeda|bkpsdm|bpkk|bpbd|diskominfo[a-z]*|dinkes|diskes|disdikbud|disdik|dishub|dinsos|pupr|dlhk3?|dpmptsp|uin(?:\s+ar[\s\-]raniry)?|usk|unsyiah|unida|ummuha|poltekkes)(?:\s+[a-z0-9\s\.\-_]+)?\b",
+            r"\b(kemenkes|kemkes|kemendikbud|kemedikbud|kemdikbud|kemendikbudristek|kemenag|kemendagri|kemendag|kemenkeu|kemenkumham|kemenko|kemenhub|kemenpan|kemenpanrb|kemkominfo|komdigi|bappeda|bkpsdm|bpkk|bpbd|diskominfo[a-z]*|dinkes|diskes|disdikbud|disdik|dishub|dinsos|pupr|dlhk3?|dpmptsp|uin(?:\s+ar[\s\-]raniry)?|usk|unsyiah|unida|ummuha|poltekkes)(?:\s+[a-z0-9\s\.\-_]+)?\b",
         ]
         for pat in agency_patterns:
             m = re.search(pat, text, re.IGNORECASE)

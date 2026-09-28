@@ -16,14 +16,19 @@ class EntityExtractorService
         'mau', 'ingin', 'butuh', 'perlu', 'ada', 'hendak', 'belum', 'tidak', 'tak', 'bukan',
         'sedang', 'baru', 'sudah', 'telah', 'minta', 'mohon', 'bertanya', 'tanya', 'bingung',
         'rasa', 'kira', 'cuma', 'hanya', 'kan', 'ini', 'itu', 'warga', 'masyarakat', 'umum',
-        'seorang', 'seseorang', 'admin', 'petugas', 'operator', 'cs', 'pihak', 'siapa',
-        'bantuan', 'cara', 'cepat', 'mudah', 'baik', 'bisa', 'boleh', 'dapat', 'tolong',
-        'halo', 'hai', 'selamat', 'pagi', 'siang', 'sore', 'malam', 'assalamualaikum',
-        'waalaikumsalam', 'terima', 'kasih', 'makasih', 'bapak', 'ibu', 'pak', 'bu', 'mas', 'mbak',
-        'hormat', 'info', 'informasi', 'kendala', 'masalah', 'keluhan', 'keperluan', 'perihal',
-        'dari', 'staf', 'pegawai', 'kantor', 'instansi', 'opd', 'dinas', 'badan', 'bagian', 'bidang',
-        'kementerian', 'di', 'ke', 'pada', 'untuk', 'atas', 'nama', 'dengan', 'saya', 'kami', 'adalah',
-        'dan', 'serta', 'yg', 'yang', 'juga', 'atau', 'pun',
+        'seorang', 'seseorang', 'orang', 'admin', 'petugas', 'operator', 'cs', 'helpdesk', 'pihak', 'siapa',
+        'manusia', 'staf', 'staff', 'tim', 'bantuan', 'cara', 'cepat', 'mudah', 'baik', 'bisa',
+        'boleh', 'dapat', 'tolong', 'dong', 'halo', 'hai', 'selamat', 'pagi', 'siang', 'sore',
+        'malam', 'assalamualaikum', 'waalaikumsalam', 'terima', 'kasih', 'makasih', 'bapak',
+        'ibu', 'pak', 'bu', 'mas', 'mbak', 'hormat', 'info', 'informasi', 'kendala', 'masalah',
+        'keluhan', 'keperluan', 'perihal', 'kebutuhan', 'dari', 'kantor', 'instansi', 'opd',
+        'dinas', 'badan', 'bagian', 'bidang', 'kementerian', 'lembaga', 'kecamatan', 'puskesmas',
+        'di', 'ke', 'pada', 'untuk', 'atas', 'nama', 'dengan', 'sama', 'saya', 'kami', 'kita',
+        'adalah', 'yaitu', 'dan', 'serta', 'yg', 'yang', 'juga', 'atau', 'pun', 'karena', 'sebab',
+        'bicara', 'berbicara', 'ngobrol', 'ngomong', 'diskusi', 'konsultasi', 'konsul', 'chat',
+        'chatting', 'hubung', 'hubungi', 'menghubungi', 'dihubungi', 'sambung', 'sambungkan',
+        'hubungkan', 'alih', 'alihkan', 'kontak', 'mengontak', 'pesan', 'kirim', 'bertemu',
+        'ketemu', 'panggil', 'langsung',
     ];
 
     /**
@@ -130,9 +135,9 @@ class EntityExtractorService
         // 2. Ekstraksi Nama Bahasa Indonesia berbasis Pola Percakapan Alami
         if (!$name) {
             $namePatterns = [
-                '/(?:nama\s*(?:saya|ku)?|namaku|atas\s+nama|panggil\s+saja)\s*(?:adalah|:|=)?\s*([A-Za-z\s\'\.]{2,35}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|kendala|masalah|keperluan|ingin|mau|tolong|dan|serta|\.|\,|\n)|$)/i',
-                '/(?:perkenalkan\s+saya|saya|dengan|aku)\s+([A-Za-z\s\'\.]{2,30}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|kendala|masalah|keperluan|ingin|mau|tolong|dan|serta|\.|\,|\n)|$)/i',
-                '/\bnama\s+([A-Za-z\s\'\.]{2,30}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|kendala|masalah|keperluan|ingin|mau|tolong|dan|serta|\.|\,|\n)|$)/i',
+                '/(?:nama\s*(?:saya|ku)?|namaku|atas\s+nama|panggil\s+saja)\s*(?:adalah|:|=)?\s*([A-Za-z\s\'\.]{2,35}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|kendala|masalah|keperluan|ingin|mau|tolong|dan|serta|\.|\,|\n|$))/i',
+                '/(?:perkenalkan\s+(?:nama\s+)?saya|perkenalkan)\s+([A-Za-z\s\'\.]{2,30}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|kendala|masalah|keperluan|ingin|mau|tolong|dan|serta|\.|\,|\n|$))/i',
+                '/(?:saya|dengan|aku)\s+([A-Za-z\s\'\.]{2,30}?)\s+(?:dari|staf\s+(?:di|pada|ke)?|pegawai\s+(?:di|pada|ke)?|kantor|opd|instansi|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas)\b/i',
                 '/^([A-Za-z\s\'\.]{2,30}?)\s+(?:dari|instansi|asal|kantor|staf|pegawai)\s+/i',
             ];
 
@@ -152,7 +157,7 @@ class EntityExtractorService
             $agencyPatterns = [
                 '/(?:dari|staf\s+(?:di|pada|ke)?|pegawai\s+(?:di|pada|ke)?|kantor|bagian|bidang|opd|instansi|asal)\s*[:=]?\s*([A-Za-z0-9\s\'\.\-_]{2,50}?)(?=\s+(?:mau|ingin|butuh|perlu|tolong|mohon|kendala|masalah|keluhan|keperluan|\.|\,|\n|$))/i',
                 '/\b(dinas\s+[a-z0-9\s\.\-_]+|badan\s+[a-z0-9\s\.\-_]+|kementerian\s+[a-z0-9\s\.\-_]+|universitas\s+[a-z0-9\s\.\-_]+|kampus\s+[a-z0-9\s\.\-_]+|inspektorat(?:\s+[a-z0-9\s\.\-_]+)?|setda(?:ko)?(?:\s+[a-z0-9\s\.\-_]+)?|sekretariat\s+daerah(?:\s+[a-z0-9\s\.\-_]+)?|satpol\s*pp(?:\s*&\s*wh)?|kecamatan\s+[a-z0-9\s\.\-_]+|camat\s+[a-z0-9\s\.\-_]+|puskesmas\s+[a-z0-9\s\.\-_]+|rsud\s+[a-z0-9\s\.\-_]+|bagian\s+[a-z0-9\s\.\-_]+|bidang\s+[a-z0-9\s\.\-_]+)\b/i',
-                '/\b(kemenkes|kemendikbud|kemenag|kemendagri|kemenkeu|kemenkumham|bappeda|bkpsdm|bpkk|bpbd|diskominfo[a-z]*|dinkes|diskes|disdikbud|disdik|dishub|dinsos|pupr|dlhk3?|dpmptsp|uin(?:\s+ar[\s\-]raniry)?|usk|unsyiah|unida|ummuha|poltekkes)(?:\s+[a-z0-9\s\.\-_]+)?\b/i',
+                '/\b(kemenkes|kemkes|kemendikbud|kemedikbud|kemdikbud|kemendikbudristek|kemenag|kemendagri|kemendag|kemenkeu|kemenkumham|kemenko|kemenhub|kemenpan|kemenpanrb|kemkominfo|komdigi|bappeda|bkpsdm|bpkk|bpbd|diskominfo[a-z]*|dinkes|diskes|disdikbud|disdik|dishub|dinsos|pupr|dlhk3?|dpmptsp|uin(?:\s+ar[\s\-]raniry)?|usk|unsyiah|unida|ummuha|poltekkes)(?:\s+[a-z0-9\s\.\-_]+)?\b/i',
             ];
 
             foreach ($agencyPatterns as $pattern) {
@@ -286,31 +291,31 @@ class EntityExtractorService
         $entities = self::extractFromText($incomingText, $senderName);
         $updated = false;
 
-        $hasExplicitName = (bool) preg_match('/(?:nama(?:\s*(?:saya|ku))?|name)\s*[:=]/i', $incomingText);
-        $hasExplicitAgency = (bool) preg_match('/(?:instansi(?:\s*\/\s*opd)?|opd|unit\s+kerja|kantor|asal)\s*[:=]/i', $incomingText);
+        $hasIntroductionOrName = (bool) preg_match('/(?:nama(?:\s*(?:saya|ku))?|namaku|atas\s+nama|panggil\s+saja|perkenalkan|name)/i', $incomingText)
+            || (bool) preg_match('/(?:saya|dengan|aku)\s+[A-Za-z\s\'\.]{2,30}?\s+(?:dari|staf|pegawai|kantor|opd|instansi|dinas)/i', $incomingText);
         $hasExplicitIssue = (bool) preg_match('/(?:kendala|masalah|keluhan|keperluan|perihal|kebutuhan)\s*[:=]/i', $incomingText);
 
-        // 1. Perbarui Nama jika saat ini masih kosong / default ('Warga', 'Warga / Anonim', dsb.) atau user memberikan nama eksplisit
+        // 1. Perbarui Nama jika saat ini masih kosong / default / salah ('Warga', 'Bicara', dsb.) atau user memberikan nama baru
         $currentName = trim($ticket->citizen_name ?? '');
-        $isGenericName = empty($currentName) || in_array(strtolower($currentName), ['warga', 'warga / anonim', 'warga telegram', 'warga whatsapp', 'user', 'anonim', 'defaultuser']);
+        $isGenericName = empty($currentName) || in_array(strtolower($currentName), ['warga', 'warga / anonim', 'warga telegram', 'warga whatsapp', 'user', 'anonim', 'defaultuser', 'bicara', 'admin', 'petugas', 'null']);
 
-        if (!empty($entities['name']) && ($isGenericName || $hasExplicitName)) {
+        if (!empty($entities['name']) && ($isGenericName || $hasIntroductionOrName)) {
             $ticket->citizen_name = $entities['name'];
             $updated = true;
 
-            // Retroaktif perbarui sender_name pesan warga sebelumnya yang masih 'Warga'
+            // Retroaktif perbarui sender_name pesan warga sebelumnya yang masih 'Warga' atau 'Bicara'
             try {
                 $ticket->messages()
                     ->where('sender_type', 'citizen')
-                    ->whereIn('sender_name', ['Warga', 'Warga / Anonim', 'Warga Telegram', 'Warga WhatsApp', 'User'])
+                    ->whereIn('sender_name', ['Warga', 'Warga / Anonim', 'Warga Telegram', 'Warga WhatsApp', 'User', 'Bicara', 'Admin'])
                     ->update(['sender_name' => $entities['name']]);
             } catch (\Exception $e) {
                 // Ignore
             }
         }
 
-        // 2. Perbarui Instansi jika belum ada atau user memberikan instansi eksplisit
-        if (!empty($entities['agency']) && (empty($ticket->citizen_agency) || $hasExplicitAgency)) {
+        // 2. Perbarui Instansi jika belum ada atau ada instansi valid yang baru disampaikan
+        if (!empty($entities['agency']) && (empty($ticket->citizen_agency) || $entities['agency'] !== $ticket->citizen_agency)) {
             $ticket->citizen_agency = $entities['agency'];
             $updated = true;
         }
@@ -321,12 +326,13 @@ class EntityExtractorService
             || str_contains($currentIssue, 'hubungi admin')
             || str_contains($currentIssue, 'hubungkan')
             || str_contains($currentIssue, 'permintaan bantuan langsung')
+            || str_contains($currentIssue, 'bantuan koordinasi untuk')
             || str_contains($currentIssue, 'assalamualaikum')
             || str_contains($currentIssue, 'halo')
             || str_contains($currentIssue, 'selamat')
             || str_starts_with($currentIssue, 'pertanyaan:');
 
-        if (!empty($entities['issue_summary']) && ($isGenericIssue || $hasExplicitIssue)) {
+        if (!empty($entities['issue_summary']) && !self::isPureGreetingOrHandoff($entities['issue_summary']) && ($isGenericIssue || $hasExplicitIssue)) {
             $ticket->issue_summary = Str::limit($entities['issue_summary'], 250);
             $updated = true;
         } elseif ($isGenericIssue && !empty($ticket->citizen_agency) && !empty($ticket->citizen_name)) {
