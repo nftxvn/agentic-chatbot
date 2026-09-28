@@ -17,12 +17,47 @@ export default function LiveChatPage() {
   const [sending, setSending] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false)
+  const [unreadWhileScrolled, setUnreadWhileScrolled] = useState(0)
+  const [selectedFile, setSelectedFile] = useState(null)
+  const [filePreviewUrl, setFilePreviewUrl] = useState(null)
+  const [previewModalImg, setPreviewModalImg] = useState(null)
 
   const statsGridRef = useRef(null)
+  const messagesContainerRef = useRef(null)
   const messagesEndRef = useRef(null)
+  const isNearBottomRef = useRef(true)
+  const prevMessagesLengthRef = useRef(0)
+  const fileInputRef = useRef(null)
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  const handleScroll = () => {
+    if (!messagesContainerRef.current) return
+    const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight
+    const isNear = distanceFromBottom < 100
+
+    isNearBottomRef.current = isNear
+
+    if (isNear) {
+      setShowScrollBottomBtn(false)
+      setUnreadWhileScrolled(0)
+    } else {
+      setShowScrollBottomBtn(true)
+    }
+  }
+
+  const scrollToBottom = (behavior = 'smooth') => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTo({
+        top: messagesContainerRef.current.scrollHeight,
+        behavior,
+      })
+    } else if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior })
+    }
+    isNearBottomRef.current = true
+    setShowScrollBottomBtn(false)
+    setUnreadWhileScrolled(0)
   }
 
   // Fetch ticket lists & stats
@@ -62,13 +97,19 @@ export default function LiveChatPage() {
 
   // Fetch messages for selected ticket
   const fetchMessages = async (ticketId, isInitial = false) => {
-    if (isInitial) setLoadingMessages(true)
+    if (isInitial) {
+      setLoadingMessages(true)
+      setUnreadWhileScrolled(0)
+      setShowScrollBottomBtn(false)
+      isNearBottomRef.current = true
+    }
     try {
       const res = await ticketsApi.getMessages(ticketId)
       const msgList = res?.data || res?.messages || (Array.isArray(res) ? res : [])
       setMessages(msgList)
       if (isInitial) {
-        setTimeout(scrollToBottom, 100)
+        prevMessagesLengthRef.current = msgList.length
+        setTimeout(() => scrollToBottom('auto'), 50)
       }
     } catch (err) {
       console.error('Failed to load messages for ticket:', ticketId, err)
@@ -86,6 +127,27 @@ export default function LiveChatPage() {
       fetchMessages(selectedTicket.id, true)
     }
   }, [selectedTicket?.id])
+
+  // Auto-scroll to bottom like WhatsApp when new messages arrive
+  useEffect(() => {
+    if (messages.length === 0) return
+
+    const diff = messages.length - prevMessagesLengthRef.current
+    prevMessagesLengthRef.current = messages.length
+
+    if (diff > 0) {
+      if (isNearBottomRef.current) {
+        const timer = setTimeout(() => {
+          scrollToBottom('smooth')
+        }, 50)
+        return () => clearTimeout(timer)
+      } else {
+        // User is scrolled up reading previous history -> don't yank view, show unread badge!
+        setUnreadWhileScrolled((prev) => prev + diff)
+        setShowScrollBottomBtn(true)
+      }
+    }
+  }, [messages])
 
   // GSAP animation for Stats Cards on first load
   useLayoutEffect(() => {
@@ -121,14 +183,43 @@ export default function LiveChatPage() {
     setSelectedTicket(t)
   }
 
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 10 * 1024 * 1024) {
+      addAppNotification({
+        title: 'Ukuran File Terlalu Besar',
+        message: 'Maksimal ukuran file lampiran adalah 10 MB.',
+        type: 'warning',
+      })
+      return
+    }
+    setSelectedFile(file)
+    if (file.type.startsWith('image/')) {
+      setFilePreviewUrl(URL.createObjectURL(file))
+    } else {
+      setFilePreviewUrl(null)
+    }
+  }
+
+  const handleClearFile = () => {
+    setSelectedFile(null)
+    if (filePreviewUrl) {
+      URL.revokeObjectURL(filePreviewUrl)
+      setFilePreviewUrl(null)
+    }
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
   const handleSendReply = async (e) => {
     e?.preventDefault()
-    if (!replyText.trim() || !selectedTicket || sending) return
+    if ((!replyText.trim() && !selectedFile) || !selectedTicket || sending) return
 
     setSending(true)
     try {
-      await ticketsApi.reply(selectedTicket.id, replyText.trim())
+      await ticketsApi.reply(selectedTicket.id, replyText.trim(), selectedFile)
       setReplyText('')
+      handleClearFile()
       await fetchMessages(selectedTicket.id, false)
       scrollToBottom()
       addAppNotification({
@@ -194,11 +285,11 @@ export default function LiveChatPage() {
   }
 
   return (
-    <div className="p-4 sm:p-5 max-w-[1600px] mx-auto space-y-4 sm:space-y-5 pb-16">
-      {/* ── HEADER BANNER (CLEAN & MINIMALIST) ───────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 sm:p-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-sm">
+    <div className="p-3 sm:p-4.5 max-w-[1700px] mx-auto flex flex-col h-[calc(100vh-76px)] overflow-hidden gap-3">
+      {/* ── HEADER BANNER (CLEAN & COMPACT) ───────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 px-4 sm:px-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xs shrink-0">
         <div className="flex items-center gap-2">
-          <h1 className="text-xl sm:text-2xl font-black text-[var(--text-primary)] tracking-tight flex items-center">
+          <h1 className="text-lg sm:text-xl font-black text-[var(--text-primary)] tracking-tight flex items-center">
             <span>LIVE CHAT & TIKET</span>
             <InfoTooltip
               size="lg"
@@ -210,7 +301,7 @@ export default function LiveChatPage() {
         {/* Best Practice: Clean Live Status Indicator + Sync Button */}
         <div className="flex items-center gap-2 self-start sm:self-auto">
           <div
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-semibold border border-emerald-500/20 shadow-xs"
+            className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-semibold border border-emerald-500/20 shadow-xs"
             title="Sistem terhubung dan otomatis memperbarui pesan setiap 5 detik"
           >
             <span className="relative flex h-2 w-2">
@@ -222,11 +313,11 @@ export default function LiveChatPage() {
 
           <button
             onClick={() => fetchTickets(false)}
-            className="p-2 rounded-xl bg-[var(--bg-input)] hover:bg-[var(--bg-card)] text-[var(--text-secondary)] hover:text-sky-500 border border-[var(--border-color)] transition-all duration-200 cursor-pointer shadow-xs active:scale-95"
+            className="p-1.5 rounded-xl bg-[var(--bg-input)] hover:bg-[var(--bg-card)] text-[var(--text-secondary)] hover:text-sky-500 border border-[var(--border-color)] transition-all duration-200 cursor-pointer shadow-xs active:scale-95"
             title="Perbarui Data Manual"
           >
             <svg
-              className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-sky-500' : ''}`}
+              className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-sky-500' : ''}`}
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -237,9 +328,9 @@ export default function LiveChatPage() {
         </div>
       </div>
 
-      {/* ── STATS CARDS (IDENTICAL TO DASHBOARD & MONITORING) ──── */}
+      {/* ── STATS CARDS (COMPACT FIT) ──── */}
       <div
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4"
+        className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 shrink-0"
         ref={statsGridRef}
       >
         {[
@@ -270,30 +361,28 @@ export default function LiveChatPage() {
         ].map((stat) => (
           <div
             key={stat.label}
-            className="bg-[var(--bg-card)] border border-[var(--border-color)] p-4 sm:p-5 rounded-xl flex flex-col justify-between hover:border-[var(--text-muted)]/40 transition-all duration-200 shadow-xs"
+            className="bg-[var(--bg-card)] border border-[var(--border-color)] p-2.5 px-3.5 rounded-xl flex items-center justify-between hover:border-[var(--text-muted)]/40 transition-all duration-200 shadow-xs"
           >
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center">
                 <span>{stat.label}</span>
                 <InfoTooltip content={stat.tooltip} />
               </span>
-              <span className={`w-2 h-2 rounded-full ${stat.dotColor} shrink-0`} />
-            </div>
-            <div className="mt-3">
-              <h3 className="text-2xl font-black text-[var(--text-primary)] tracking-tight">
-                {loading ? <div className="skeleton h-7 w-16" /> : stat.value}
+              <h3 className="text-lg sm:text-xl font-black text-[var(--text-primary)] tracking-tight mt-0.5">
+                {loading ? <div className="skeleton h-5 w-12" /> : stat.value}
               </h3>
             </div>
+            <span className={`w-2.5 h-2.5 rounded-full ${stat.dotColor} shrink-0`} />
           </div>
         ))}
       </div>
 
-      {/* ── SPLIT MAIN CHAT & QUEUE WORKSPACE ───────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[720px]">
-        {/* Left Side: Ticket Queue List Card with Integrated Filter & Search */}
+      {/* ── SPLIT MAIN CHAT & QUEUE WORKSPACE (AUTO-FIT VIEWPORT) ───────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1 min-h-0 overflow-hidden">
+        {/* Left Side: Ticket Queue List Card */}
         <div className="lg:col-span-4 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl flex flex-col h-full overflow-hidden shadow-xs">
-          {/* Card Header */}
-          <div className="p-3.5 border-b border-[var(--border-color)] bg-[var(--bg-input)] flex items-center justify-between">
+          {/* 1. Card Header: Daftar Antrean Tiket */}
+          <div className="p-2.5 px-3.5 border-b border-[var(--border-color)] bg-[var(--bg-input)] flex items-center justify-between shrink-0">
             <span className="font-bold text-xs uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-2">
               <span>Daftar Antrean Tiket</span>
               <span className="px-2 py-0.5 rounded-full bg-[var(--bg-card)] text-[10px] font-black text-[var(--text-primary)] border border-[var(--border-color)]">
@@ -302,8 +391,25 @@ export default function LiveChatPage() {
             </span>
           </div>
 
-          {/* Integrated Search Input Inside Card */}
-          <div className="p-3 border-b border-[var(--border-color)] bg-[var(--bg-card)]">
+          {/* 2. Integrated Filter Tabs (BELOW DAFTAR ANTREAN TIKET) */}
+          <div className="p-2 border-b border-[var(--border-color)] bg-[var(--bg-card)] shrink-0">
+            <SlidingTabs
+              tabs={[
+                { id: 'all', label: 'Semua' },
+                { id: 'open', label: 'Terbuka' },
+                { id: 'in_progress', label: 'Diproses' },
+                { id: 'resolved', label: 'Selesai' },
+              ]}
+              activeTab={activeTab}
+              onChange={setActiveTab}
+              variant="pill"
+              fullWidth={true}
+              className="w-full justify-between"
+            />
+          </div>
+
+          {/* 2. Integrated Search Input (BELOW TABS) */}
+          <div className="p-2.5 px-3 border-b border-[var(--border-color)] bg-[var(--bg-card)] shrink-0">
             <div className="relative w-full">
               <input
                 type="text"
@@ -316,21 +422,6 @@ export default function LiveChatPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
             </div>
-          </div>
-
-          {/* Integrated Filter Tabs Inside Card */}
-          <div className="p-2 border-b border-[var(--border-color)] bg-[var(--bg-card)]">
-            <SlidingTabs
-              tabs={[
-                { id: 'all', label: 'Semua' },
-                { id: 'open', label: 'Terbuka' },
-                { id: 'in_progress', label: 'Diproses' },
-                { id: 'resolved', label: 'Selesai' },
-              ]}
-              activeTab={activeTab}
-              onChange={setActiveTab}
-              variant="pill"
-            />
           </div>
 
           {/* Ticket List Stream */}
@@ -381,7 +472,7 @@ export default function LiveChatPage() {
         </div>
 
         {/* Right Side: Interactive Conversation Thread & Action Panel */}
-        <div className="lg:col-span-8 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl flex flex-col h-full overflow-hidden shadow-xs">
+        <div className="lg:col-span-8 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl flex flex-col h-full overflow-hidden shadow-xs relative">
           {selectedTicket ? (
             <>
               {/* Chat Thread Header */}
@@ -433,7 +524,11 @@ export default function LiveChatPage() {
               </div>
 
               {/* Chat Message Stream */}
-              <div className="flex-1 p-5 overflow-y-auto space-y-4 bg-[var(--bg-main)]">
+              <div
+                ref={messagesContainerRef}
+                onScroll={handleScroll}
+                className="flex-1 p-5 overflow-y-auto space-y-4 bg-[var(--bg-main)] scroll-smooth"
+              >
                 {loadingMessages ? (
                   <div className="p-8 text-center text-xs text-[var(--text-secondary)]">Memuat percakapan...</div>
                 ) : messages.length === 0 ? (
@@ -442,8 +537,88 @@ export default function LiveChatPage() {
                   </div>
                 ) : (
                   messages.map((msg, idx) => {
+                    const rawText = (msg.message || msg.content || '').trim()
+                    const isSystem = msg.sender_type === 'system'
+                      || msg.sender === 'system'
+                      || rawText.startsWith('Ticket Opened:')
+                      || rawText.startsWith('Ticket Closed:')
+                      || rawText.startsWith('Ticket Re-opened:')
+                      || rawText.includes('── Ticket')
+
+                    if (isSystem) {
+                      const timeStr = msg.created_at
+                        ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        : ''
+
+                      let label = rawText
+                      let icon = null
+                      let badgeStyle = ''
+
+                      if (rawText.includes('Closed')) {
+                        const ticketNum = rawText.match(/TICK-[\w-]+/)?.[0] || selectedTicket?.ticket_number || ''
+                        label = `Tiket Diselesaikan ${ticketNum ? `(${ticketNum})` : ''}`
+                        badgeStyle = 'bg-[var(--bg-card)] border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                        icon = (
+                          <svg className="w-3.5 h-3.5 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                          </svg>
+                        )
+                      } else if (rawText.includes('Re-opened')) {
+                        const ticketNum = rawText.match(/TICK-[\w-]+/)?.[0] || selectedTicket?.ticket_number || ''
+                        label = `Tiket Dibuka Kembali ${ticketNum ? `(${ticketNum})` : ''}`
+                        badgeStyle = 'bg-[var(--bg-card)] border-amber-500/30 text-amber-600 dark:text-amber-400'
+                        icon = (
+                          <svg className="w-3.5 h-3.5 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                        )
+                      } else if (rawText.includes('Opened')) {
+                        const ticketNum = rawText.match(/TICK-[\w-]+/)?.[0] || selectedTicket?.ticket_number || ''
+                        label = `Sesi Tiket Dimulai ${ticketNum ? `(${ticketNum})` : ''}`
+                        badgeStyle = 'bg-[var(--bg-card)] border-sky-500/30 text-sky-600 dark:text-sky-400'
+                        icon = (
+                          <span className="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0 animate-pulse" />
+                        )
+                      } else {
+                        badgeStyle = 'bg-[var(--bg-card)] border-[var(--border-color)] text-[var(--text-muted)]'
+                        icon = <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
+                      }
+
+                      return (
+                        <div key={msg.id || idx} className="relative flex items-center justify-center my-3.5 w-full select-none animate-in fade-in zoom-in-95">
+                          {/* Garis Horizontal Halus */}
+                          <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                            <div className="w-full border-t border-[var(--border-color)]/70"></div>
+                          </div>
+
+                          {/* Floating Center Pill */}
+                          <div className={`relative z-10 flex items-center gap-2 px-3.5 py-1 rounded-full border text-[11px] font-semibold shadow-xs transition-all ${badgeStyle}`}>
+                            {icon}
+                            <span>{label}</span>
+                            {timeStr && (
+                              <span className="text-[10px] font-mono opacity-60 font-normal">
+                                • {timeStr}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    }
+
                     const isCitizen = msg.sender_type === 'citizen' || msg.sender === 'citizen' || msg.sender === 'user'
                     const isSystemAI = msg.sender_type === 'ai' || msg.sender === 'ai' || msg.sender === 'bot'
+                    
+                    let attachments = []
+                    try {
+                      if (typeof msg.attachments === 'string') {
+                        attachments = JSON.parse(msg.attachments || '[]')
+                      } else if (Array.isArray(msg.attachments)) {
+                        attachments = msg.attachments
+                      }
+                    } catch (e) {
+                      attachments = []
+                    }
+
                     return (
                       <div
                         key={msg.id || idx}
@@ -465,7 +640,75 @@ export default function LiveChatPage() {
                               : 'bg-sky-600 text-white rounded-tr-sm'
                           }`}
                         >
-                          {msg.message || msg.content}
+                          {/* Text Message */}
+                          {msg.message && msg.message !== '[Lampiran Foto]' && msg.message !== '[Lampiran Berkas]' && (
+                            <div className="whitespace-pre-wrap">{msg.message || msg.content}</div>
+                          )}
+
+                          {/* Image & File Attachments */}
+                          {attachments.length > 0 && (
+                            <div className={`flex flex-col gap-2 ${msg.message && msg.message !== '[Lampiran Foto]' && msg.message !== '[Lampiran Berkas]' ? 'mt-2.5 pt-2 border-t border-current/10' : ''}`}>
+                              {attachments.map((att, attIdx) => {
+                                const isImg = (att.mime_type && att.mime_type.startsWith('image/'))
+                                  || att.type === 'image'
+                                  || att.type === 'photo'
+                                  || /\.(jpg|jpeg|png|webp|gif)$/i.test(att.name || att.file_name || '')
+                                
+                                const fileUrl = att.url || `/api/tickets/${selectedTicket.id}/attachments/${att.file_name || att.name}`
+
+                                if (isImg) {
+                                  return (
+                                    <div key={att.id || attIdx} className="relative group overflow-hidden rounded-xl border border-black/10 dark:border-white/10 shadow-xs max-w-xs">
+                                      <img
+                                        src={fileUrl}
+                                        alt={att.name || 'Lampiran Gambar'}
+                                        className="max-h-60 w-auto object-cover rounded-xl cursor-pointer hover:scale-102 transition-transform duration-200"
+                                        onClick={() => setPreviewModalImg(fileUrl)}
+                                        loading="lazy"
+                                      />
+                                      <div
+                                        onClick={() => setPreviewModalImg(fileUrl)}
+                                        className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-white text-xs font-semibold cursor-pointer"
+                                      >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                                        </svg>
+                                        <span>Perbesar Foto</span>
+                                      </div>
+                                    </div>
+                                  )
+                                }
+
+                                return (
+                                  <a
+                                    key={att.id || attIdx}
+                                    href={fileUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    download={att.name || 'berkas'}
+                                    className={`flex items-center gap-2.5 p-2.5 rounded-xl border transition-colors ${
+                                      isCitizen
+                                        ? 'bg-[var(--bg-input)] border-[var(--border-color)] hover:border-sky-500'
+                                        : 'bg-white/10 border-white/20 hover:bg-white/20 text-white'
+                                    }`}
+                                  >
+                                    <svg className="w-5 h-5 text-sky-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="font-semibold text-xs truncate">{att.name || att.file_name || 'Dokumen Lampiran'}</div>
+                                      {att.size && (
+                                        <div className="text-[10px] opacity-70 font-mono">{(att.size / 1024).toFixed(1)} KB</div>
+                                      )}
+                                    </div>
+                                    <svg className="w-4 h-4 shrink-0 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                    </svg>
+                                  </a>
+                                )
+                              })}
+                            </div>
+                          )}
                         </div>
                         <span className="text-[9px] text-[var(--text-muted)] mt-1 px-1 font-mono">
                           {msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
@@ -477,33 +720,114 @@ export default function LiveChatPage() {
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Reply Input Box */}
-              <form onSubmit={handleSendReply} className="p-3.5 px-4 bg-[var(--bg-card)] border-t border-[var(--border-color)] flex items-center gap-2">
-                <input
-                  type="text"
-                  placeholder="Ketik balasan resmi petugas di sini..."
-                  value={replyText}
-                  onChange={(e) => setReplyText(e.target.value)}
-                  disabled={sending || selectedTicket.status === 'resolved'}
-                  className="flex-1 px-4 py-2.5 text-xs bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] focus:outline-none focus:border-sky-500 disabled:opacity-50 transition-colors"
-                />
+              {/* Floating WhatsApp-Style Scroll to Bottom Button (Centered) */}
+              {showScrollBottomBtn && (
                 <button
-                  type="submit"
-                  disabled={!replyText.trim() || sending || selectedTicket.status === 'resolved'}
-                  className="px-4 py-2.5 text-xs font-bold rounded-xl bg-sky-500 text-white hover:bg-sky-600 disabled:opacity-40 transition-colors flex items-center gap-1.5 shrink-0 shadow-sm cursor-pointer"
+                  type="button"
+                  onClick={() => scrollToBottom('smooth')}
+                  className="absolute left-1/2 -translate-x-1/2 bottom-20 z-20 flex items-center gap-2 px-3.5 py-2 rounded-full bg-[var(--bg-card)]/95 backdrop-blur-md border border-[var(--border-color)] shadow-xl hover:border-sky-500 hover:shadow-sky-500/15 text-[var(--text-primary)] text-xs font-semibold transition-all duration-200 cursor-pointer group animate-in fade-in zoom-in-95"
+                  title="Gulir ke pesan terbaru"
                 >
-                  {sending ? (
-                    <span>Mengirim...</span>
+                  <svg
+                    className="w-4 h-4 text-sky-500 group-hover:translate-y-0.5 transition-transform"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                  </svg>
+                  {unreadWhileScrolled > 0 ? (
+                    <span className="flex items-center gap-1.5">
+                      <span className="px-1.5 py-0.2 rounded-full bg-sky-500 text-white text-[10px] font-bold">
+                        {unreadWhileScrolled}
+                      </span>
+                      <span className="text-[11px] text-sky-500 font-bold">Pesan Baru</span>
+                    </span>
                   ) : (
-                    <>
-                      <span>Kirim</span>
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                      </svg>
-                    </>
+                    <span className="text-[11px] text-[var(--text-secondary)]">Ke Bawah</span>
                   )}
                 </button>
-              </form>
+              )}
+
+              {/* Reply Input Box */}
+              <div className="bg-[var(--bg-card)] border-t border-[var(--border-color)] flex flex-col">
+                {/* File Attachment Chip Preview */}
+                {selectedFile && (
+                  <div className="px-4 pt-3 pb-1 flex items-center gap-2 animate-in fade-in">
+                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-sky-500/10 border border-sky-500/30 text-sky-600 dark:text-sky-400 text-xs font-medium">
+                      {filePreviewUrl ? (
+                        <img src={filePreviewUrl} alt="Preview" className="w-6 h-6 rounded-md object-cover" />
+                      ) : (
+                        <svg className="w-4 h-4 text-sky-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                        </svg>
+                      )}
+                      <span className="truncate max-w-[200px]">{selectedFile.name}</span>
+                      <span className="text-[10px] opacity-75 font-mono">({(selectedFile.size / 1024).toFixed(0)} KB)</span>
+                      <button
+                        type="button"
+                        onClick={handleClearFile}
+                        className="ml-1 p-0.5 hover:bg-sky-500/20 rounded-md transition-colors cursor-pointer text-slate-500 hover:text-rose-500"
+                        title="Batal lampirkan file"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <form onSubmit={handleSendReply} className="p-3.5 px-4 flex items-center gap-2">
+                  {/* Hidden File Input */}
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    accept="image/*,.pdf"
+                    className="hidden"
+                  />
+
+                  {/* Attachment Button */}
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={sending || selectedTicket.status === 'resolved'}
+                    className="p-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-secondary)] hover:text-sky-500 hover:border-sky-500/40 disabled:opacity-50 transition-colors cursor-pointer shrink-0"
+                    title="Lampirkan Gambar atau Berkas PDF (Maks 10 MB)"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                    </svg>
+                  </button>
+
+                  <input
+                    type="text"
+                    placeholder={selectedFile ? "Tambahkan pesan atau kirim lampiran..." : "Ketik balasan resmi petugas di sini..."}
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    disabled={sending || selectedTicket.status === 'resolved'}
+                    className="flex-1 px-4 py-2.5 text-xs bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] focus:outline-none focus:border-sky-500 disabled:opacity-50 transition-colors"
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={(!replyText.trim() && !selectedFile) || sending || selectedTicket.status === 'resolved'}
+                    className="px-4 py-2.5 text-xs font-bold rounded-xl bg-sky-500 text-white hover:bg-sky-600 disabled:opacity-40 transition-colors flex items-center gap-1.5 shrink-0 shadow-sm cursor-pointer"
+                  >
+                    {sending ? (
+                      <span>Mengirim...</span>
+                    ) : (
+                      <>
+                        <span>Kirim</span>
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                        </svg>
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
             </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-[var(--text-secondary)]">
@@ -515,6 +839,46 @@ export default function LiveChatPage() {
           )}
         </div>
       </div>
+
+      {/* Image Lightbox Modal Zoom */}
+      {previewModalImg && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setPreviewModalImg(null)}
+        >
+          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
+            <div className="absolute top-3 right-3 flex items-center gap-2 z-10">
+              <a
+                href={previewModalImg}
+                download="lampiran-tiket.jpg"
+                target="_blank"
+                rel="noreferrer"
+                className="p-2 rounded-full bg-black/60 hover:bg-black/80 text-white transition-colors cursor-pointer shadow-md"
+                title="Unduh Gambar"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+              </a>
+              <button
+                type="button"
+                onClick={() => setPreviewModalImg(null)}
+                className="p-2 rounded-full bg-black/60 hover:bg-black/80 text-white transition-colors cursor-pointer shadow-md"
+                title="Tutup (Esc)"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <img
+              src={previewModalImg}
+              alt="Pratinjau Foto"
+              className="max-h-[85vh] max-w-full object-contain rounded-xl shadow-2xl border border-white/10"
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

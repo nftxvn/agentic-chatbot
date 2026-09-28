@@ -414,7 +414,7 @@ export default function DashboardPage() {
                   "File Asli",
                   "Status",
                   "Kategori AI",
-                  "Chunks",
+                  "Basis Vektor",
                   "Waktu Unggah",
                   "Aksi",
                 ].map((h, i) => (
@@ -483,7 +483,13 @@ export default function DashboardPage() {
                       </span>
                     </td>
                     <td className="px-4.5 py-3.5 font-semibold text-[var(--text-primary)]">
-                      {doc.total_chunks || "-"}
+                      {doc.total_chunks !== null && doc.total_chunks !== undefined ? (
+                        <span className="font-mono">
+                          {doc.total_chunks} <span className="text-[11px] font-normal text-[var(--text-muted)]">vektor</span>
+                        </span>
+                      ) : (
+                        <span className="text-[var(--text-muted)]">-</span>
+                      )}
                     </td>
                     <td className="px-4.5 py-3.5 text-xs text-[var(--text-muted)] whitespace-nowrap">
                       {formatDate(doc.created_at)}

@@ -13,11 +13,17 @@ class AuthenticateInternalService
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $token = $request->bearerToken()
-            ?: $request->header('X-Internal-Token')
-            ?: $request->header('X-AI-Service-Token');
+        $token = $request->bearerToken();
+        if (!$token) {
+            $token = $request->header('X-Internal-Token')
+                ?: $request->header('x-internal-token')
+                ?: $request->header('X-AI-Service-Token')
+                ?: $request->header('x-ai-service-token')
+                ?: $request->header('AI-Service-Token');
+        }
 
         $expectedToken = config('services.ai_microservice.token')
+            ?: config('services.ai.token')
             ?: env('INTERNAL_API_TOKEN', 'dev-internal-token-secret-1234567890');
 
         if (!$token || !hash_equals((string) $expectedToken, (string) $token)) {

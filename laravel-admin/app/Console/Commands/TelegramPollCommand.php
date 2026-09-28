@@ -3,6 +3,9 @@
 namespace App\Console\Commands;
 
 use App\Models\AppSetting;
+use App\Models\ChatTicket;
+use App\Events\TicketMessageSent;
+use App\Events\TicketUpdated;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Http;
@@ -140,17 +143,32 @@ class TelegramPollCommand extends Command
                     $fromName = $message['from']['first_name'] ?? 'Pengguna';
                     $username = $message['from']['username'] ?? null;
 
+                    $rawName = trim(preg_replace('/[.\s]+/', ' ', $fromName ?? ''));
+                    $displayName = !empty($rawName) ? $rawName : 'Warga';
+
                     if (!$chatId) {
                         continue;
                     }
 
-                    // Tangani pesan non-teks (foto, stiker, dokumen, audio)
-                    if (empty($text)) {
-                        $this->line("[Telegram] Pesan non-teks dari {$fromName} (Chat ID: {$chatId}). Mengirim petunjuk format teks...");
+                    // Deteksi Lampiran Foto atau Dokumen Gambar
+                    $photoArray = $message['photo'] ?? null;
+                    $docObj = $message['document'] ?? null;
+                    $photoFileId = null;
+
+                    if (!empty($photoArray) && is_array($photoArray)) {
+                        $bestPhoto = end($photoArray);
+                        $photoFileId = $bestPhoto['file_id'] ?? null;
+                    } elseif (!empty($docObj) && str_starts_with($docObj['mime_type'] ?? '', 'image/')) {
+                        $photoFileId = $docObj['file_id'] ?? null;
+                    }
+
+                    // Tangani pesan non-teks tanpa gambar (stiker, audio, voice, kontak)
+                    if (empty($text) && empty($photoFileId)) {
+                        $this->line("[Telegram] Pesan non-teks dari {$displayName} (Chat ID: {$chatId}). Mengirim petunjuk format...");
                         try {
                             Http::timeout(10)->post("https://api.telegram.org/bot{$token}/sendMessage", [
                                 'chat_id' => $chatId,
-                                'text' => "Halo {$fromName}! Saat ini Asisten Virtual Diskominfotik baru dapat melayani pertanyaan dalam bentuk pesan teks.\n\nSilakan ketik pertanyaan Anda mengenai informasi SOP atau layanan kami.",
+                                'text' => "Halo {$displayName}! Saat ini Asisten Virtual Diskominfotik baru dapat melayani pertanyaan dalam bentuk pesan teks dan foto/tangkapan layar.\n\nSilakan ketik pertanyaan Anda atau kirimkan screenshot kendala.",
                             ]);
                         } catch (\Exception $e) {
                             // Ignore
@@ -158,18 +176,160 @@ class TelegramPollCommand extends Command
                         continue;
                     }
 
-                    // Normalisasi command /start atau /help
-                    if ($text === '/start' || $text === '/help') {
+                    // Normalisasi command /start, /reset, atau /help
+                    if ($text === '/start' || $text === '/reset' || $text === '/help') {
+                        // Bersihkan sesi memori AI di Redis agar dimulai dari lembaran baru
+                        try {
+                            \Illuminate\Support\Facades\Redis::connection()->select(2);
+                            \Illuminate\Support\Facades\Redis::del("chatbot:session:telegram-{$chatId}");
+                        } catch (\Exception $e) {
+                            // Ignore
+                        }
                         $text = 'Halo';
                     }
 
-                    $this->line("[Telegram] Pesan dari {$fromName} (Chat ID: {$chatId}): {$text}");
+                    $this->line("[Telegram] Pesan dari {$fromName} (Chat ID: {$chatId})" . (!empty($photoFileId) ? ' [Lampiran Foto]' : '') . ": {$text}");
 
                     if (!$isActive) {
                         $this->warn('  -> Status Telegram sedang Nonaktif di Web Admin. Pesan diabaikan.');
                         continue;
                     }
 
+                    $sessionId = 'telegram-' . $chatId;
+
+                    // Human Takeover Gatekeeper: Cek apakah ada tiket aktif (open / in_progress)
+                    $activeTicket = ChatTicket::where('session_id', $sessionId)
+                        ->whereIn('status', ['open', 'in_progress'])
+                        ->latest('id')
+                        ->first();
+
+                    // 1. KONDISI: Ada Tiket Aktif (Pesan Teks / Foto langsung diteruskan ke Petugas)
+                    if ($activeTicket) {
+                        $attachments = [];
+                        if (!empty($photoFileId)) {
+                            $att = \App\Services\AttachmentService::downloadTelegramPhoto($token, $photoFileId, $activeTicket->id, $text);
+                            if ($att) {
+                                $attachments[] = $att;
+                            }
+                        }
+
+                        $msgText = !empty($text) ? $text : (!empty($attachments) ? '[Lampiran Foto]' : '-');
+
+                        $msg = $activeTicket->messages()->create([
+                            'sender_type' => 'citizen',
+                            'sender_id' => null,
+                            'sender_name' => $displayName,
+                            'message' => $msgText,
+                            'attachments' => !empty($attachments) ? $attachments : null,
+                            'is_internal_note' => false,
+                        ]);
+
+                        $activeTicket->last_message_at = now();
+                        $activeTicket->save();
+
+                        event(new TicketMessageSent($msg));
+                        event(new TicketUpdated($activeTicket));
+
+                        $this->info("  -> [Human Takeover] Tiket aktif #{$activeTicket->ticket_number} terdeteksi. Pesan " . (!empty($attachments) ? '& Foto ' : '') . "diteruskan ke Live Chat Petugas.");
+                        continue;
+                    }
+
+                    // 2. KONDISI: User Mengirim FOTO saat belum ada tiket aktif
+                    // -> Foto HANYA diproses oleh Petugas (Bypass AI 100%, Otomatis Buat / Buka Tiket)
+                    if (!empty($photoFileId)) {
+                        $this->info("  -> [Foto Masuk] Foto hanya diproses oleh Petugas. Membuka tiket Live Chat baru/re-open...");
+
+                        // Cek apakah ada tiket sesi ini hari ini untuk di-reopen
+                        $existingToday = ChatTicket::where('session_id', $sessionId)
+                            ->whereDate('created_at', today())
+                            ->latest('id')
+                            ->first();
+
+                        $targetTicket = null;
+
+                        if ($existingToday) {
+                            $existingToday->status = 'in_progress';
+                            $existingToday->resolved_at = null;
+                            $existingToday->closed_at = null;
+                            $existingToday->last_message_at = now();
+                            $existingToday->save();
+
+                            $reopenMsg = $existingToday->messages()->create([
+                                'sender_type' => 'system',
+                                'sender_id' => null,
+                                'sender_name' => 'Sistem Helpdesk',
+                                'message' => "Ticket Re-opened: {$existingToday->ticket_number}",
+                                'is_internal_note' => false,
+                            ]);
+                            event(new TicketMessageSent($reopenMsg));
+
+                            $att = \App\Services\AttachmentService::downloadTelegramPhoto($token, $photoFileId, $existingToday->id, $text);
+                            $msg = $existingToday->messages()->create([
+                                'sender_type' => 'citizen',
+                                'sender_id' => null,
+                                'sender_name' => $displayName,
+                                'message' => !empty($text) ? $text : '[Lampiran Foto]',
+                                'attachments' => $att ? [$att] : null,
+                                'is_internal_note' => false,
+                            ]);
+
+                            event(new TicketMessageSent($msg));
+                            event(new TicketUpdated($existingToday));
+                            $targetTicket = $existingToday;
+                        } else {
+                            $newTicket = ChatTicket::create([
+                                'session_id' => $sessionId,
+                                'citizen_name' => $displayName,
+                                'citizen_contact' => (string) $chatId,
+                                'citizen_agency' => $username ? "@{$username}" : null,
+                                'channel' => 'telegram',
+                                'status' => 'open',
+                                'priority' => 'medium',
+                                'issue_summary' => !empty($text) ? $text : 'Lampiran foto kendala warga via Telegram',
+                                'last_message_at' => now(),
+                            ]);
+
+                            $openMsg = $newTicket->messages()->create([
+                                'sender_type' => 'system',
+                                'sender_id' => null,
+                                'sender_name' => 'Sistem Helpdesk',
+                                'message' => "Ticket Opened: {$newTicket->ticket_number}",
+                                'is_internal_note' => false,
+                            ]);
+
+                            event(new \App\Events\TicketCreated($newTicket));
+                            event(new TicketMessageSent($openMsg));
+
+                            $att = \App\Services\AttachmentService::downloadTelegramPhoto($token, $photoFileId, $newTicket->id, $text);
+                            $msg = $newTicket->messages()->create([
+                                'sender_type' => 'citizen',
+                                'sender_id' => null,
+                                'sender_name' => $displayName,
+                                'message' => !empty($text) ? $text : '[Lampiran Foto]',
+                                'attachments' => $att ? [$att] : null,
+                                'is_internal_note' => false,
+                            ]);
+
+                            event(new TicketMessageSent($msg));
+                            event(new TicketUpdated($newTicket));
+                            $targetTicket = $newTicket;
+                        }
+
+                        // Kirim konfirmasi tiket ke Telegram warga
+                        try {
+                            Http::timeout(10)->post("https://api.telegram.org/bot{$token}/sendMessage", [
+                                'chat_id' => $chatId,
+                                'text' => "Halo {$displayName}! Foto tangkapan layar kendala Anda telah kami teruskan ke Petugas Live Chat Helpdesk (Tiket #{$targetTicket->ticket_number}).\n\nPetugas kami akan segera meninjau dan merespons Anda di sini.",
+                            ]);
+                        } catch (\Exception $e) {
+                            // Ignore
+                        }
+
+                        $this->info("  -> Tiket #{$targetTicket->ticket_number} berhasil diterbitkan & foto dikirim ke dashboard Petugas.");
+                        continue;
+                    }
+
+                    // 3. KONDISI: Pesan TEKS biasa saat belum ada tiket -> Masuk ke Asisten AI (RAG)
                     $this->line('  -> Menghubungkan ke Python AI Engine (Mode Streaming)...');
 
                     $this->streamAiToTelegram(
@@ -190,9 +350,14 @@ class TelegramPollCommand extends Command
                     $this->info("  -> Balasan selesai distreaming ke {$fromName}!");
                 }
             } catch (\Exception $e) {
-                // Jangan log cURL timeout biasa (karena polling idle 20s)
-                if (!str_contains($e->getMessage(), 'cURL error 28')) {
-                    $this->warn('Warning Polling Connection: ' . $e->getMessage());
+                // Tangani timeout atau DNS failure secara elegan
+                $errorMsg = $e->getMessage();
+                if (!str_contains($errorMsg, 'cURL error 28')) {
+                    $this->warn('Warning Polling Connection: ' . $errorMsg);
+                    // Jika DNS lookup gagal (error 6) atau network down, berikan jeda backoff agar tidak spam
+                    if (str_contains($errorMsg, 'cURL error 6') || str_contains($errorMsg, 'Could not resolve host')) {
+                        sleep(3);
+                    }
                 }
             }
 

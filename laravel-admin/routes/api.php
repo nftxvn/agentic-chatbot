@@ -140,6 +140,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/{id}/status',  [TicketController::class, 'updateStatus'])->name('api.tickets.status');
         Route::get('/{id}/messages',  [TicketController::class, 'messages'])->name('api.tickets.messages');
         Route::post('/{id}/messages', [TicketController::class, 'reply'])->name('api.tickets.reply');
+        Route::get('/{id}/attachments/{filename}', [TicketController::class, 'downloadAttachment'])->name('api.tickets.attachments.show');
     });
 });
 

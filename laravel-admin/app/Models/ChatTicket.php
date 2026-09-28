@@ -63,23 +63,24 @@ class ChatTicket extends Model
     }
 
     /**
-     * Auto-generate a unique ticket number formatted as TICK-YYYY-XXXXX.
+     * Auto-generate a unique ticket number formatted as TICK-DDMMYY-NNN.
+     * Example: TICK-270926-001
      */
     public static function generateTicketNumber(): string
     {
-        $year = date('Y');
-        $latest = static::whereYear('created_at', $year)
+        $dateCode = date('dmy'); // e.g. 270926 for 27 Sept 2026
+        $prefix = "TICK-{$dateCode}-";
+
+        $latest = static::where('ticket_number', 'LIKE', "{$prefix}%")
             ->latest('id')
             ->first();
 
         $nextSequence = 1;
-        if ($latest && preg_match('/TICK-\d{4}-(\d+)/', $latest->ticket_number, $matches)) {
+        if ($latest && preg_match('/TICK-\d{6}-(\d+)/', $latest->ticket_number, $matches)) {
             $nextSequence = ((int) $matches[1]) + 1;
-        } else {
-            $nextSequence = static::count() + 1;
         }
 
-        return sprintf('TICK-%s-%05d', $year, $nextSequence);
+        return sprintf('%s%03d', $prefix, $nextSequence);
     }
 
     /**

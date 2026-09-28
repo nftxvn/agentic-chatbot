@@ -63,27 +63,24 @@ _RE_CHITCHAT_CONVERSATIONAL = re.compile(
 # Pola regex untuk deteksi permintaan bantuan tim / operator manusia (Handover)
 _RE_HUMAN_HANDOFF = re.compile(
     r"\b("
-    r"bicara\s+(?:dengan|sama|ke)?\s*(?:petugas|admin|manusia|staf|operator|tim|orang)|"
-    r"ngomong\s+(?:dengan|sama|ke)?\s*(?:petugas|admin|manusia|staf|operator|tim|orang)|"
-    r"hubungi\s+(?:petugas|admin|staf|operator|manusia|tim)|"
-    r"minta\s+(?:bantuan\s+)?(?:petugas|admin|manusia|operator|staf|tim|orang)|"
-    r"panggil\s+(?:petugas|admin|operator|staf)|"
-    r"(?:mau|ingin)\s+(?:dibantu|bicara|ngomong|chat|tanya|konsultasi)\s+(?:langsung|dengan|sama|ke)?\s*(?:tim|admin|petugas|manusia|staf|operator|orang)?|"
-    r"(?:butuh|perlu)\s+(?:bantuan\s+)?(?:langsung|petugas|admin|manusia|operator|staf|tim|orang)|"
-    r"sambungkan\s+(?:ke|dengan)?\s*(?:petugas|admin|operator|manusia|staf|tim|orang)|"
-    r"terhubung\s+(?:ke|dengan)?\s*(?:petugas|admin|operator|manusia|staf|tim|orang)|"
-    r"alih(?:kan)?\s+(?:ke)?\s*(?:petugas|admin|operator|manusia|staf|tim|orang)|"
-    r"handover|takeover|"
-    r"operator\s+manusia|petugas\s+manusia|admin\s+manusia|manusia\s+asli|orang\s+asli|"
-    r"^(?:petugas|admin|operator|staf|cs|helpdesk)$|"
-    r"^(?:iya|ya|mau|boleh|tolong)\s*(?:hubungi|sambungkan|minta|ke|dengan|dong|bantu)?\s*(?:petugas|admin|operator|staf|tim|orang|langsung)?"
+    r"(?:bicara|ngomong|ngobrol|diskusi|konsultasi|tanya|chat)\s+(?:langsung\s+)?(?:dengan|sama|ke|kepada)?\s*(?:pihak\s+)?(?:petugas|admin|manusia|staf|staff|operator|tim|orang|helpdesk|cs)|"
+    r"(?:meng)?hubungi\s+(?:pihak\s+)?(?:petugas|admin|staf|staff|operator|manusia|tim|orang|helpdesk|cs)|"
+    r"kontak\s+(?:pihak\s+)?(?:petugas|admin|staf|staff|operator|manusia|tim|orang|helpdesk|cs)|"
+    r"(?:hubung(?:kan)?|sambung(?:kan)?|koneksi(?:kan)?|alih(?:kan)?|terhubung)\s+(?:(?:saya|kami|kita|tolong|dong|bisa|langsung)\s+)*(?:ke|dengan|sama|kepada)?\s*(?:pihak\s+)?(?:petugas|admin|operator|manusia|staf|staff|tim|orang|helpdesk|cs)|"
+    r"(?:mau|ingin|butuh|perlu|minta|bisa|tolong|mohon)\s+(?:bantuan\s+(?:dari\s+)?)?(?:dibantu|bicara|ngomong|ngobrol|chat|tanya|konsultasi|terhubung|dihubungkan|disambungkan|dialihkan|menghubungi|kontak)?\s*(?:langsung\s+)?(?:dengan|sama|ke|kepada|dari)?\s*(?:pihak\s+)?(?:tim|admin|petugas|manusia|staf|staff|operator|orang|helpdesk|cs)|"
+    r"panggil\s+(?:petugas|admin|operator|staf|staff|helpdesk)|"
+    r"handover|takeover|live\s*agent|live\s*chat|human\s*agent|"
+    r"(?:operator|petugas|admin|staf|staff|layanan)\s+(?:manusia|asli|manual)|"
+    r"manusia\s+asli|orang\s+asli|staf\s+asli|"
+    r"^(?:petugas|admin|operator|staf|staff|cs|helpdesk|live\s*agent)$|"
+    r"^(?:iya|ya|mau|boleh|tolong)\s*(?:hubungi|sambungkan|hubungkan|alihkan|minta|ke|dengan|dong|bantu)?\s*(?:petugas|admin|operator|staf|staff|tim|orang|langsung)?"
     r")\b",
     re.IGNORECASE,
 )
 
 # Pola regex untuk sapaan dan uji coba (Termasuk Sapaan Bahasa Aceh & Santun)
 _RE_GREETING = re.compile(
-    r"^(?:(?:halo|hai|hay|hei|hi|hello|assalamu['\s]?alaikum(?:\s+wr\s+wb|\s+warahmatullahi\s+wabarakatuh)?|ass|askum|"
+    r"^(?:(?:halo+|hai+|hay+|hei+|heyy+|hi+|hello+|assalamu['\s]?alaikum(?:\s+wr\s+wb|\s+warahmatullahi\s+wabarakatuh)?|ass|askum|"
     r"saleuem(?:\s+teuka)?|saleum(?:\s+teuka)?|kru\s+seumangat|kiban\s+haba|haba\s+kiban|peue\s+haba|peu\s+haba|"
     r"selamat\s+(?:pagi|siang|sore|malam)|pagi|siang|sore|malam|"
     r"tes|test|ping|p|testing|tes\s+123|test\s+123|"
@@ -422,7 +419,7 @@ _SLANG_DICT = {
 }
 
 _FILLER_WORDS = {
-    "bos", "gan", "min", "admin", "kak", "bang", "mas", "mbak", "pak", "bu",
+    "bos", "gan", "min", "kak", "bang", "mas", "mbak", "pak", "bu",
     "bro", "sis", "rek", "woi", "oy", "hei", "hai", "halo", "syedara", "cutbang", "cutkak", "cek", "teungku", "toke",
     "tolong", "mohon", "tanya", "mau", "pengen", "ingin", "coba", "kasih", "tau", "tahu", "neu"
 }
@@ -523,6 +520,16 @@ def _get_semantic_intent_vectors() -> dict[str, list]:
             from app.services.embedding_service import encode_texts
 
             anchors = {
+                "human_escalation": [
+                    "saya ingin menghubungi admin atau petugas dinas",
+                    "hubungkan saya dengan admin atau staf bantuan helpdesk",
+                    "bisa bicara dengan operator manusia atau staf asli",
+                    "mau konsultasi dan chat langsung dengan tim customer service",
+                    "tolong sambungkan saya ke staf piket atau admin diskominfo",
+                    "alih kan percakapan ini ke operator manusia",
+                    "saya butuh bantuan langsung dari staf manusia",
+                    "apakah ada orang asli yang bisa saya ajak bicara",
+                ],
                 "chitchat": [
                     "halo hai assalamu'alaikum selamat pagi siang sore malam saleuem",
                     "apa kabar gimana sehat kabar baik sehat kamu gimana lagi apa lagi ngapain",
@@ -577,6 +584,8 @@ def classify_semantic_intent(query: str) -> str | None:
         best_intent = max(scores, key=scores.get)
         best_score = scores[best_intent]
 
+        if best_intent == "human_escalation" and best_score >= 0.60:
+            return "human_escalation"
         if best_intent == "session_recap" and best_score >= 0.60:
             return "session_recap"
         if best_intent == "chitchat" and best_score >= 0.62:
@@ -585,6 +594,30 @@ def classify_semantic_intent(query: str) -> str | None:
     except Exception as e:
         logger.warning("Error saat classify_semantic_intent: %s", e)
         return None
+
+
+def extract_citizen_escalation_details(text: str) -> dict[str, str | None]:
+    """Mengekstrak informasi Nama, Instansi, dan Kendala dari pesan tindak lanjut warga."""
+    details = {"citizen_name": None, "citizen_agency": None, "issue_summary": None}
+    
+    # 1. Ekstraksi Nama
+    m_name = re.search(r"(?:nama\s+(?:saya|ku)?|nama)\s*[:=]?\s*([A-Za-z\s'\.]+?)(?=\s+(?:dari|instansi|asal|kantor|kendala|masalah|keperluan|\.|\n|$))", text, re.IGNORECASE)
+    if m_name:
+        details["citizen_name"] = m_name.group(1).strip()
+
+    # 2. Ekstraksi Instansi
+    m_agency = re.search(r"(?:dari|instansi|asal|kantor|dinas|kementerian)\s*[:=]?\s*([A-Za-z0-9\s'\.\-_]+?)(?=\s+(?:kendala|masalah|keluhan|keperluan|\.|\n|$))", text, re.IGNORECASE)
+    if m_agency:
+        details["citizen_agency"] = m_agency.group(1).strip()
+
+    # 3. Ekstraksi Kendala / Masalah
+    m_issue = re.search(r"(?:kendala|masalah|keluhan|keperluan|perihal)\s*(?:saya|kami)?\s*[:=]?\s*(.*)", text, re.IGNORECASE | re.DOTALL)
+    if m_issue:
+        details["issue_summary"] = m_issue.group(1).strip()
+    else:
+        details["issue_summary"] = text.strip()
+
+    return details
 
 
 # ─────────────────────────────────────────────────────────────
@@ -629,34 +662,44 @@ def route_intent(query: str, session_id: str | None = None) -> dict[str, Any]:
         }
 
     # 0.1 Permintaan Handover / Eskalasi ke Petugas Manusia (Human Escalation)
-    if _RE_HUMAN_HANDOFF.search(q_lower) or _RE_HUMAN_HANDOFF.search(search_lower):
+    if sem_intent == "human_escalation" or _RE_HUMAN_HANDOFF.search(q_lower) or _RE_HUMAN_HANDOFF.search(search_lower):
         return {
             "intent": "human_escalation",
             "params": {"raw_query": q},
             "label": "Permintaan Bantuan Petugas (Handover)",
         }
 
-    # 0.2 Follow-up informasi tambahan (Nama/Instansi/Kendala) setelah Permintaan Handover
-    if session_id:
-        try:
-            from app.services.session_memory import get_last_context
-            last_topic, _ = get_last_context(session_id)
-            if last_topic == "Permintaan Bantuan Petugas" and not any(kw in q_lower for kw in ["sop", "perwal", "sk", "berapa", "kapan", "bagaimana cara", "hitung", "aturan", "regulasi", "pasal"]):
-                return {
-                    "intent": "human_escalation_followup",
-                    "params": {"raw_query": q},
-                    "label": "Informasi Tambahan untuk Tim Petugas",
-                }
-        except Exception:
-            pass
+    # 0.2 Jalur Chitchat, Sapaan & Persona Asisten (Prioritaskan sapaan agar tidak disalahartikan sebagai rincian kendala)
+    is_greeting_or_chitchat = bool(sem_intent == "chitchat" or _RE_GREETING.match(q_lower) or _RE_CHITCHAT_CONVERSATIONAL.search(q_lower))
+    is_explicit_intro = bool(re.search(r"(?:nama\s+(?:saya|ku)?|instansi\s+|kantor\s+|dinas\s+|dari\s+[a-z]+|kendala\s+(?:saya|kami)?|keluhan\s+(?:saya|kami)?|masalah\s+(?:saya|kami)?|keperluan\s+(?:saya|kami)?)", q_lower))
 
-    # 1. Jalur Chitchat, Sapaan & Persona Asisten
-    if sem_intent == "chitchat" or _RE_GREETING.match(q_lower) or _RE_CHITCHAT_CONVERSATIONAL.search(q_lower):
+    if is_greeting_or_chitchat and not is_explicit_intro:
         return {
             "intent": "chitchat",
             "params": {"raw_query": q},
             "label": "Percakapan Santai & Persona (Chitchat)",
         }
+
+    # 0.3 Follow-up informasi tambahan (Nama/Instansi/Kendala) setelah Permintaan Handover
+    if is_explicit_intro or (session_id and len(q.split()) >= 3):
+        try:
+            from app.services.session_memory import get_last_context
+            last_topic, _ = get_last_context(session_id) if session_id else (None, None)
+            if (last_topic == "Permintaan Bantuan Petugas" or is_explicit_intro) and not any(kw in q_lower for kw in ["sop", "perwal", "sk", "berapa", "kapan", "bagaimana cara", "hitung", "aturan", "regulasi", "pasal"]):
+                parsed_details = extract_citizen_escalation_details(q)
+                if is_explicit_intro or parsed_details.get("citizen_name") or parsed_details.get("citizen_agency"):
+                    return {
+                        "intent": "human_escalation_followup",
+                        "params": {
+                            "raw_query": q,
+                            "citizen_name": parsed_details["citizen_name"],
+                            "citizen_agency": parsed_details["citizen_agency"],
+                            "issue_summary": parsed_details["issue_summary"],
+                        },
+                        "label": "Informasi Tambahan untuk Tim Petugas",
+                    }
+        except Exception:
+            pass
 
     # 1.5 Cek apakah query saat ini adalah koreksi/sanggahan atau follow-up dari topik RAG sebelumnya
     is_doubt = _is_doubt_or_correction_query(q) or _is_doubt_or_correction_query(search_q)

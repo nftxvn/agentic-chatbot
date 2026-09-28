@@ -31,6 +31,12 @@ class InternalTicketController extends Controller
             'channel' => 'nullable|string|max:50',
         ]);
 
+        $citizenName = $validated['citizen_name'] ?? null;
+        $citizenContact = $validated['citizen_contact'] ?? null;
+        $citizenAgency = $validated['citizen_agency'] ?? null;
+        $issueSummary = $validated['issue_summary'] ?? null;
+        $channel = $validated['channel'] ?? 'widget';
+
         $ticket = null;
 
         // 1. If explicit ticket_id supplied, locate that ticket
@@ -38,42 +44,51 @@ class InternalTicketController extends Controller
             $ticket = ChatTicket::find($validated['ticket_id']);
         }
 
-        // 2. Otherwise, check if active ticket exists for this session
+        // 2. Otherwise, check latest ticket for this session or contact
         if (!$ticket) {
-            $ticket = ChatTicket::where('session_id', $validated['session_id'])
-                ->whereIn('status', ['open', 'in_progress'])
-                ->latest('id')
-                ->first();
+            $ticket = ChatTicket::where(function ($query) use ($validated, $citizenContact) {
+                $query->where('session_id', $validated['session_id']);
+                if (!empty($citizenContact)) {
+                    $query->orWhere('citizen_contact', $citizenContact);
+                }
+            })
+            ->latest('id')
+            ->first();
         }
 
-        $citizenName = $validated['citizen_name'] ?? null;
-        $citizenContact = $validated['citizen_contact'] ?? null;
-        $citizenAgency = $validated['citizen_agency'] ?? null;
-        $issueSummary = $validated['issue_summary'] ?? null;
-        $channel = $validated['channel'] ?? 'widget';
+        // Option B: Reuse ticket if Active (open/in_progress) OR if Resolved/Closed TODAY (same day)
+        $isSameDay = $ticket && ($ticket->created_at?->isToday() || $ticket->resolved_at?->isToday());
+        $canReuseTicket = $ticket && (in_array($ticket->status, ['open', 'in_progress']) || $isSameDay);
 
-        if ($ticket) {
+        if ($canReuseTicket) {
+            $wasResolved = in_array($ticket->status, ['resolved', 'closed']);
+
+            if ($wasResolved) {
+                $ticket->status = 'in_progress';
+                $ticket->resolved_at = null;
+                $ticket->closed_at = null;
+            }
+
             // Update metadata if new contact details arrived
-            $updated = false;
-            if (!empty($citizenName) && empty($ticket->citizen_name)) {
-                $ticket->citizen_name = $citizenName;
-                $updated = true;
-            }
-            if (!empty($citizenContact) && empty($ticket->citizen_contact)) {
-                $ticket->citizen_contact = $citizenContact;
-                $updated = true;
-            }
-            if (!empty($citizenAgency) && empty($ticket->citizen_agency)) {
-                $ticket->citizen_agency = $citizenAgency;
-                $updated = true;
-            }
-            if (!empty($issueSummary) && empty($ticket->issue_summary)) {
-                $ticket->issue_summary = $issueSummary;
-                $updated = true;
-            }
+            if (!empty($citizenName)) $ticket->citizen_name = $citizenName;
+            if (!empty($citizenContact)) $ticket->citizen_contact = $citizenContact;
+            if (!empty($citizenAgency)) $ticket->citizen_agency = $citizenAgency;
+            if (!empty($issueSummary)) $ticket->issue_summary = $issueSummary;
 
             $ticket->last_message_at = now();
             $ticket->save();
+
+            // System Separator Flag: Ticket Re-opened
+            if ($wasResolved) {
+                $reopenMsg = $ticket->messages()->create([
+                    'sender_type' => 'system',
+                    'sender_id' => null,
+                    'sender_name' => 'Sistem Helpdesk',
+                    'message' => "Ticket Re-opened: {$ticket->ticket_number}",
+                    'is_internal_note' => false,
+                ]);
+                event(new TicketMessageSent($reopenMsg));
+            }
 
             // Append citizen followup message
             $message = $ticket->messages()->create([
@@ -101,7 +116,7 @@ class InternalTicketController extends Controller
             ], 200);
         }
 
-        // 3. Create fresh ticket
+        // 3. Create fresh ticket (new citizen or new day case)
         $ticket = ChatTicket::create([
             'session_id' => $validated['session_id'],
             'citizen_name' => $citizenName,
@@ -114,6 +129,17 @@ class InternalTicketController extends Controller
             'last_message_at' => now(),
         ]);
 
+        // System Separator Flag: Ticket Opened
+        $openedMsg = $ticket->messages()->create([
+            'sender_type' => 'system',
+            'sender_id' => null,
+            'sender_name' => 'Sistem Helpdesk',
+            'message' => "Ticket Opened: {$ticket->ticket_number}",
+            'is_internal_note' => false,
+        ]);
+        event(new TicketMessageSent($openedMsg));
+
+        // Citizen First Message
         $message = $ticket->messages()->create([
             'sender_type' => 'citizen',
             'sender_id' => null,

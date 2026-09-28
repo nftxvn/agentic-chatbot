@@ -150,6 +150,7 @@ class TicketController extends Controller
         ]);
 
         $ticket = ChatTicket::findOrFail($id);
+        $oldStatus = $ticket->status;
         $newStatus = $validated['status'];
 
         $ticket->status = $newStatus;
@@ -165,6 +166,35 @@ class TicketController extends Controller
 
         $ticket->save();
         $ticket->load('assignedAdmin:id,name,email');
+
+        // Record and emit system message flags
+        if ($newStatus === 'resolved' || $newStatus === 'closed') {
+            // Bersihkan memori sesi AI di Redis agar saat warga chat kembali, sesi AI langsung bersih dari awal
+            try {
+                \Illuminate\Support\Facades\Redis::connection()->select(2);
+                \Illuminate\Support\Facades\Redis::del("chatbot:session:{$ticket->session_id}");
+            } catch (\Exception $e) {
+                // Ignore Redis cleanup errors
+            }
+
+            $systemMsg = $ticket->messages()->create([
+                'sender_type' => 'system',
+                'sender_id' => $request->user()?->id,
+                'sender_name' => 'Sistem Helpdesk',
+                'message' => "Ticket Closed: {$ticket->ticket_number}",
+                'is_internal_note' => false,
+            ]);
+            event(new TicketMessageSent($systemMsg));
+        } elseif (($newStatus === 'in_progress' || $newStatus === 'open') && ($oldStatus === 'resolved' || $oldStatus === 'closed')) {
+            $systemMsg = $ticket->messages()->create([
+                'sender_type' => 'system',
+                'sender_id' => $request->user()?->id,
+                'sender_name' => 'Sistem Helpdesk',
+                'message' => "Ticket Re-opened: {$ticket->ticket_number}",
+                'is_internal_note' => false,
+            ]);
+            event(new TicketMessageSent($systemMsg));
+        }
 
         event(new TicketUpdated($ticket));
 
@@ -201,26 +231,50 @@ class TicketController extends Controller
 
     /**
      * POST /api/tickets/{id}/messages
-     * Send agent response or internal note.
+     * Send agent response or internal note with optional file attachment.
      */
     public function reply(Request $request, int $id): JsonResponse
     {
         $validated = $request->validate([
-            'message' => 'required|string',
+            'message' => 'nullable|string',
             'is_internal_note' => 'nullable|boolean',
             'attachments' => 'nullable|array',
+            'file' => 'nullable|file|max:10240', // Max 10MB
         ]);
 
         $ticket = ChatTicket::findOrFail($id);
         $user = $request->user();
         $isInternal = (bool) ($validated['is_internal_note'] ?? false);
 
+        $attachments = $validated['attachments'] ?? [];
+
+        // Handle uploaded file if present
+        if ($request->hasFile('file')) {
+            $fileAttachment = \App\Services\AttachmentService::optimizeAndSave(
+                $request->file('file'),
+                $ticket->id
+            );
+            if ($fileAttachment) {
+                $attachments[] = $fileAttachment;
+            }
+        }
+
+        $messageText = trim($validated['message'] ?? '');
+        if (empty($messageText) && !empty($attachments)) {
+            $messageText = '[Lampiran Berkas]';
+        } elseif (empty($messageText)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Pesan atau lampiran tidak boleh kosong.',
+            ], 422);
+        }
+
         $message = $ticket->messages()->create([
             'sender_type' => 'agent',
             'sender_id' => $user?->id,
             'sender_name' => $user?->name ?: 'Petugas Helpdesk',
-            'message' => $validated['message'],
-            'attachments' => $validated['attachments'] ?? null,
+            'message' => $messageText,
+            'attachments' => !empty($attachments) ? $attachments : null,
             'is_internal_note' => $isInternal,
         ]);
 
@@ -240,6 +294,11 @@ class TicketController extends Controller
 
         $message->load('sender:id,name,email');
 
+        // Dispatch outbound message to external channels (Telegram / WhatsApp)
+        if (!$isInternal) {
+            $this->dispatchOutboundMessage($ticket, $messageText, $attachments);
+        }
+
         // Dispatch real-time events
         event(new TicketMessageSent($message));
         event(new TicketUpdated($ticket));
@@ -249,5 +308,81 @@ class TicketController extends Controller
             'message' => 'Message sent successfully',
             'data' => $message,
         ], 201);
+    }
+
+    /**
+     * GET /api/tickets/{id}/attachments/{filename}
+     * Authenticated download and preview of ticket attachments.
+     */
+    public function downloadAttachment(Request $request, int $id, string $filename)
+    {
+        $ticket = ChatTicket::findOrFail($id);
+        $safeFilename = basename($filename);
+        $path = "private/tickets/{$ticket->id}/{$safeFilename}";
+
+        if (!\Illuminate\Support\Facades\Storage::disk('local')->exists($path)) {
+            abort(404, 'Lampiran tidak ditemukan.');
+        }
+
+        return \Illuminate\Support\Facades\Storage::disk('local')->response($path);
+    }
+
+    /**
+     * Dispatch agent reply to external channels (Telegram, WhatsApp).
+     */
+    protected function dispatchOutboundMessage(ChatTicket $ticket, string $replyText, array $attachments = []): void
+    {
+        $channel = strtolower($ticket->channel ?? 'web');
+        $contact = $ticket->citizen_contact;
+        $sessionId = $ticket->session_id;
+
+        // 1. Channel: Telegram
+        if ($channel === 'telegram' || str_starts_with($sessionId, 'telegram-')) {
+            $chatId = $contact ?: str_replace('telegram-', '', $sessionId);
+            if (!empty($chatId)) {
+                $encryptedToken = \App\Models\AppSetting::getVal('telegram_bot_token', '');
+                if (!empty($encryptedToken)) {
+                    try {
+                        $token = \Illuminate\Support\Facades\Crypt::decryptString($encryptedToken);
+
+                        // If has image attachment, send photo natively
+                        $hasPhoto = false;
+                        foreach ($attachments as $att) {
+                            if (!empty($att['file_path']) && str_starts_with($att['mime_type'] ?? '', 'image/')) {
+                                $caption = ($replyText !== '[Lampiran Berkas]' && $replyText !== '[Lampiran Foto]') ? $replyText : null;
+                                \App\Services\AttachmentService::sendPhotoToTelegram($token, $chatId, $att['file_path'], $caption);
+                                $hasPhoto = true;
+                                break;
+                            }
+                        }
+
+                        // Send text message if no photo sent with caption
+                        if (!$hasPhoto) {
+                            \Illuminate\Support\Facades\Http::timeout(10)->post("https://api.telegram.org/bot{$token}/sendMessage", [
+                                'chat_id' => $chatId,
+                                'text' => $replyText,
+                            ]);
+                        }
+                        \Illuminate\Support\Facades\Log::info("Balasan admin berhasil dikirim ke Telegram ({$chatId}).");
+                    } catch (\Exception $e) {
+                        \Illuminate\Support\Facades\Log::error("Gagal mengirim balasan admin ke Telegram: " . $e->getMessage());
+                    }
+                }
+            }
+        }
+
+        // 2. Channel: WhatsApp
+        if ($channel === 'whatsapp' || str_starts_with($sessionId, 'wa-') || str_starts_with($sessionId, 'whatsapp-')) {
+            $phone = $contact ?: preg_replace('/[^0-9]/', '', $sessionId);
+            if (!empty($phone)) {
+                try {
+                    $waController = new \App\Http\Controllers\Api\V1\WhatsAppWebhookController();
+                    $waController->sendWhatsAppMessage($phone, $replyText);
+                    \Illuminate\Support\Facades\Log::info("Balasan admin berhasil dikirim ke WhatsApp ({$phone}).");
+                } catch (\Exception $e) {
+                    \Illuminate\Support\Facades\Log::error("Gagal mengirim balasan admin ke WhatsApp: " . $e->getMessage());
+                }
+            }
+        }
     }
 }

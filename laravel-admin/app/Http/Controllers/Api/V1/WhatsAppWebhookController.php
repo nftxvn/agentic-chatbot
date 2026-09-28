@@ -95,13 +95,46 @@ class WhatsAppWebhookController extends Controller
             'message' => substr($messageText, 0, 80),
         ]);
 
-        // 3. Panggil RAG Engine di Python AI
+        $sessionId = 'wa-' . preg_replace('/[^0-9]/', '', $from);
+
+        // 3. Human Takeover Gatekeeper: Cek apakah ada tiket aktif (open / in_progress)
+        $activeTicket = \App\Models\ChatTicket::where('session_id', $sessionId)
+            ->whereIn('status', ['open', 'in_progress'])
+            ->latest('id')
+            ->first();
+
+        if ($activeTicket) {
+            $msg = $activeTicket->messages()->create([
+                'sender_type' => 'citizen',
+                'sender_id' => null,
+                'sender_name' => $activeTicket->citizen_name ?: 'Warga WhatsApp',
+                'message' => $messageText,
+                'is_internal_note' => false,
+            ]);
+
+            $activeTicket->last_message_at = now();
+            $activeTicket->save();
+
+            event(new \App\Events\TicketMessageSent($msg));
+            event(new \App\Events\TicketUpdated($activeTicket));
+
+            Log::info('Pesan WhatsApp diteruskan langsung ke Live Chat (Human Takeover)', [
+                'ticket_id' => $activeTicket->id,
+                'from' => $from,
+                'message' => substr($messageText, 0, 80),
+            ]);
+
+            return response()->json([
+                'status' => 'forwarded_to_live_chat',
+                'ticket_id' => $activeTicket->id,
+            ]);
+        }
+
+        // 4. Panggil RAG Engine di Python AI
         $systemPrompt = AppSetting::getVal('rag_system_prompt', SettingController::getDefaultRagPrompt());
         $temperature = (float) AppSetting::getVal('rag_temperature', '0.2');
         $topK = (int) AppSetting::getVal('rag_top_k', '8');
         $citationEnabled = AppSetting::getVal('rag_citation_enabled', 'true') === 'true';
-
-        $sessionId = 'wa-' . preg_replace('/[^0-9]/', '', $from);
 
         try {
             $response = Http::withHeaders([

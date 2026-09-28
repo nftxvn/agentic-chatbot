@@ -24,6 +24,9 @@ class DocumentController extends Controller
             ->orderBy('created_at', 'desc')
             ->paginate(15);
 
+        $aiClient = new AiMicroserviceClient();
+        $vectorCounts = $aiClient->getVectorCounts();
+
         $allDocs = Document::with('ekstraksiJob')->get();
 
         $total           = $allDocs->count();
@@ -54,7 +57,7 @@ class DocumentController extends Controller
         return response()->json([
             'success' => true,
             'data'    => [
-                'documents'      => $documents->map(fn ($doc) => $this->formatDocument($doc)),
+                'documents'      => $documents->map(fn ($doc) => $this->formatDocument($doc, false, $vectorCounts)),
                 'meta'           => [
                     'current_page' => $documents->currentPage(),
                     'last_page'    => $documents->lastPage(),
@@ -73,11 +76,13 @@ class DocumentController extends Controller
     public function show(int $id): JsonResponse
     {
         $document = Document::with(['uploader', 'category', 'logs', 'ekstraksiJob'])->findOrFail($id);
+        $aiClient = new AiMicroserviceClient();
+        $vectorCounts = $aiClient->getVectorCounts();
 
         return response()->json([
             'success' => true,
             'data'    => [
-                'document' => $this->formatDocument($document, true),
+                'document' => $this->formatDocument($document, true, $vectorCounts),
             ],
         ]);
     }
@@ -430,7 +435,7 @@ class DocumentController extends Controller
     /**
      * Format a document model for API response.
      */
-    protected function formatDocument(Document $document, bool $withLogs = false): array
+    protected function formatDocument(Document $document, bool $withLogs = false, array $vectorCounts = []): array
     {
         $job = $document->ekstraksiJob;
 
@@ -444,6 +449,25 @@ class DocumentController extends Controller
         $resolved    = $this->resolveEffectiveStatus($document, $donePages, $totalPages);
         $status      = $resolved['status'];
         $statusLabel = $resolved['label'];
+
+        // Sinkronisasi jumlah vektor aktif ChromaDB
+        $actualVectors = null;
+        if (!empty($vectorCounts) && array_key_exists($document->id, $vectorCounts)) {
+            $actualVectors = (int) $vectorCounts[$document->id];
+        }
+
+        $effectiveChunks = $actualVectors !== null
+            ? $actualVectors
+            : ($status === 'completed' ? (int) ($document->total_chunks ?? 0) : null);
+
+        // Jika dokumen completed dan jumlah chunk di DB belum sinkron dengan ChromaDB, update diam-diam
+        if ($actualVectors !== null && $document->total_chunks !== $actualVectors && $status === 'completed') {
+            try {
+                $document->updateQuietly(['total_chunks' => $actualVectors]);
+            } catch (\Throwable $e) {
+                // Ignore silent update errors
+            }
+        }
 
         $data = [
             'id'                => $document->id,
@@ -460,7 +484,8 @@ class DocumentController extends Controller
             'category_ui_layout'=> $document->category?->ui_layout ?? 'general',
             'total_pages'       => $totalPages,
             'processed_pages'   => $donePages,
-            'total_chunks'      => $document->total_chunks,
+            'total_chunks'      => $effectiveChunks,
+            'vector_count'      => $effectiveChunks,
             'error_message'     => $document->error_message,
             'uploaded_by'       => $document->uploader?->name,
             'pdf_url'           => url("/api/documents/{$document->id}/pdf"),

@@ -198,7 +198,7 @@ function TelemetrySection() {
       )}
 
       {/* ── TOP STATS ANALYTICS ─────────────────────────────────── */}
-      <div ref={statsRef} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3.5 sm:gap-4">
+      <div ref={statsRef} className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
         {[
           {
             label: 'Total Kueri',
@@ -229,12 +229,6 @@ function TelemetrySection() {
             value: analytics ? `${analytics.avg_response_time_ms} ms` : '0 ms',
             dotColor: 'bg-violet-500',
             tooltip: 'Waktu rata-rata inferensi pencarian vektor & generasi teks LLM.',
-          },
-          {
-            label: 'Perlu Balas Manual',
-            value: analytics ? analytics.fallback_count.toLocaleString('id-ID') : '0',
-            dotColor: 'bg-amber-500',
-            tooltip: 'Jumlah pertanyaan warga yang tidak ditemukan di SOP atau memerlukan tindak lanjut langsung dari petugas helpdesk.',
           },
         ].map((stat) => (
           <div

@@ -1155,8 +1155,8 @@ export default function DocumentDetailPage() {
                       },
                       { label: "Tipe Dokumen", value: document.pdf_type_label },
                       {
-                        label: "Halaman / Chunks",
-                        value: `${document.total_pages || "-"} / ${document.total_chunks || "-"}`,
+                        label: "Halaman / Vektor",
+                        value: `${document.total_pages || "-"} hal / ${document.total_chunks !== null && document.total_chunks !== undefined ? `${document.total_chunks} vektor` : "-"}`,
                       },
                       { label: "Pengunggah", value: document.uploaded_by || "-" },
                       {

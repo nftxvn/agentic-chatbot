@@ -12,6 +12,7 @@ export function SlidingTabs({
   variant = 'pill', // 'pill' | 'underline'
   className = '',
   pillClassName = '',
+  fullWidth = false,
   size = 'sm',
 }) {
   const containerRef = useRef(null)
@@ -110,7 +111,9 @@ export function SlidingTabs({
   return (
     <div
       ref={containerRef}
-      className={`relative inline-flex items-center gap-1 bg-[var(--bg-card)] p-1 rounded-xl border border-[var(--border-color)] select-none overflow-x-auto scrollbar-none flex-nowrap max-w-full ${className}`}
+      className={`relative ${
+        fullWidth ? 'w-full flex justify-between' : 'inline-flex'
+      } items-center gap-1 bg-[var(--bg-card)] p-1 rounded-xl border border-[var(--border-color)] select-none overflow-x-auto scrollbar-none flex-nowrap max-w-full ${className}`}
     >
       {/* Smooth GSAP Sliding Pill */}
       <div
@@ -129,7 +132,9 @@ export function SlidingTabs({
             }}
             type="button"
             onClick={() => onChange(tab.id)}
-            className={`relative z-10 rounded-lg font-bold transition-colors duration-200 cursor-pointer text-center whitespace-nowrap shrink-0 ${
+            className={`relative z-10 rounded-lg font-bold transition-colors duration-200 cursor-pointer text-center whitespace-nowrap ${
+              fullWidth ? 'flex-1' : 'shrink-0'
+            } ${
               size === 'xs'
                 ? 'px-2.5 py-1 text-xs font-mono uppercase'
                 : 'px-3.5 py-1.5 text-xs'

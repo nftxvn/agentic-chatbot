@@ -9,7 +9,7 @@ import math
 import re
 import threading
 _re = re
-from typing import Generator
+from typing import Any, Generator
 
 from langchain_ollama import ChatOllama
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -229,7 +229,11 @@ Pedoman Komunikasi & Inferensi:
 9. Isolasi Entitas & Anti-Pencampuran (Entity Disambiguation):
    - JIKA konteks berisi potongan dari beberapa dokumen/SOP yang mirip (contoh: Renja dan Renstra), BACA DENGAN TELITI judul dokumen mana yang sedang ditanyakan pengguna.
    - JANGAN PERNAH mencampuradukkan daftar peralatan, syarat, atau waktu dari SOP A ke SOP B. 
-   - Pastikan Anda HANYA mengekstrak data dari potongan teks yang membahas entitas/SOP yang secara spesifik ditanyakan pengguna."""
+   - Pastikan Anda HANYA mengekstrak data dari potongan teks yang membahas entitas/SOP yang secara spesifik ditanyakan pengguna.
+
+10. Permintaan Bantuan Langsung / Kontak Petugas:
+    - JIKA pengguna ingin berbicara langsung dengan petugas, staf, atau admin manusia dan Anda menjawab di jalur ini, sampaikan dengan santun bahwa permohonan dapat ditindaklanjuti oleh petugas Helpdesk Diskominfotik atau hubungi Call Center 112 / kantor Diskominfotik di Balai Kota Banda Aceh (Gedung C Lantai 3).
+    - JANGAN menolak secara kaku tanpa memberikan alternatif saluran Helpdesk resmi."""
 
 
 def _format_pages_list(pages: list[int]) -> str:
@@ -1913,9 +1917,68 @@ def _stream_jawaban(
             )
 
 
-# ─────────────────────────────────────────────────────────────
-# ENTRY POINT
-# ─────────────────────────────────────────────────────────────
+def _dispatch_ticket_to_laravel(
+    session_id: str,
+    message: str,
+    intent: str = "human_escalation",
+    citizen_name: str | None = None,
+    citizen_contact: str | None = None,
+    citizen_agency: str | None = None,
+    issue_summary: str | None = None,
+    channel: str | None = None,
+) -> dict[str, Any] | None:
+    """Mengirim payload tiket eskalasi warga ke Laravel backend API."""
+    import urllib.request
+    import json
+
+    if not channel:
+        if session_id.startswith("telegram-"):
+            channel = "telegram"
+        elif session_id.startswith("wa-") or session_id.startswith("whatsapp-"):
+            channel = "whatsapp"
+        else:
+            channel = "web"
+
+    urls = [
+        "http://laravel-backend:8000/api/v1/internal/chat-tickets",
+        "http://agentic-laravel-admin:8000/api/v1/internal/chat-tickets",
+        "http://localhost:8000/api/v1/internal/chat-tickets",
+        "http://host.docker.internal:8000/api/v1/internal/chat-tickets",
+    ]
+
+    payload = {
+        "session_id": session_id,
+        "message": message,
+        "intent": intent,
+        "citizen_name": citizen_name,
+        "citizen_contact": citizen_contact or session_id.replace("telegram-", "").replace("wa-", "").replace("whatsapp-", ""),
+        "citizen_agency": citizen_agency,
+        "issue_summary": issue_summary or message[:200],
+        "channel": channel,
+    }
+
+    req_data = json.dumps(payload).encode("utf-8")
+    headers = {
+        "Authorization": f"Bearer {settings.INTERNAL_API_TOKEN}",
+        "X-Internal-Token": settings.INTERNAL_API_TOKEN,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+    for url in urls:
+        try:
+            req = urllib.request.Request(url, data=req_data, headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=3.0) as resp:
+                if resp.status in (200, 201):
+                    res_body = json.loads(resp.read().decode("utf-8"))
+                    logger.info("Berhasil dispatch tiket ke Laravel (%s): %s", url, res_body.get("message"))
+                    return res_body
+        except Exception as e:
+            logger.debug("Gagal dispatch tiket ke %s: %s", url, e)
+
+    logger.warning("Gagal mengirim dispatch tiket ke seluruh endpoint Laravel.")
+    return None
+
 
 def generate_response(
     query: str,
@@ -2002,6 +2065,14 @@ def generate_response(
                 "Selain itu, Anda juga dapat menghubungi Call Center 112 atau berkonsultasi langsung di kantor Diskominfotik "
                 "(Balai Kota Banda Aceh, Gedung C Lantai 3). Terima kasih!"
             )
+            # Dispatch awal ke Laravel
+            _dispatch_ticket_to_laravel(
+                session_id=session_id,
+                message=query,
+                intent="human_escalation",
+                issue_summary=query,
+            )
+
             if include_debug:
                 yield {
                     "type": "trace",
@@ -2030,8 +2101,27 @@ def generate_response(
             return
 
         if intent == "human_escalation_followup":
+            c_name = route_params.get("citizen_name")
+            c_agency = route_params.get("citizen_agency")
+            c_issue = route_params.get("issue_summary") or query
+
+            # Dispatch tindak lanjut info warga ke Laravel
+            _dispatch_ticket_to_laravel(
+                session_id=session_id,
+                message=query,
+                intent="human_escalation_followup",
+                citizen_name=c_name,
+                citizen_agency=c_agency,
+                issue_summary=c_issue,
+            )
+
+            greeting_target = f"Bapak/Ibu {c_name}" if c_name else "Bapak/Ibu"
+            if c_agency:
+                greeting_target += f" dari {c_agency}"
+
             followup_ack = (
-                "Terima kasih atas informasinya. Catatan tambahan Anda sudah saya simpan dan diteruskan ke tim Diskominfotik "
+                f"Terima kasih atas informasinya, {greeting_target}. "
+                "Catatan kendala Anda sudah saya catat dan langsung diteruskan ke antrean tim Helpdesk Diskominfotik "
                 "untuk ditindaklanjuti. Mohon ditunggu respon dari tim kami ya!"
             )
             if include_debug:

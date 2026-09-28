@@ -382,6 +382,25 @@ class AiMicroserviceClient
     }
 
     /**
+     * Get total active vector counts grouped by document_id from ChromaDB.
+     */
+    public function getVectorCounts(): array
+    {
+        try {
+            $response = Http::withToken($this->token)
+                ->timeout(10)
+                ->get("{$this->baseUrl}/api/docs/vector-counts");
+
+            if ($response->successful()) {
+                return $response->json('counts', []);
+            }
+        } catch (\Exception $e) {
+            Log::warning('Failed to get vector counts from ChromaDB', ['error' => $e->getMessage()]);
+        }
+        return [];
+    }
+
+    /**
      * Delete document vectors from ChromaDB via Python AI.
      */
     public function deleteDocument(int $documentId): array

@@ -243,6 +243,35 @@ async def delete_document_route(
 
 
 @router.get(
+    "/vector-counts",
+    summary="Hitung jumlah vektor aktif per dokumen di ChromaDB",
+    description="Mengambil rekapitulasi jumlah vektor yang tersimpan di ChromaDB dikelompokkan per document_id.",
+)
+async def get_all_vector_counts_route(
+    _token: str = Depends(verify_token),
+) -> dict:
+    from app.services.embedding_service import get_chroma_collection
+    try:
+        collection = get_chroma_collection()
+        all_meta = collection.get(include=["metadatas"]).get("metadatas", [])
+        counts: dict[int, int] = {}
+        for m in all_meta:
+            if m and "document_id" in m:
+                doc_id = int(m["document_id"])
+                counts[doc_id] = counts.get(doc_id, 0) + 1
+        return {
+            "total_vectors": len(all_meta),
+            "counts": counts,
+        }
+    except Exception as e:
+        logger.error("Gagal menghitung vektor per dokumen di ChromaDB: %s", str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Gagal menghitung vektor ChromaDB: {str(e)}"
+        )
+
+
+@router.get(
     "/{document_id}/chunks",
     summary="Ambil daftar chunk dokumen",
     description="Mengambil semua chunk teks yang tersimpan di ChromaDB untuk dokumen tertentu.",

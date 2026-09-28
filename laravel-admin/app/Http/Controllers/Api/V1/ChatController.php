@@ -5,6 +5,9 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Api\SettingController;
 use App\Http\Controllers\Controller;
 use App\Models\AppSetting;
+use App\Models\ChatTicket;
+use App\Events\TicketMessageSent;
+use App\Events\TicketUpdated;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -76,6 +79,40 @@ class ChatController extends Controller
 
         $startTime = microtime(true);
         $sessionId = $validated['session_id'] ?? ('session-' . Str::random(16));
+
+        // Human Takeover Gatekeeper: Cek apakah ada tiket aktif (open / in_progress)
+        $activeTicket = ChatTicket::where('session_id', $sessionId)
+            ->whereIn('status', ['open', 'in_progress'])
+            ->latest('id')
+            ->first();
+
+        if ($activeTicket) {
+            $msg = $activeTicket->messages()->create([
+                'sender_type' => 'citizen',
+                'sender_id' => null,
+                'sender_name' => $activeTicket->citizen_name ?: 'Warga',
+                'message' => $validated['query'],
+                'is_internal_note' => false,
+            ]);
+
+            $activeTicket->last_message_at = now();
+            $activeTicket->save();
+
+            event(new TicketMessageSent($msg));
+            event(new TicketUpdated($activeTicket));
+
+            return response()->json([
+                'success' => true,
+                'session_id' => $sessionId,
+                'query' => $validated['query'],
+                'answer' => 'Pesan Anda telah diteruskan langsung ke Petugas Helpdesk kami. Mohon ditunggu balasan langsung dari petugas.',
+                'sources' => [],
+                'is_fallback' => false,
+                'is_human_takeover' => true,
+                'ticket_id' => $activeTicket->id,
+                'response_time_ms' => round((microtime(true) - $startTime) * 1000),
+            ]);
+        }
 
         // Load active production prompt & parameters configured in dashboard
         $systemPrompt = $this->buildFullSystemPrompt();
@@ -178,6 +215,41 @@ class ChatController extends Controller
         ]);
 
         $sessionId = $validated['session_id'] ?? ('stream-' . Str::random(16));
+
+        // Human Takeover Gatekeeper: Cek apakah ada tiket aktif (open / in_progress)
+        $activeTicket = ChatTicket::where('session_id', $sessionId)
+            ->whereIn('status', ['open', 'in_progress'])
+            ->latest('id')
+            ->first();
+
+        if ($activeTicket) {
+            $msg = $activeTicket->messages()->create([
+                'sender_type' => 'citizen',
+                'sender_id' => null,
+                'sender_name' => $activeTicket->citizen_name ?: 'Warga',
+                'message' => $validated['query'],
+                'is_internal_note' => false,
+            ]);
+
+            $activeTicket->last_message_at = now();
+            $activeTicket->save();
+
+            event(new TicketMessageSent($msg));
+            event(new TicketUpdated($activeTicket));
+
+            return new StreamedResponse(function () {
+                $reply = 'Pesan Anda telah diteruskan langsung ke Petugas Helpdesk kami. Mohon ditunggu balasan langsung dari petugas.';
+                echo "data: " . json_encode(['type' => 'chunk', 'content' => $reply], JSON_UNESCAPED_UNICODE) . "\n\n";
+                echo "data: " . json_encode(['type' => 'done', 'content' => ''], JSON_UNESCAPED_UNICODE) . "\n\n";
+                if (ob_get_level() > 0) ob_flush();
+                flush();
+            }, 200, [
+                'Content-Type' => 'text/event-stream',
+                'Cache-Control' => 'no-cache',
+                'Connection' => 'keep-alive',
+                'X-Accel-Buffering' => 'no',
+            ]);
+        }
 
         // Load active production prompt & parameters
         $systemPrompt = $this->buildFullSystemPrompt();
