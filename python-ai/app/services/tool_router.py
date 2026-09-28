@@ -620,6 +620,9 @@ _NAME_STOPWORDS = {
     "chatting", "hubung", "hubungi", "menghubungi", "dihubungi", "sambung", "sambungkan",
     "hubungkan", "alih", "alihkan", "kontak", "mengontak", "pesan", "kirim", "bertemu",
     "ketemu", "panggil", "langsung",
+    "mahasiswa", "mahasiswi", "dosen", "guru", "honorer", "asn", "pns", "pppk", "siswa",
+    "siswi", "pelajar", "alumni", "rekan", "anggota", "kepala", "ketua", "sekretaris",
+    "bendahara", "kabid", "kasi", "kadis", "direktur", "dekan", "rektor",
 }
 
 _AGENCY_ALIASES = {
@@ -715,7 +718,7 @@ def _clean_extracted_agency(raw: str | None) -> str | None:
     raw_trim = raw.strip(" \t\n\r.,:;!?-/|")
     lower = raw_trim.lower()
     if not re.match(r"^(?:dinas|badan|bagian|bidang|kementerian|kecamatan|puskesmas|rsud|setda|inspektorat)\b", lower, flags=re.IGNORECASE):
-        lower = re.sub(r"^(?:dari|staf\s+di|staf|pegawai\s+di|pegawai|kantor|opd|instansi|asal)\s+", "", lower).strip(" \t\n\r.,:;!?-/|")
+        lower = re.sub(r"^(?:dari|staf\s+di|staf|pegawai\s+di|pegawai|mahasiswa\s+di|mahasiswa|mahasiswi\s+di|mahasiswi|dosen\s+di|dosen|guru|alumni|kantor|opd|instansi|asal)\s+", "", lower).strip(" \t\n\r.,:;!?-/|")
 
     sorted_aliases = sorted(_AGENCY_ALIASES.items(), key=lambda x: len(x[0]), reverse=True)
     for alias, canonical in sorted_aliases:
@@ -763,10 +766,10 @@ def extract_citizen_escalation_details(text: str) -> dict[str, str | None]:
     # 2. Pola Alami Bahasa Indonesia untuk Nama
     if not details["citizen_name"]:
         name_patterns = [
-            r"(?:nama\s*(?:saya|ku)?|namaku|atas\s+nama|panggil\s+saja)\s*(?:adalah|:|=)?\s*([A-Za-z\s'\.]{2,35}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|kendala|masalah|keperluan|ingin|mau|tolong|dan|serta|\.|\,|\n|$))",
-            r"(?:perkenalkan\s+(?:nama\s+)?saya|perkenalkan)\s+([A-Za-z\s'\.]{2,30}?)(?=\s+(?:dari|staf|pegawai|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|kendala|masalah|keperluan|ingin|mau|tolong|dan|serta|\.|\,|\n|$))",
-            r"(?:saya|dengan|aku)\s+([A-Za-z\s'\.]{2,30}?)\s+(?:dari|staf\s+(?:di|pada|ke)?|pegawai\s+(?:di|pada|ke)?|kantor|opd|instansi|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas)\b",
-            r"^([A-Za-z\s'\.]{2,30}?)\s+(?:dari|instansi|asal|kantor|staf|pegawai)\s+",
+            r"(?:nama\s*(?:saya|ku)?|namaku|atas\s+nama|panggil\s+saja)\s*(?:adalah|:|=)?\s*([A-Za-z\s'\.]{2,35}?)(?=\s+(?:dari|staf|pegawai|mahasiswa|mahasiswi|dosen|guru|honorer|asn|pns|pppk|siswa|siswi|pelajar|alumni|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|kendala|masalah|keperluan|ingin|mau|tolong|dan|serta|\.|\,|\n|$))",
+            r"(?:perkenalkan\s+(?:nama\s+)?saya|perkenalkan)\s+([A-Za-z\s'\.]{2,30}?)(?=\s+(?:dari|staf|pegawai|mahasiswa|mahasiswi|dosen|guru|honorer|asn|pns|pppk|siswa|siswi|pelajar|alumni|instansi|kantor|opd|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas|kendala|masalah|keperluan|ingin|mau|tolong|dan|serta|\.|\,|\n|$))",
+            r"(?:saya|dengan|aku)\s+([A-Za-z\s'\.]{2,30}?)\s+(?:dari|staf\s+(?:di|pada|ke)?|pegawai\s+(?:di|pada|ke)?|mahasiswa\s+(?:di|pada|ke)?|mahasiswi\s+(?:di|pada|ke)?|dosen\s+(?:di|pada|ke)?|guru\s+(?:di|pada|ke)?|kantor|opd|instansi|dinas|badan|bagian|kementerian|kecamatan|puskesmas|uin|usk|universitas)\b",
+            r"^([A-Za-z\s'\.]{2,30}?)\s+(?:dari|instansi|asal|kantor|staf|pegawai|mahasiswa|mahasiswi|dosen|guru)\s+",
         ]
         for pat in name_patterns:
             m = re.search(pat, text, re.IGNORECASE)
@@ -779,7 +782,7 @@ def extract_citizen_escalation_details(text: str) -> dict[str, str | None]:
     # 3. Pola Alami Bahasa Indonesia untuk Instansi
     if not details["citizen_agency"]:
         agency_patterns = [
-            r"(?:dari|staf\s+(?:di|pada|ke)?|pegawai\s+(?:di|pada|ke)?|kantor|bagian|bidang|opd|instansi|asal)\s*[:=]?\s*([A-Za-z0-9\s'\.\-_]{2,50}?)(?=\s+(?:mau|ingin|butuh|perlu|tolong|mohon|kendala|masalah|keluhan|keperluan|\.|\,|\n|$))",
+            r"(?:dari|staf\s+(?:di|pada|ke)?|pegawai\s+(?:di|pada|ke)?|mahasiswa\s+(?:di|pada|ke)?|mahasiswi\s+(?:di|pada|ke)?|dosen\s+(?:di|pada|ke)?|guru\s+(?:di|pada|ke)?|alumni\s+(?:dari)?|kantor|bagian|bidang|opd|instansi|asal)\s*[:=]?\s*([A-Za-z0-9\s'\.\-_]{2,50}?)(?=\s+(?:mau|ingin|butuh|perlu|tolong|mohon|kendala|masalah|keluhan|keperluan|\.|\,|\n|$))",
             r"\b(dinas\s+[a-z0-9\s\.\-_]+|badan\s+[a-z0-9\s\.\-_]+|kementerian\s+[a-z0-9\s\.\-_]+|universitas\s+[a-z0-9\s\.\-_]+|kampus\s+[a-z0-9\s\.\-_]+|inspektorat(?:\s+[a-z0-9\s\.\-_]+)?|setda(?:ko)?(?:\s+[a-z0-9\s\.\-_]+)?|sekretariat\s+daerah(?:\s+[a-z0-9\s\.\-_]+)?|satpol\s*pp(?:\s*&\s*wh)?|kecamatan\s+[a-z0-9\s\.\-_]+|camat\s+[a-z0-9\s\.\-_]+|puskesmas\s+[a-z0-9\s\.\-_]+|rsud\s+[a-z0-9\s\.\-_]+|bagian\s+[a-z0-9\s\.\-_]+|bidang\s+[a-z0-9\s\.\-_]+)\b",
             r"\b(kemenkes|kemkes|kemendikbud|kemedikbud|kemdikbud|kemendikbudristek|kemenag|kemendagri|kemendag|kemenkeu|kemenkumham|kemenko|kemenhub|kemenpan|kemenpanrb|kemkominfo|komdigi|bappeda|bkpsdm|bpkk|bpbd|diskominfo[a-z]*|dinkes|diskes|disdikbud|disdik|dishub|dinsos|pupr|dlhk3?|dpmptsp|uin(?:\s+ar[\s\-]raniry)?|usk|unsyiah|unida|ummuha|poltekkes)(?:\s+[a-z0-9\s\.\-_]+)?\b",
         ]
