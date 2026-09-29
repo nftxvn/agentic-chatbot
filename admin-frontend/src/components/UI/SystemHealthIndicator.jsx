@@ -18,12 +18,13 @@ export function SystemHealthIndicator({ isSidebar = false, isCollapsed = false }
       const res = await fetch('/api/ai/health', {
         headers: { Accept: 'application/json' },
       })
-      if (!res.ok) {
+      if (res.status === 200 || res.status === 503) {
+        const data = await res.json()
+        setHealthData(data)
+        setStatus(data.status || (allChecksOk(data.checks) ? 'healthy' : 'degraded'))
+      } else {
         throw new Error(`HTTP ${res.status}`)
       }
-      const data = await res.json()
-      setHealthData(data)
-      setStatus(data.status || (allChecksOk(data.checks) ? 'healthy' : 'degraded'))
     } catch (err) {
       setStatus('offline')
       setHealthData({
