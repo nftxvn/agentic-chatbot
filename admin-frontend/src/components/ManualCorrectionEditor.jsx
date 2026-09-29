@@ -6,9 +6,12 @@ import { FloatingSaveBar } from "./UI/FloatingSaveBar";
 import ConfirmModal from "./ConfirmModal";
 import EmbedProgressModal from "./EmbedProgressModal";
 import { InfoTooltip } from "./UI/InfoTooltip";
+import { addAppNotification } from "../utils/notifications";
+import { trackActiveEmbedding, clearActiveEmbedding } from "../utils/activeEmbedding";
 
 export default function ManualCorrectionEditor({
   documentId,
+  documentTitle = "",
   totalPages = 1,
   isExtractionCompleted = false,
   status = "",
@@ -565,7 +568,6 @@ export default function ManualCorrectionEditor({
     setShowSaveCorpusConfirm(false);
     setShowEmbedProgressModal(true);
     setIsSavingCorpus(true);
-    setCorpusMsg("");
     try {
       await documentsApi.saveToCorpus(documentId, {
         parent_chunk_size: parentSize,
@@ -575,13 +577,41 @@ export default function ManualCorrectionEditor({
         strategy: selectedPreset,
       });
       setShowChunksModal(false);
+
+      // Daftarkan ke background tracker HANYA setelah antrean berhasil dibuat di backend
+      const resolvedTitle = documentTitle || `Dokumen #${documentId}`;
+      trackActiveEmbedding({ documentId, title: resolvedTitle });
     } catch (err) {
+      clearActiveEmbedding(documentId);
       alert(err.response?.data?.message || "Gagal menyimpan ke korpus.");
       setShowEmbedProgressModal(false);
     } finally {
       setIsSavingCorpus(false);
     }
   };
+
+  // Dengarkan event penyelesaian embedding background secara real-time
+  useEffect(() => {
+    const handleSuccess = (e) => {
+      if (Number(e.detail?.documentId) === Number(documentId)) {
+        setCorpusMsg("Berhasil disimpan ke ChromaDB!");
+        if (onSaveToCorpusSuccess) onSaveToCorpusSuccess();
+      }
+    };
+    const handleFailed = (e) => {
+      if (Number(e.detail?.documentId) === Number(documentId)) {
+        setCorpusMsg("Gagal menyimpan ke korpus.");
+      }
+    };
+
+    window.addEventListener("document-embedded-success", handleSuccess);
+    window.addEventListener("document-embedded-failed", handleFailed);
+
+    return () => {
+      window.removeEventListener("document-embedded-success", handleSuccess);
+      window.removeEventListener("document-embedded-failed", handleFailed);
+    };
+  }, [documentId, onSaveToCorpusSuccess]);
 
   const isCurrentPageSuspicious = suspiciousPages.some(
     (sp) => sp.page_number === currentPage,
@@ -2184,6 +2214,7 @@ export default function ManualCorrectionEditor({
         isOpen={showEmbedProgressModal}
         documentId={documentId}
         onComplete={() => {
+          clearActiveEmbedding(documentId);
           setShowEmbedProgressModal(false);
           setCorpusMsg("Berhasil disimpan ke ChromaDB!");
           if (onSaveToCorpusSuccess) onSaveToCorpusSuccess();

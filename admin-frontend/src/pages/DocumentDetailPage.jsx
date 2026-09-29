@@ -1059,6 +1059,7 @@ export default function DocumentDetailPage() {
           <ManualCorrectionEditor
             key={`${document.id}-${pdfTimestamp}`}
             documentId={document.id}
+            documentTitle={document.title || document.original_name || document.original_filename}
             totalPages={document.total_pages || 1}
             isExtractionCompleted={
               currentStatus === "completed" ||

@@ -373,11 +373,17 @@ def potong_dan_embed_task(self, document_id: int, custom_kwargs: dict | None = N
             except Exception:
                 logger.exception("Gagal sinkron status failed dokumen %d", document_id)
         else:
+            clean_err = str(e)
+            if "CUDA error" in clean_err or "CUDA_ERROR" in clean_err:
+                clean_err = "Kendala GPU CUDA (alokasi memori/stream gagal)"
+            elif len(clean_err) > 120:
+                clean_err = clean_err[:117] + "..."
+
             penyimpanan.catat_kemajuan_embed(
                 document_id,
                 status=eb.STATUS_BERJALAN,
-                persen=0,
-                pesan=f"Percobaan {self.request.retries + 1}/{self.max_retries} gagal ({e}), menjadwalkan ulang...",
+                persen=45,
+                pesan=f"Percobaan {self.request.retries + 1}/{self.max_retries} gagal ({clean_err}), menjadwalkan ulang...",
             )
         raise self.retry(exc=e)
 
@@ -392,7 +398,13 @@ def potong_dan_embed_task(self, document_id: int, custom_kwargs: dict | None = N
         pesan=f"Selesai! {tersimpan} vektor berhasil disimpan ke korpus.",
     )
     try:
-        update_document_status(document_id, status="completed", total_chunks=tersimpan)
+        from datetime import datetime
+        update_document_status(
+            document_id,
+            status="completed",
+            total_chunks=tersimpan,
+            processed_at=datetime.utcnow(),
+        )
         record_document_log(
             document_id,
             action="completed",

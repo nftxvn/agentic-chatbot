@@ -490,6 +490,7 @@ class DocumentController extends Controller
             'uploaded_by'       => $document->uploader?->name,
             'pdf_url'           => url("/api/documents/{$document->id}/pdf"),
             'created_at'        => $document->created_at ? \Carbon\Carbon::parse($document->created_at)->toIso8601String() : null,
+            'updated_at'        => $document->updated_at ? \Carbon\Carbon::parse($document->updated_at)->toIso8601String() : null,
             'processed_at'      => $document->processed_at ? \Carbon\Carbon::parse($document->processed_at)->toIso8601String() : null,
 
             // Staged extraction progress

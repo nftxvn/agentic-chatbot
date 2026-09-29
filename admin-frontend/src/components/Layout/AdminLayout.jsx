@@ -9,6 +9,8 @@ import bandaAcehLogo from "../../assets/banda-aceh-logo.svg";
 import { documentsApi } from "../../api/documents";
 import { categoriesApi } from "../../api/categories";
 import { getWhatsappSettings } from "../../api/settings";
+import { getActiveEmbeddings, clearActiveEmbedding } from "../../utils/activeEmbedding";
+import { addAppNotification } from "../../utils/notifications";
 import SettingsModal from "../Settings/SettingsModal";
 import { SystemHealthIndicator } from "../UI/SystemHealthIndicator";
 
@@ -540,29 +542,38 @@ export default function AdminLayout() {
       const realList = [];
 
       docs.forEach((doc) => {
+        const docTime = doc.processed_at || doc.updated_at || doc.created_at;
+        const timeMs = docTime ? new Date(docTime).getTime() : 0;
+
         if (doc.status === "completed") {
           realList.push({
-            id: `doc-${doc.id}-completed`,
+            id: `doc-${doc.id}-completed-${timeMs}`,
             title: `Dokumen "${doc.title}" Ter-index`,
-            message: `Dokumen ${doc.original_filename} (${doc.total_chunks || 0} chunks) siap digunakan AI.`,
-            time: formatRelativeTime(doc.updated_at || doc.created_at),
+            message: `Dokumen ${doc.original_filename || doc.original_name || ""} (${doc.total_chunks || 0} chunks) siap digunakan AI.`,
+            time: formatRelativeTime(docTime),
+            timestamp: timeMs,
             type: "success",
+            documentId: doc.id,
           });
         } else if (doc.status === "processing") {
           realList.push({
-            id: `doc-${doc.id}-processing`,
+            id: `doc-${doc.id}-processing-${timeMs}`,
             title: `Memproses "${doc.title}"`,
             message: `Proses ekstraksi RAG & OCR sedang berjalan ke ChromaDB.`,
-            time: formatRelativeTime(doc.created_at),
+            time: formatRelativeTime(docTime),
+            timestamp: timeMs,
             type: "info",
+            documentId: doc.id,
           });
         } else if (doc.status === "failed") {
           realList.push({
-            id: `doc-${doc.id}-failed`,
+            id: `doc-${doc.id}-failed-${timeMs}`,
             title: `Gagal Memproses Dokumen`,
             message: `Dokumen "${doc.title}" mengalami kesalahan saat di-index.`,
-            time: formatRelativeTime(doc.updated_at || doc.created_at),
-            type: "warning",
+            time: formatRelativeTime(docTime),
+            timestamp: timeMs,
+            type: "error",
+            documentId: doc.id,
           });
         }
       });
@@ -575,6 +586,7 @@ export default function AdminLayout() {
             ? `Layanan otomatis WhatsApp Diskominfo (${waRes.wa_phone_number || "API Connected"}) siap melayani masyarakat.`
             : `Layanan WhatsApp Bot saat ini dinonaktifkan di sistem.`,
           time: "Realtime",
+          timestamp: Date.now(),
           type: waRes.wa_status ? "system" : "warning",
         });
       }
@@ -582,11 +594,13 @@ export default function AdminLayout() {
       if (cats && (cats.length > 0 || (cats.data && cats.data.length > 0))) {
         const catList = cats.data || cats;
         catList.forEach((cat) => {
+          const catTime = cat.updated_at || cat.created_at;
           realList.push({
             id: `cat-${cat.id}-added`,
             title: `Kategori AI Baru`,
             message: `Anda baru saja menambahkan kategori "${cat.name}"`,
-            time: formatRelativeTime(cat.created_at || cat.updated_at),
+            time: formatRelativeTime(catTime),
+            timestamp: catTime ? new Date(catTime).getTime() : 0,
             type: "info",
           });
         });
@@ -600,7 +614,25 @@ export default function AdminLayout() {
         time: formatRelativeTime(item.timestamp),
       }));
 
-      const combined = [...formattedActions, ...realList];
+      // Identifikasi ID dokumen yang baru saja diproses via tindakan pengguna dalam 5 menit terakhir
+      const recentActionDocIds = new Set(
+        actionLogs
+          .filter((a) => Date.now() - (a.timestamp || 0) < 300000)
+          .map((a) => a.documentId)
+          .filter(Boolean),
+      );
+
+      // Saring realList agar tidak duplikat dengan riwayat aksi pengguna yang baru saja terjadi
+      const filteredRealList = realList.filter(
+        (item) => !item.documentId || !recentActionDocIds.has(item.documentId),
+      );
+
+      // Gabungkan dan urutkan berdasarkan waktu terbaru ke terlama
+      const combined = [...formattedActions, ...filteredRealList].sort((a, b) => {
+        const timeA = typeof a.timestamp === "number" ? a.timestamp : new Date(a.timestamp || 0).getTime();
+        const timeB = typeof b.timestamp === "number" ? b.timestamp : new Date(b.timestamp || 0).getTime();
+        return timeB - timeA;
+      });
 
       const savedReadIds = JSON.parse(
         localStorage.getItem("read_notifications") || "[]",
@@ -634,6 +666,142 @@ export default function AdminLayout() {
     return () => {
       clearInterval(interval);
       window.removeEventListener("app-notification-update", handleUpdateEvent);
+    };
+  }, []);
+
+  // Floating Toasts State & Event Listener
+  const [toasts, setToasts] = useState([]);
+
+  const addToast = (toast) => {
+    const id = toast.id || `toast-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    const newToast = { ...toast, id };
+    setToasts((prev) => [...prev.slice(-2), newToast]); // Maksimal 3 toast bersamaan
+
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 5500);
+  };
+
+  const removeToast = (id) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  useEffect(() => {
+    const handleGlobalToast = (e) => {
+      if (e.detail) {
+        addToast(e.detail);
+      }
+    };
+    window.addEventListener("app-global-toast", handleGlobalToast);
+    return () => {
+      window.removeEventListener("app-global-toast", handleGlobalToast);
+    };
+  }, []);
+
+  // Background Poller for Active Embeddings (berjalan terus meskipun dialog ditutup)
+  useEffect(() => {
+    let pollerTimer = null;
+    let isChecking = false;
+
+    const checkActiveEmbeddings = async () => {
+      if (isChecking) return;
+      const activeList = getActiveEmbeddings();
+      if (!activeList || activeList.length === 0) return;
+
+      isChecking = true;
+      try {
+        for (const item of activeList) {
+          try {
+            const res = await documentsApi.getExtractionStatus(item.documentId);
+            const data = res?.data || res;
+            if (!data) continue;
+
+            const currentStatus = data.status;
+            const currentPersen = typeof data.persen === "number" ? data.persen : 0;
+            const elapsed = Date.now() - (item.startedAt || 0);
+
+            // Tugas embedding HANYA selesai jika:
+            // 1. Persentase sudah mencapai 100%
+            // 2. Atau status 'selesai'/'completed' dengan persen >= 95% setelah lewat minimal 2,5 detik
+            const isCompleted =
+              currentPersen >= 100 ||
+              ((currentStatus === "selesai" || currentStatus === "completed") &&
+                currentPersen >= 95 &&
+                elapsed > 2500);
+
+            if (isCompleted) {
+              clearActiveEmbedding(item.documentId);
+
+              // Ambil judul asli dokumen jika item.title masih berupa fallback generic
+              const fallbackDoc = searchIndexData.documents?.find(
+                (d) => Number(d.id) === Number(item.documentId),
+              );
+              const displayTitle =
+                item.title && !item.title.startsWith("Dokumen #")
+                  ? item.title
+                  : (fallbackDoc?.title || fallbackDoc?.original_name || item.title || `Dokumen #${item.documentId}`);
+
+              // Ekstrak jumlah chunk dari pesan worker (misal "Selesai! 15 vektor berhasil disimpan...")
+              const chunkMatch = data.pesan?.match(/(\d+)\s+vektor/i);
+              const chunkCount = chunkMatch ? chunkMatch[1] : (data.total_chunks || fallbackDoc?.total_chunks || "");
+              const chunkText = chunkCount ? `${chunkCount} chunks` : "seluruh chunks";
+
+              addAppNotification({
+                title: "Penyimpanan Korpus Berhasil",
+                message: `Vektor dokumen "${displayTitle}" (${chunkText}) berhasil disimpan ke ChromaDB. Siap digunakan AI.`,
+                type: "success",
+                documentId: item.documentId,
+              });
+              window.dispatchEvent(
+                new CustomEvent("document-embedded-success", {
+                  detail: { documentId: item.documentId, data },
+                }),
+              );
+              fetchRealNotifications();
+            } else if (currentStatus === "gagal" || currentStatus === "failed") {
+              clearActiveEmbedding(item.documentId);
+              const fallbackDoc = searchIndexData.documents?.find(
+                (d) => Number(d.id) === Number(item.documentId),
+              );
+              const displayTitle =
+                item.title && !item.title.startsWith("Dokumen #")
+                  ? item.title
+                  : (fallbackDoc?.title || fallbackDoc?.original_name || item.title || `Dokumen #${item.documentId}`);
+              const errMsg = data.pesan || "Terjadi kesalahan saat memproses embedding.";
+              addAppNotification({
+                title: "Gagal Menyimpan Korpus",
+                message: `Gagal menyimpan korpus untuk dokumen "${displayTitle}": ${errMsg}`,
+                type: "error",
+                documentId: item.documentId,
+              });
+              window.dispatchEvent(
+                new CustomEvent("document-embedded-failed", {
+                  detail: { documentId: item.documentId, error: errMsg },
+                }),
+              );
+              fetchRealNotifications();
+            }
+          } catch (itemErr) {
+            // Abaikan kesalahan koneksi sementara saat polling
+          }
+        }
+      } finally {
+        isChecking = false;
+      }
+    };
+
+    checkActiveEmbeddings();
+    pollerTimer = setInterval(checkActiveEmbeddings, 2000);
+
+    const handleActiveChanged = () => {
+      checkActiveEmbeddings();
+    };
+
+    window.addEventListener("app-active-embeddings-changed", handleActiveChanged);
+
+    return () => {
+      if (pollerTimer) clearInterval(pollerTimer);
+      window.removeEventListener("app-active-embeddings-changed", handleActiveChanged);
     };
   }, []);
 
@@ -1406,6 +1574,23 @@ export default function AdminLayout() {
                                   </svg>
                                 </div>
                               )}
+                              {item.type === "error" && (
+                                <div className="w-8 h-8 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-rose-500 flex items-center justify-center">
+                                  <svg
+                                    className="w-4 h-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M6 18L18 6M6 6l12 12"
+                                    />
+                                  </svg>
+                                </div>
+                              )}
                               {item.type === "system" && (
                                 <div className="w-8 h-8 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-purple-500 flex items-center justify-center">
                                   <svg
@@ -1736,6 +1921,63 @@ export default function AdminLayout() {
           initialTab={activeSettingsTab}
           user={user}
         />
+
+        {/* Global Floating Toast Stack */}
+        <div className="fixed bottom-6 right-6 z-[99999] flex flex-col gap-2.5 max-w-sm w-full pointer-events-none px-4 sm:px-0">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              className="pointer-events-auto bg-[var(--bg-card)] border border-[var(--border-color)] shadow-2xl rounded-2xl p-4 flex items-start gap-3.5 transition-all duration-300 animate-in fade-in slide-in-from-bottom-5"
+            >
+              {/* Type Icon */}
+              <div
+                className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 mt-0.5 ${
+                  toast.type === "success"
+                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500"
+                    : toast.type === "error"
+                    ? "bg-rose-500/10 border-rose-500/20 text-rose-500"
+                    : toast.type === "warning"
+                    ? "bg-amber-500/10 border-amber-500/20 text-amber-500"
+                    : "bg-sky-500/10 border-sky-500/20 text-sky-500"
+                }`}
+              >
+                {toast.type === "success" ? (
+                  <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : toast.type === "error" ? (
+                  <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                ) : toast.type === "warning" ? (
+                  <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                ) : (
+                  <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+              </div>
+              <div className="flex-1 min-w-0 pr-1">
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="text-[var(--text-primary)] text-xs font-bold truncate">{toast.title}</h4>
+                  <span className="text-[10px] text-[var(--text-muted)] font-medium shrink-0">Baru saja</span>
+                </div>
+                <p className="text-[var(--text-secondary)] text-xs leading-relaxed font-medium mt-0.5 line-clamp-2">
+                  {toast.message}
+                </p>
+              </div>
+              <button
+                onClick={() => removeToast(toast.id)}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 rounded-lg text-xs transition-colors cursor-pointer shrink-0"
+                title="Tutup"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
     </>
   );
