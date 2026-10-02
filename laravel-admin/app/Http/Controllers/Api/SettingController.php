@@ -598,7 +598,7 @@ class SettingController extends Controller
         try {
             $response = \Illuminate\Support\Facades\Http::withHeaders([
                 'Authorization' => "Bearer {$token}",
-            ])->timeout(5)->get("{$aiUrl}/api/health/mesin", [
+            ])->timeout(5)->get("{$aiUrl}/api/health/hardware", [
                 'nocache' => 1,
                 'model' => $model,
             ]);

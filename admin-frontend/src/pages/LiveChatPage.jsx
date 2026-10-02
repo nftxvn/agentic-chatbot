@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useLayoutEffect } from 'react'
-import gsap from 'gsap'
+import { useState, useEffect, useRef } from 'react'
+import ReactDOM from 'react-dom'
 import { ticketsApi } from '../api/tickets'
 import { InfoTooltip } from '../components/UI/InfoTooltip'
 import { SlidingTabs } from '../components/UI/SlidingTabs'
@@ -25,7 +25,6 @@ export default function LiveChatPage() {
   const [ticketToDelete, setTicketToDelete] = useState(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
-  const statsGridRef = useRef(null)
   const messagesContainerRef = useRef(null)
   const messagesEndRef = useRef(null)
   const isNearBottomRef = useRef(true)
@@ -80,6 +79,7 @@ export default function LiveChatPage() {
 
       if (statRes?.data || statRes) {
         setStats(statRes?.data || statRes)
+        window.dispatchEvent(new CustomEvent('app-tickets-updated'))
       }
 
       // If a ticket is currently selected, refresh its detail
@@ -150,25 +150,6 @@ export default function LiveChatPage() {
       }
     }
   }, [messages])
-
-  // GSAP animation for Stats Cards on first load
-  useLayoutEffect(() => {
-    if (!loading && statsGridRef.current) {
-      const cards = statsGridRef.current.children
-      gsap.fromTo(
-        cards,
-        { opacity: 0, scale: 0.98 },
-        {
-          opacity: 1,
-          scale: 1,
-          duration: 0.4,
-          stagger: 0.05,
-          ease: 'power2.out',
-          clearProps: 'all',
-        },
-      )
-    }
-  }, [loading])
 
   // Real-time background sync timer (5s)
   useEffect(() => {
@@ -249,7 +230,7 @@ export default function LiveChatPage() {
       fetchTickets(false)
       addAppNotification({
         title: 'Status Tiket Diperbarui',
-        message: `Tiket #${selectedTicket.id} sekarang berstatus ${newStatus.toUpperCase()}.`,
+        message: `Tiket ${selectedTicket.ticket_number || `#${selectedTicket.id}`} sekarang berstatus ${newStatus.toUpperCase()}.`,
         type: 'info',
       })
     } catch (err) {
@@ -264,7 +245,7 @@ export default function LiveChatPage() {
       await ticketsApi.delete(ticket.id)
       addAppNotification({
         title: 'Tiket Berhasil Dihapus',
-        message: `Tiket #${ticket.id} (${ticket.citizen_name || 'Warga'}) telah dihapus secara permanen.`,
+        message: `Tiket ${ticket.ticket_number || `#${ticket.id}`} (${ticket.citizen_name || 'Warga'}) telah dihapus secara permanen.`,
         type: 'success',
       })
 
@@ -367,55 +348,6 @@ export default function LiveChatPage() {
         </div>
       </div>
 
-      {/* ── STATS CARDS (COMPACT FIT) ──── */}
-      <div
-        className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 shrink-0"
-        ref={statsGridRef}
-      >
-        {[
-          {
-            label: 'Tiket Terbuka',
-            value: stats.open || 0,
-            dotColor: 'bg-amber-500',
-            tooltip: 'Percakapan warga yang baru masuk dan sedang menunggu respon pertama dari petugas.',
-          },
-          {
-            label: 'Sedang Diproses',
-            value: stats.in_progress || 0,
-            dotColor: 'bg-sky-500',
-            tooltip: 'Tiket yang telah diambil dan sedang dalam proses penanganan aktif oleh admin helpdesk.',
-          },
-          {
-            label: 'Tiket Selesai',
-            value: stats.resolved || 0,
-            dotColor: 'bg-emerald-500',
-            tooltip: 'Percakapan kendala warga yang telah berhasil diselesaikan dan ditutup secara tuntas.',
-          },
-          {
-            label: 'Total Seluruh Tiket',
-            value: stats.total || 0,
-            dotColor: 'bg-purple-500',
-            tooltip: 'Akumulasi seluruh riwayat tiket bantuan yang tercatat pada sistem.',
-          },
-        ].map((stat) => (
-          <div
-            key={stat.label}
-            className="bg-[var(--bg-card)] border border-[var(--border-color)] p-2.5 px-3.5 rounded-xl flex items-center justify-between hover:border-[var(--text-muted)]/40 transition-all duration-200 shadow-xs"
-          >
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] flex items-center">
-                <span>{stat.label}</span>
-                <InfoTooltip content={stat.tooltip} />
-              </span>
-              <h3 className="text-lg sm:text-xl font-black text-[var(--text-primary)] tracking-tight mt-0.5">
-                {loading ? <div className="skeleton h-5 w-12" /> : stat.value}
-              </h3>
-            </div>
-            <span className={`w-2.5 h-2.5 rounded-full ${stat.dotColor} shrink-0`} />
-          </div>
-        ))}
-      </div>
-
       {/* ── SPLIT MAIN CHAT & QUEUE WORKSPACE (AUTO-FIT VIEWPORT) ───────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1 min-h-0 overflow-hidden">
         {/* Left Side: Ticket Queue List Card */}
@@ -452,7 +384,7 @@ export default function LiveChatPage() {
             <div className="relative w-full">
               <input
                 type="text"
-                placeholder="Cari nama warga atau ID tiket..."
+                placeholder="Cari nama warga atau nomor tiket (TICK-...)..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-8.5 pr-3 py-1.5 text-xs bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg text-[var(--text-primary)] focus:outline-none focus:border-sky-500 transition-colors"
@@ -503,10 +435,25 @@ export default function LiveChatPage() {
                     </div>
 
                     <div className="flex items-center justify-between pt-1">
-                      {getStatusBadge(t.status)}
-                      <span className="text-[10px] font-mono text-[var(--text-muted)]">
-                        #{t.id}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {getStatusBadge(t.status)}
+                        <span className="text-[10px] font-mono text-[var(--text-muted)] font-semibold">
+                          {t.ticket_number || `#${t.id}`}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setTicketToDelete(t)
+                        }}
+                        title="Hapus Tiket"
+                        className="p-1 rounded-md text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-all cursor-pointer opacity-70 group-hover:opacity-100"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
                     </div>
                   </div>
                 )
@@ -533,7 +480,6 @@ export default function LiveChatPage() {
                           {selectedTicket.citizen_agency}
                         </span>
                       )}
-                      {getStatusBadge(selectedTicket.status)}
                     </div>
                     <div className="text-xs text-[var(--text-secondary)] flex items-center gap-2 mt-0.5">
                       <span>Kontak: {selectedTicket.citizen_contact || 'Via Chatbot'}</span>
@@ -543,7 +489,7 @@ export default function LiveChatPage() {
                   </div>
                 </div>
 
-                {/* Status & Delete Action Buttons */}
+                {/* Status Action Buttons */}
                 <div className="flex items-center gap-2">
                   {selectedTicket.status === 'open' && (
                     <button
@@ -569,17 +515,6 @@ export default function LiveChatPage() {
                       Buka Kembali
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => setTicketToDelete(selectedTicket)}
-                    title="Hapus Tiket"
-                    className="px-3.5 py-2 text-xs font-bold rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500 hover:text-white border border-rose-500/30 transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                    <span>Hapus Tiket</span>
-                  </button>
                 </div>
               </div>
 
@@ -976,45 +911,47 @@ export default function LiveChatPage() {
         </div>
       )}
 
-      {/* Image Lightbox Modal Zoom */}
-      {previewModalImg && (
-        <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-in fade-in duration-200"
-          onClick={() => setPreviewModalImg(null)}
-        >
-          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
-            <div className="absolute top-3 right-3 flex items-center gap-2 z-10">
-              <a
-                href={previewModalImg}
-                download="lampiran-tiket.jpg"
-                target="_blank"
-                rel="noreferrer"
-                className="p-2 rounded-full bg-black/60 hover:bg-black/80 text-white transition-colors cursor-pointer shadow-md"
-                title="Unduh Gambar"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-              </a>
-              <button
-                type="button"
-                onClick={() => setPreviewModalImg(null)}
-                className="p-2 rounded-full bg-black/60 hover:bg-black/80 text-white transition-colors cursor-pointer shadow-md"
-                title="Tutup (Esc)"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+      {/* Image Lightbox Modal Zoom (PORTAL KE DOCUMENT.BODY) */}
+      {previewModalImg &&
+        ReactDOM.createPortal(
+          <div
+            className="fixed inset-0 z-[99999] bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-in fade-in duration-200"
+            onClick={() => setPreviewModalImg(null)}
+          >
+            <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
+              <div className="absolute top-3 right-3 flex items-center gap-2 z-10">
+                <a
+                  href={previewModalImg}
+                  download="lampiran-tiket.jpg"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-2 rounded-full bg-black/60 hover:bg-black/80 text-white transition-colors cursor-pointer shadow-md"
+                  title="Unduh Gambar"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setPreviewModalImg(null)}
+                  className="p-2 rounded-full bg-black/60 hover:bg-black/80 text-white transition-colors cursor-pointer shadow-md"
+                  title="Tutup (Esc)"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <img
+                src={previewModalImg}
+                alt="Pratinjau Foto"
+                className="max-h-[85vh] max-w-full object-contain rounded-xl shadow-2xl border border-white/10"
+              />
             </div>
-            <img
-              src={previewModalImg}
-              alt="Pratinjau Foto"
-              className="max-h-[85vh] max-w-full object-contain rounded-xl shadow-2xl border border-white/10"
-            />
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

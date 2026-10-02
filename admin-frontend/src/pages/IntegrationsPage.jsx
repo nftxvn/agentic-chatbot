@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useLayoutEffect } from 'react'
+import ReactDOM from 'react-dom'
 import { useSearchParams } from 'react-router-dom'
 import gsap from 'gsap'
 import { apiKeysApi } from '../api/apiKeys'
@@ -1198,92 +1199,96 @@ console.log("Rujukan:", data.sources);`
       )}
       </div>
 
-      {/* ── MODAL: BUAT KUNCI API ───────────────────────────────── */}
-      {showCreateKeyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl max-w-md w-full p-5 shadow-xl space-y-4">
-            <div className="space-y-1">
-              <h3 className="text-sm font-bold text-[var(--text-primary)]">
-                Buat Kunci API Baru
-              </h3>
-              <p className="text-xs text-[var(--text-muted)]">
-                Beri nama identifikasi untuk aplikasi atau layanan yang akan menggunakan kunci ini.
-              </p>
-            </div>
-
-            <form noValidate onSubmit={handleCreateKey} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-[var(--text-primary)] block">
-                  Nama Aplikasi / Klien Pemanggil
-                </label>
-                <input
-                  type="text"
-                  value={keyName}
-                  onChange={(e) => setKeyName(e.target.value)}
-                  placeholder="Contoh: Portal Web Resmi Dinas, WhatsApp Bot Gateway"
-                  autoFocus
-                  className="w-full px-3.5 py-2 text-xs rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-sky-500 transition-colors"
-                />
+      {/* ── MODAL: BUAT KUNCI API (PORTAL KE DOCUMENT.BODY) ────── */}
+      {showCreateKeyModal &&
+        ReactDOM.createPortal(
+          <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+            <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl max-w-md w-full p-5 shadow-xl space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-[var(--text-primary)]">
+                  Buat Kunci API Baru
+                </h3>
+                <p className="text-xs text-[var(--text-muted)]">
+                  Beri nama identifikasi untuk aplikasi atau layanan yang akan menggunakan kunci ini.
+                </p>
               </div>
 
-              <div className="flex justify-end gap-2.5 pt-2 border-t border-[var(--border-color)]">
+              <form noValidate onSubmit={handleCreateKey} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-[var(--text-primary)] block">
+                    Nama Aplikasi / Klien Pemanggil
+                  </label>
+                  <input
+                    type="text"
+                    value={keyName}
+                    onChange={(e) => setKeyName(e.target.value)}
+                    placeholder="Contoh: Portal Web Resmi Dinas, WhatsApp Bot Gateway"
+                    autoFocus
+                    className="w-full px-3.5 py-2 text-xs rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-sky-500 transition-colors"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2.5 pt-2 border-t border-[var(--border-color)]">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateKeyModal(false)}
+                    disabled={creatingKey}
+                    className="px-3.5 py-2 rounded-xl text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-input)] transition-colors cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={creatingKey || !keyName.trim()}
+                    className="px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-sky-500 via-sky-500 to-sky-300 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white transition-all hover:scale-[1.02] cursor-pointer shadow-md shadow-sky-500/25 disabled:opacity-50"
+                  >
+                    {creatingKey ? 'Membuat...' : 'Buat Token'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* ── MODAL: VIEW TOKEN RAHASIA SATU KALI (PORTAL KE DOCUMENT.BODY) ── */}
+      {newlyCreatedKey &&
+        ReactDOM.createPortal(
+          <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+            <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl max-w-lg w-full p-5 shadow-2xl space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-[var(--text-primary)]">
+                  Simpan Kunci API "{newlyCreatedKey.name}"
+                </h3>
+                <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                  Harap salin dan simpan token ini sekarang. Demi keamanan, token lengkap <strong>hanya ditampilkan satu kali ini</strong>.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] font-mono text-xs text-[var(--text-primary)] break-all select-all flex items-center justify-between gap-3">
+                <span>{newlyCreatedKey.plain_key}</span>
                 <button
                   type="button"
-                  onClick={() => setShowCreateKeyModal(false)}
-                  disabled={creatingKey}
-                  className="px-3.5 py-2 rounded-xl text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-input)] transition-colors cursor-pointer"
+                  onClick={() => handleCopy(newlyCreatedKey.plain_key, 'secret')}
+                  className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-sky-500 to-sky-400 dark:from-sky-500 dark:to-blue-600 text-white transition-all hover:scale-105 cursor-pointer shadow-sm"
                 >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={creatingKey || !keyName.trim()}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-sky-500 via-sky-500 to-sky-300 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white transition-all hover:scale-[1.02] cursor-pointer shadow-md shadow-sky-500/25 disabled:opacity-50"
-                >
-                  {creatingKey ? 'Membuat...' : 'Buat Token'}
+                  {copiedKey ? 'Tersalin' : 'Salin Token'}
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
 
-      {/* ── MODAL: VIEW TOKEN RAHASIA SATU KALI ──────────────────── */}
-      {newlyCreatedKey && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl max-w-lg w-full p-5 shadow-2xl space-y-4">
-            <div className="space-y-1">
-              <h3 className="text-sm font-bold text-[var(--text-primary)]">
-                Simpan Kunci API "{newlyCreatedKey.name}"
-              </h3>
-              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
-                Harap salin dan simpan token ini sekarang. Demi keamanan, token lengkap <strong>hanya ditampilkan satu kali ini</strong>.
-              </p>
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setNewlyCreatedKey(null)}
+                  className="px-4 py-2 rounded-lg text-xs font-semibold bg-[var(--bg-input)] hover:bg-[var(--border-color)] text-[var(--text-primary)] border border-[var(--border-color)] transition-colors cursor-pointer"
+                >
+                  Saya Sudah Menyimpan Token Ini
+                </button>
+              </div>
             </div>
-
-            <div className="p-3.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] font-mono text-xs text-[var(--text-primary)] break-all select-all flex items-center justify-between gap-3">
-              <span>{newlyCreatedKey.plain_key}</span>
-              <button
-                type="button"
-                onClick={() => handleCopy(newlyCreatedKey.plain_key, 'secret')}
-                className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-gradient-to-r from-sky-500 to-sky-400 dark:from-sky-500 dark:to-blue-600 text-white transition-all hover:scale-105 cursor-pointer shadow-sm"
-              >
-                {copiedKey ? 'Tersalin' : 'Salin Token'}
-              </button>
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button
-                type="button"
-                onClick={() => setNewlyCreatedKey(null)}
-                className="px-4 py-2 rounded-lg text-xs font-semibold bg-[var(--bg-input)] hover:bg-[var(--border-color)] text-[var(--text-primary)] border border-[var(--border-color)] transition-colors cursor-pointer"
-              >
-                Saya Sudah Menyimpan Token Ini
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* ── MODAL: DELETE KEY CONFIRMATION ──────────────────────── */}
       <ConfirmModal

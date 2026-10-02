@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useLayoutEffect } from "react";
+import ReactDOM from "react-dom";
 import { Link } from "react-router-dom";
 import gsap from "gsap";
 import { documentsApi } from "../api/documents";
@@ -621,18 +622,19 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Upload Modal */}
-      {showModal && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget && !uploading) setShowModal(false);
-          }}
-        >
+      {/* Upload Modal (PORTAL KE DOCUMENT.BODY) */}
+      {showModal &&
+        ReactDOM.createPortal(
           <div
-            className="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-lg rounded-2xl shadow-2xl animate-in fade-in zoom-in-95 duration-200"
-            ref={modalRef}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[99999] flex items-center justify-center p-4 animate-fade-in"
+            onClick={(e) => {
+              if (e.target === e.currentTarget && !uploading) setShowModal(false);
+            }}
           >
+            <div
+              className="bg-[var(--bg-card)] border border-[var(--border-color)] w-full max-w-lg rounded-2xl shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+              ref={modalRef}
+            >
             <div className="px-6 py-4 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-input)] rounded-t-2xl">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-sky-500 flex items-center justify-center shrink-0">
@@ -872,7 +874,8 @@ export default function DashboardPage() {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <ConfirmModal

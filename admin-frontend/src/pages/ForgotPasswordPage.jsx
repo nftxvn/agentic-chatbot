@@ -23,7 +23,7 @@ export default function ForgotPasswordPage() {
   const isDark = theme === 'dark'
   const navigate = useNavigate()
 
-  const textParagraph = "Sistem manajemen dokumen cerdas berbasis RAG dan LLM untuk pelayanan publik yang responsif & terotomatisasi."
+  const textParagraph = "Sistem Asisten Pelayanan Administrasi DISKOMINFOTIK Kota Banda Aceh."
   const words = textParagraph.split(' ')
   const replacementPhrases = [
     'AI Support',
@@ -181,8 +181,23 @@ export default function ForgotPasswordPage() {
 
         {/* Center Hero Text */}
         <div className="relative z-10 max-w-2xl my-auto">
-          <h1 className={`text-4xl font-extrabold tracking-tight leading-tight mb-4 ${
-            isDark ? 'text-white drop-shadow-sm' : 'text-sky-950'
+          {/* Brand Header: Judul SAPA */}
+          <div className="mb-10 sm:mb-12">
+            <h1 className={`text-5xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-none ${
+              isDark ? 'text-white drop-shadow-md' : 'text-sky-950'
+            }`}>
+              SAPA
+            </h1>
+            <p className={`text-sm sm:text-base font-bold tracking-tight mt-1 ${
+              isDark ? 'text-sky-200' : 'text-sky-800'
+            }`}>
+              Sistem Asisten Pelayanan Administrasi
+            </p>
+          </div>
+
+          {/* Slogan Interaktif */}
+          <div className={`text-2xl sm:text-3xl font-extrabold tracking-tight leading-snug ${
+            isDark ? 'text-white/95' : 'text-sky-950'
           }`}>
             <div>
               Kelola Pengetahuan &{' '}
@@ -204,21 +219,7 @@ export default function ForgotPasswordPage() {
               </span>
             </div>
             <div>Dalam Satu Tempat.</div>
-          </h1>
-          <p
-            ref={heroTextRef}
-            className={`text-base leading-relaxed font-medium flex flex-wrap gap-x-1.5 gap-y-0.5 ${
-              isDark ? 'text-sky-100' : 'text-sky-900'
-            }`}
-          >
-            {words.map((word, idx) => (
-              <span key={idx} className="inline-block overflow-hidden py-0.5">
-                <span className="hero-word-inner inline-block transform-gpu origin-bottom">
-                  {word}
-                </span>
-              </span>
-            ))}
-          </p>
+          </div>
         </div>
       </div>
 

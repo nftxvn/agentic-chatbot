@@ -135,9 +135,13 @@ export function SlidingTabs({
             className={`relative z-10 rounded-lg font-bold transition-colors duration-200 cursor-pointer text-center whitespace-nowrap ${
               fullWidth ? 'flex-1' : 'shrink-0'
             } ${
-              size === 'xs'
-                ? 'px-2.5 py-1 text-xs font-mono uppercase'
-                : 'px-3.5 py-1.5 text-xs'
+              size === 'lg'
+                ? 'px-5 py-2.5 text-sm sm:text-base'
+                : size === 'md'
+                  ? 'px-4 sm:px-5 py-2 text-xs sm:text-sm'
+                  : size === 'xs'
+                    ? 'px-2.5 py-1 text-xs font-mono uppercase'
+                    : 'px-3.5 py-1.5 text-xs'
             } ${
               isActive
                 ? 'text-white'

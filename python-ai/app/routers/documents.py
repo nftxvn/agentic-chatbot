@@ -315,11 +315,6 @@ async def get_document_chunks_route(
     },
     response_class=Response,
 )
-@router.get(
-    "/{document_id}/halaman/{page_number}/citra",
-    include_in_schema=False,
-    response_class=Response,
-)
 async def citra_halaman(
     document_id: int,
     page_number: int,
@@ -410,10 +405,6 @@ async def citra_halaman(
         "tanpa merender apa pun. Dipakai editor untuk menyiapkan ukuran panel."
     ),
 )
-@router.get(
-    "/{document_id}/halaman/ukuran",
-    include_in_schema=False,
-)
 async def ukuran_semua_halaman(
     document_id: int,
     _token: str = Depends(verify_token),
@@ -476,7 +467,6 @@ def get_ollama_tags():
 
 
 @router.get("/extraction-prompts", tags=["Ollama"])
-@router.get("/prompt-ekstraksi", tags=["Ollama"], include_in_schema=False)
 def prompt_ekstraksi_bawaan(_token: str = Depends(verify_token)) -> dict:
     """
     Teks prompt bawaan yang BENAR-BENAR dipakai saat ekstraksi.

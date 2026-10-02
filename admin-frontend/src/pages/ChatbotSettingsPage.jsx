@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useLayoutEffect } from 'react'
+import ReactDOM from 'react-dom'
+import { useSearchParams } from 'react-router-dom'
 import gsap from 'gsap'
 import { getChatbotSettings, updateChatbotSettings, resetChatbotSettings, getAvailableModels, getHardwareStatus, benchmarkModel } from '../api/settings'
 import { documentsApi } from '../api/documents'
@@ -9,17 +11,55 @@ import { FloatingSaveBar } from '../components/UI/FloatingSaveBar'
 import { aiChatService } from '../services/aiChatService'
 import { FastPathSettings } from '../components/Settings/FastPathSettings'
 import { DirectorySettings } from '../components/Settings/DirectorySettings'
+import { CategorySettings } from '../components/Settings/CategorySettings'
 import { InfoTooltip } from '../components/UI/InfoTooltip'
 
 export default function ChatbotSettingsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab')
+
+  // Main 2 tabs: 'categories' | 'chatbot'
+  const initialMainTab = tabParam === 'categories' ? 'categories' : 'chatbot'
+  const [mainTab, setMainTab] = useState(initialMainTab)
+
+  // Sub-tabs inside Chatbot Settings: 'studio' | 'fastpaths' | 'directories'
+  const initialChatbotSubTab = ['fastpaths', 'directories'].includes(tabParam) ? tabParam : 'studio'
+  const [chatbotSubTab, setChatbotSubTab] = useState(initialChatbotSubTab)
+
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [resetting, setResetting] = useState(false)
   const [statusMsg, setStatusMsg] = useState(null)
-  const [mainSection, setMainSection] = useState('studio') // 'studio' | 'fastpaths' | 'directories'
   const [activeConfigTab, setActiveConfigTab] = useState('prompt') // 'prompt' | 'identity' | 'params'
   const [activePlaygroundTab, setActivePlaygroundTab] = useState('chat') // 'chat' | 'chunks' | 'api'
   const [showResetModal, setShowResetModal] = useState(false)
+
+  // Sync tabs with URL search params
+  useEffect(() => {
+    const currentTab = searchParams.get('tab')
+    if (currentTab === 'categories') {
+      setMainTab('categories')
+    } else if (['chatbot', 'studio', 'fastpaths', 'directories'].includes(currentTab)) {
+      setMainTab('chatbot')
+      if (['fastpaths', 'directories', 'studio'].includes(currentTab)) {
+        setChatbotSubTab(currentTab)
+      }
+    }
+  }, [searchParams])
+
+  const handleMainTabChange = (newTab) => {
+    setMainTab(newTab)
+    if (newTab === 'categories') {
+      setSearchParams({ tab: 'categories' })
+    } else {
+      setSearchParams({ tab: chatbotSubTab })
+    }
+  }
+
+  const handleChatbotSubTabChange = (newSubTab) => {
+    setChatbotSubTab(newSubTab)
+    setSearchParams({ tab: newSubTab })
+  }
 
   // Hardware Auto-Detection & Live Telemetry State
   const [hardwareData, setHardwareData] = useState(null)
@@ -50,6 +90,7 @@ export default function ChatbotSettingsPage() {
   const rightCardRef = useRef(null)
   const promptTextareaRef = useRef(null)
   const chatBottomRef = useRef(null)
+  const categorySettingsRef = useRef(null)
 
   const { chatMessages, retrievedChunks, isStreaming } = chatState
 
@@ -473,42 +514,9 @@ console.log("Rujukan:", data.sources);`
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 sm:p-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-sm">
         <div ref={headerRef} className="space-y-1">
           <h1 className="text-xl sm:text-2xl font-black text-[var(--text-primary)] tracking-tight flex items-center">
-            <span>CHATBOT & RAG PLAYGROUND</span>
-            <InfoTooltip size="lg" content="Pusat konfigurasi prompt instruksi AI, parameter inferensi LLM, serta sandbox simulasi pengujian retrieval korpus dokumen RAG secara live." />
+            <span>KONFIGURASI AI</span>
+            <InfoTooltip size="lg" content="Pusat konfigurasi model LLM, prompt instruksi sistem, kategori & aturan OCR dokumen, pintasan FAQ, dan direktori OPD." />
           </h1>
-        </div>
-
-        <div className="flex items-center gap-2.5 shrink-0 self-start md:self-auto">
-          <button
-            type="button"
-            onClick={() => setShowResetModal(true)}
-            disabled={resetting || saving}
-            className="px-3.5 py-2 text-xs font-semibold rounded-xl text-[var(--text-secondary)] hover:text-[var(--red-color)] hover:bg-[var(--bg-input)] border border-[var(--border-color)] transition-colors cursor-pointer disabled:opacity-50"
-          >
-            Reset
-          </button>
-
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={saving || !isDirty}
-            className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-white transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer shadow-md ${
-              isDirty
-                ? 'bg-gradient-to-r from-sky-500 via-sky-500 to-sky-300 dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 shadow-sky-500/25 hover:scale-[1.02]'
-                : 'bg-[var(--bg-input)] border border-[var(--border-color)] !text-[var(--text-muted)] cursor-not-allowed opacity-60'
-            }`}
-          >
-            {saving ? (
-              <>
-                <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>Menyimpan...</span>
-              </>
-            ) : isDirty ? (
-              <span>Simpan Perubahan</span>
-            ) : (
-              <span>Tersimpan</span>
-            )}
-          </button>
         </div>
       </div>
 
@@ -543,44 +551,127 @@ console.log("Rujukan:", data.sources);`
         </div>
       )}
 
-      {/* ── TOP SECTION SWITCHER ─────────────────────────────────── */}
-      <div className="bg-[var(--bg-card)] p-2 sm:p-2.5 rounded-xl border border-[var(--border-color)] shadow-xs">
-        <SlidingTabs
-          tabs={[
-            { id: 'studio', label: 'Studio Prompt & Sandbox Live' },
-            { id: 'fastpaths', label: 'Fast-Path & FAQ Dinamis' },
-            { id: 'directories', label: 'Direktori Unit Kerja' },
-          ]}
-          activeTab={mainSection}
-          onChange={setMainSection}
-          variant="pill"
-        />
+      {/* ── 1 CARD UTAMA NAVIGASI TERPADU ─────────────────────────── */}
+      <div className="bg-[var(--bg-card)] p-2.5 sm:p-3 rounded-xl border border-[var(--border-color)] shadow-xs space-y-2.5">
+        {/* Tier 1: Kategori vs Chatbot Setting */}
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <SlidingTabs
+            tabs={[
+              { id: 'categories', label: 'Kategori' },
+              { id: 'chatbot', label: 'Chatbot Setting' },
+            ]}
+            activeTab={mainTab}
+            onChange={handleMainTabChange}
+            variant="pill"
+            size="md"
+          />
+        </div>
+
+        {/* Tier 2: Saat Tab Kategori aktif -> Manajemen Kategori & Aturan OCR + Tombol Tambah di Card Utama */}
+        {mainTab === 'categories' && (
+          <div className="pt-2.5 border-t border-[var(--border-color)] animate-fade-in flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm sm:text-base font-bold text-[var(--text-primary)] flex items-center gap-2">
+                <span>Manajemen Kategori & Aturan OCR</span>
+                <InfoTooltip content="Pengaturan profil vision OCR, instruksi pembersih teks tabel SOP, dan variabel spesifik per kategori dokumen." />
+              </h2>
+            </div>
+            <button
+              type="button"
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-sky-500 via-sky-500 to-sky-200 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 dark:text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-sky-500/25 transition-all duration-200 hover:scale-[1.02] shrink-0 cursor-pointer"
+              onClick={() => categorySettingsRef.current?.openCreateModal()}
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+              <span>Tambah Kategori Baru</span>
+            </button>
+          </div>
+        )}
+
+        {/* Tier 2: Saat Tab Chatbot Setting aktif -> Sub-Menu Chatbot ("Studio Prompt & Sandbox Live", "Pintasan FAQ", "Direktori Unit Kerja") */}
+        {mainTab === 'chatbot' && (
+          <div className="pt-2 border-t border-[var(--border-color)] animate-fade-in flex items-center justify-between gap-3 flex-wrap">
+            <SlidingTabs
+              tabs={[
+                { id: 'studio', label: 'Studio Prompt & Sandbox Live' },
+                { id: 'fastpaths', label: 'Pintasan FAQ' },
+                { id: 'directories', label: 'Direktori Unit Kerja (OPD)' },
+              ]}
+              activeTab={chatbotSubTab}
+              onChange={handleChatbotSubTabChange}
+              variant="pill"
+            />
+
+            {/* Tombol Reset di ujung kanan saat tab Studio aktif */}
+            {chatbotSubTab === 'studio' && (
+              <button
+                type="button"
+                onClick={() => setShowResetModal(true)}
+                disabled={resetting || saving}
+                className="px-3.5 py-1.5 text-xs font-semibold rounded-xl text-[var(--text-secondary)] hover:text-[var(--red-color)] hover:bg-[var(--bg-input)] border border-[var(--border-color)] transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5 shrink-0"
+                title="Reset konfigurasi prompt dan parameter ke pengaturan bawaan awal"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                </svg>
+                <span>Reset</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* ── UNIFIED TWO-COLUMN WORKSPACE ───────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* ── LEFT COLUMN: CONFIGURATION & PARAMETERS ──────────── */}
-        <div
-          ref={leftCardRef}
-          className={`${
-            mainSection === 'studio'
-              ? 'lg:col-span-6 xl:col-span-5'
-              : 'lg:col-span-7 xl:col-span-7'
-          } bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-4 sm:p-5 shadow-xs space-y-4`}
-        >
-          {mainSection === 'studio' && (
-            <>
-              {/* Config Tabs */}
-              <SlidingTabs
-                tabs={[
-                  { id: 'prompt', label: 'System Prompt' },
-                  { id: 'identity', label: 'Identitas & Cakupan' },
-                  { id: 'params', label: 'Parameter Model' },
-                ]}
-                activeTab={activeConfigTab}
-                onChange={setActiveConfigTab}
-                variant="underline"
-              />
+      {/* ── TAB 1: KATEGORI ──────────────────────────────────────── */}
+      {mainTab === 'categories' && (
+        <div key="categories" className="animate-fade-in">
+          <CategorySettings ref={categorySettingsRef} hideActionBar={true} />
+        </div>
+      )}
+
+      {/* ── TAB 2: PINTASAN FAQ ──────────────────────────────────── */}
+      {mainTab === 'chatbot' && chatbotSubTab === 'fastpaths' && (
+        <div key="fastpaths" className="animate-fade-in">
+          <FastPathSettings />
+        </div>
+      )}
+
+      {/* ── TAB 3: DIREKTORI UNIT KERJA ─────────────────────────── */}
+      {mainTab === 'chatbot' && chatbotSubTab === 'directories' && (
+        <div key="directories" className="animate-fade-in">
+          <DirectorySettings />
+        </div>
+      )}
+
+      {/* ── TAB 4: STUDIO PROMPT & SANDBOX LIVE ─────────────────── */}
+      {mainTab === 'chatbot' && chatbotSubTab === 'studio' && (
+        <div key="studio" className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start animate-fade-in">
+          {/* ── LEFT COLUMN: CONFIGURATION & PARAMETERS ──────────── */}
+          <div
+            ref={leftCardRef}
+            className="lg:col-span-6 xl:col-span-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-4 sm:p-5 shadow-xs space-y-4"
+          >
+                {/* Config Tabs */}
+                <SlidingTabs
+                  tabs={[
+                    { id: 'prompt', label: 'System Prompt' },
+                    { id: 'identity', label: 'Identitas & Cakupan' },
+                    { id: 'params', label: 'Parameter Model' },
+                  ]}
+                  activeTab={activeConfigTab}
+                  onChange={setActiveConfigTab}
+                  variant="underline"
+                />
 
               {/* ── LEFT TABS CONTENT CONTAINER (FADE ANIMATED) ──────── */}
               <div key={activeConfigTab} className="animate-fade-in">
@@ -1131,33 +1222,13 @@ console.log("Rujukan:", data.sources);`
             </div>
           )}
           </div>
-        </>
-      )}
-
-      {/* SECTION CONTENT: FAST-PATH & FAQ DINAMIS */}
-      {mainSection === 'fastpaths' && (
-        <div key="fastpaths" className="animate-fade-in">
-          <FastPathSettings />
         </div>
-      )}
 
-      {/* SECTION CONTENT: DIREKTORI UNIT KERJA & BIDANG */}
-      {mainSection === 'directories' && (
-        <div key="directories" className="animate-fade-in">
-          <DirectorySettings />
-        </div>
-      )}
-    </div>
-
-    {/* ── RIGHT COLUMN: INTERACTIVE PLAYGROUND & INSPECTOR ─── */}
-    <div
-      ref={rightCardRef}
-      className={`${
-        mainSection === 'studio'
-          ? 'lg:col-span-6 xl:col-span-7'
-          : 'lg:col-span-5 xl:col-span-5'
-      } bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xs overflow-hidden flex flex-col min-h-[560px]`}
-    >
+        {/* ── RIGHT COLUMN: INTERACTIVE PLAYGROUND & INSPECTOR ─── */}
+        <div
+          ref={rightCardRef}
+          className="lg:col-span-6 xl:col-span-7 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xs overflow-hidden flex flex-col min-h-[560px]"
+        >
           {/* Top Tabs */}
           <div className="p-3 sm:px-4 bg-[var(--bg-input)]/40 border-b border-[var(--border-color)] flex items-center justify-between gap-2 flex-wrap">
             <SlidingTabs
@@ -1508,49 +1579,52 @@ console.log("Rujukan:", data.sources);`
               </div>
             </div>
           )}
-          </div>
         </div>
       </div>
+    </div>
+  )}
 
       {/* ── FLOATING SAVE BAR (DIRTY STATE) ─────────────────────── */}
       <FloatingSaveBar
-        show={isDirty && mainSection === 'studio'}
+        show={isDirty && mainTab === 'chatbot' && chatbotSubTab === 'studio'}
         onSave={handleSubmit}
         onDiscard={handleDiscard}
         saving={saving}
       />
 
-      {/* ── RESET CONFIRMATION MODAL ────────────────────────────── */}
-      {showResetModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl max-w-sm w-full p-5 shadow-xl space-y-4">
-            <div className="space-y-1.5">
-              <h3 className="text-sm font-bold text-[var(--text-primary)]">
-                Reset Konfigurasi?
-              </h3>
-              <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-                Seluruh konfigurasi prompt, persona, dan parameter inferensi AI akan dikembalikan ke pengaturan bawaan awal.
-              </p>
+      {/* ── RESET CONFIRMATION MODAL (PORTAL KE DOCUMENT.BODY) ── */}
+      {showResetModal &&
+        ReactDOM.createPortal(
+          <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+            <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl max-w-sm w-full p-5 shadow-xl space-y-4">
+              <div className="space-y-1.5">
+                <h3 className="text-sm font-bold text-[var(--text-primary)]">
+                  Reset Konfigurasi?
+                </h3>
+                <p className="text-xs text-[var(--text-muted)] leading-relaxed">
+                  Seluruh konfigurasi prompt, persona, dan parameter inferensi AI akan dikembalikan ke pengaturan bawaan awal.
+                </p>
+              </div>
+              <div className="flex justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowResetModal(false)}
+                  className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-input)] transition-colors cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white transition-colors cursor-pointer shadow-xs"
+                >
+                  Ya, Reset
+                </button>
+              </div>
             </div>
-            <div className="flex justify-end gap-2.5 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowResetModal(false)}
-                className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-input)] transition-colors cursor-pointer"
-              >
-                Batal
-              </button>
-              <button
-                type="button"
-                onClick={handleReset}
-                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white transition-colors cursor-pointer shadow-xs"
-              >
-                Ya, Reset
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

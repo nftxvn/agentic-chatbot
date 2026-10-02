@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import ReactDOM from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import gsap from "gsap";
 import { documentsApi } from "../api/documents";
@@ -1473,10 +1474,11 @@ export default function ManualCorrectionEditor({
         </button>
       </div>
 
-      {/* Modal Pratinjau & Kustomisasi Potongan (Chunks) - Spacious Version */}
-      {showChunksModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-2 sm:p-4 md:p-6">
-          <div ref={chunksModalRef} className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl w-full max-w-[1520px] max-h-[94vh] h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+      {/* Modal Pratinjau & Kustomisasi Potongan (Chunks) - Spacious Version (PORTAL KE DOCUMENT.BODY) */}
+      {showChunksModal &&
+        ReactDOM.createPortal(
+          <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-2 sm:p-4 md:p-6 animate-fade-in">
+            <div ref={chunksModalRef} className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl w-full max-w-[1520px] max-h-[94vh] h-[92vh] flex flex-col shadow-2xl overflow-hidden">
             {/* Modal Header */}
             <div className="px-5 py-3 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-input)] shrink-0">
               <div className="flex items-center gap-2.5">
@@ -2183,7 +2185,8 @@ export default function ManualCorrectionEditor({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Floating Save Bar for Unsaved Page Corrections */}

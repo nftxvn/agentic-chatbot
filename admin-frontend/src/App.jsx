@@ -133,6 +133,7 @@ export default function App() {
             <Route path="/documents/:id"      element={<DocumentDetailPage />} />
             <Route path="/live-chat"          element={<LiveChatPage />} />
             <Route path="/settings/chatbot"   element={<ChatbotSettingsPage />} />
+            <Route path="/ai-config"          element={<ChatbotSettingsPage />} />
             <Route path="/integrations"       element={<IntegrationsPage />} />
             <Route path="/monitoring"         element={<MonitoringPage />} />
             <Route path="/helpdesk"           element={<Navigate to="/live-chat" replace />} />

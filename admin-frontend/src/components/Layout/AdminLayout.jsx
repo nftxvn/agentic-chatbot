@@ -6,8 +6,10 @@ import { useTheme } from "../../context/ThemeContext";
 import ConfirmModal from "../ConfirmModal";
 import komdigiLogo from "../../assets/komdigi-logo.svg";
 import bandaAcehLogo from "../../assets/banda-aceh-logo.svg";
+import sapaIcon from "../../assets/sapa-icon-512.svg";
 import { documentsApi } from "../../api/documents";
 import { categoriesApi } from "../../api/categories";
+import { ticketsApi } from "../../api/tickets";
 import { getWhatsappSettings } from "../../api/settings";
 import { getActiveEmbeddings, clearActiveEmbedding } from "../../utils/activeEmbedding";
 import { addAppNotification } from "../../utils/notifications";
@@ -46,25 +48,6 @@ const NAV_ITEMS = [
     ),
   },
   {
-    to: "/categories",
-    label: "Kategori",
-    icon: (
-      <svg
-        className="w-5 h-5"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={1.75}
-          d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"
-        />
-      </svg>
-    ),
-  },
-  {
     to: "/live-chat",
     label: "Live Chat & Tiket",
     icon: (
@@ -85,7 +68,7 @@ const NAV_ITEMS = [
   },
   {
     to: "/settings/chatbot",
-    label: "Chatbot & RAG",
+    label: "Konfigurasi AI",
     icon: (
       <svg
         className="w-5 h-5"
@@ -97,7 +80,7 @@ const NAV_ITEMS = [
           strokeLinecap="round"
           strokeLinejoin="round"
           strokeWidth={1.75}
-          d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a.75.75 0 01-.774-.823l.235-2.115C3.301 16.597 2.25 14.43 2.25 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"
+          d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"
         />
       </svg>
     ),
@@ -150,12 +133,6 @@ const QUICK_FEATURES = [
     to: "/dashboard",
   },
   {
-    id: "f-categories",
-    label: "Kategori",
-    desc: "Kelola profil OCR, prompt ekstraksi & variabel dokumen",
-    to: "/categories",
-  },
-  {
     id: "f-live-chat",
     label: "Live Chat & Tiket",
     desc: "Balas pesan percakapan warga yang dialihkan (Human Handoff) secara langsung",
@@ -163,8 +140,8 @@ const QUICK_FEATURES = [
   },
   {
     id: "f-chatbot",
-    label: "Chatbot & RAG",
-    desc: "Editor prompt, tuning parameter RAG, live chat testing & chunk inspector",
+    label: "Konfigurasi AI",
+    desc: "Editor prompt, tuning RAG, kategori OCR, pintasan FAQ & direktori unit kerja",
     to: "/settings/chatbot",
   },
   {
@@ -235,6 +212,7 @@ export default function AdminLayout() {
   });
 
   // Search System States & Optimization
+  const [openTicketsCount, setOpenTicketsCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchIndexData, setSearchIndexData] = useState({
@@ -656,16 +634,37 @@ export default function AdminLayout() {
     }
   };
 
+  const fetchTicketsCount = async () => {
+    try {
+      const statsRes = await ticketsApi.getStats().catch(() => null);
+      if (statsRes?.success && statsRes?.data) {
+        const count = (statsRes.data.open || 0) + (statsRes.data.in_progress || 0);
+        setOpenTicketsCount(count);
+      }
+    } catch (err) {
+      // silent fail
+    }
+  };
+
   useEffect(() => {
     fetchRealNotifications();
-    const interval = setInterval(fetchRealNotifications, 10000);
+    fetchTicketsCount();
+    const interval = setInterval(() => {
+      fetchRealNotifications();
+      fetchTicketsCount();
+    }, 10000);
 
-    const handleUpdateEvent = () => fetchRealNotifications();
+    const handleUpdateEvent = () => {
+      fetchRealNotifications();
+      fetchTicketsCount();
+    };
     window.addEventListener("app-notification-update", handleUpdateEvent);
+    window.addEventListener("app-tickets-updated", handleUpdateEvent);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener("app-notification-update", handleUpdateEvent);
+      window.removeEventListener("app-tickets-updated", handleUpdateEvent);
     };
   }, []);
 
@@ -988,36 +987,40 @@ export default function AdminLayout() {
 
           {/* Sidebar Header */}
           <div className="h-[85px] px-3 border-b border-[var(--border-color)] flex items-center justify-center overflow-hidden relative">
-            <div
-              className={`flex items-center gap-1 overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-                isSidebarCollapsed
-                  ? "opacity-0 max-w-0 -translate-x-4 pointer-events-none"
-                  : "opacity-100 max-w-[260px] translate-x-0"
-              }`}
-            >
-              <div className="p-1.5 rounded-xl flex items-center justify-center shrink-0">
+            {isSidebarCollapsed ? (
+              <div className="flex items-center justify-center p-1 animate-in fade-in zoom-in-95 duration-300">
                 <img
-                  src={bandaAcehLogo}
-                  alt="Logo Kota Banda Aceh"
-                  className="h-11 w-auto object-contain"
+                  src={sapaIcon}
+                  alt="SAPA Logo"
+                  className="h-10 w-10 object-contain rounded-xl shadow-xs"
                 />
               </div>
-              <div className="p-1 rounded-xl flex items-center justify-center shrink-0">
-                <img
-                  src={komdigiLogo}
-                  alt="Logo Komdigi"
-                  className="h-8 w-auto object-contain"
-                />
+            ) : (
+              <div className="flex items-center gap-1 overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] opacity-100 max-w-[260px] translate-x-0">
+                <div className="p-1.5 rounded-xl flex items-center justify-center shrink-0">
+                  <img
+                    src={bandaAcehLogo}
+                    alt="Logo Kota Banda Aceh"
+                    className="h-11 w-auto object-contain"
+                  />
+                </div>
+                <div className="p-1 rounded-xl flex items-center justify-center shrink-0">
+                  <img
+                    src={komdigiLogo}
+                    alt="Logo Komdigi"
+                    className="h-8 w-auto object-contain"
+                  />
+                </div>
+                <div className="overflow-hidden whitespace-nowrap">
+                  <h2 className="text-base font-black text-[var(--text-primary)] leading-tight tracking-tight uppercase">
+                    DISKOMINFOTIK
+                  </h2>
+                  <p className="text-[15.5px] text-[var(--text-muted)] font-semibold leading-tight">
+                    Kota Banda Aceh
+                  </p>
+                </div>
               </div>
-              <div className="overflow-hidden whitespace-nowrap">
-                <h2 className="text-base font-black text-[var(--text-primary)] leading-tight tracking-tight uppercase">
-                  DISKOMINFOTIK
-                </h2>
-                <p className="text-[15.5px] text-[var(--text-muted)] font-semibold leading-tight">
-                  Kota Banda Aceh
-                </p>
-              </div>
-            </div>
+            )}
 
             {/* Mobile Close Button */}
             <button
@@ -1092,8 +1095,13 @@ export default function AdminLayout() {
                       : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)]")
                   }
                 >
-                  <div className="shrink-0 flex items-center justify-center">
+                  <div className="shrink-0 flex items-center justify-center relative">
                     {item.icon}
+                    {item.to === "/live-chat" && openTicketsCount > 0 && isSidebarCollapsed && (
+                      <span className="absolute -top-1.5 -right-1.5 min-w-[17px] h-[17px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-black flex items-center justify-center shadow-md animate-pulse">
+                        {openTicketsCount > 99 ? "99+" : openTicketsCount}
+                      </span>
+                    )}
                   </div>
                   <span
                     className={`truncate whitespace-nowrap transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
@@ -1104,6 +1112,17 @@ export default function AdminLayout() {
                   >
                     {item.label}
                   </span>
+                  {item.to === "/live-chat" && openTicketsCount > 0 && !isSidebarCollapsed && (
+                    <span
+                      className={`ml-auto px-2 py-0.5 rounded-full text-xs font-black transition-all duration-300 ${
+                        location.pathname === "/live-chat"
+                          ? "bg-white/25 text-white"
+                          : "bg-rose-500 text-white shadow-xs"
+                      }`}
+                    >
+                      {openTicketsCount > 99 ? "99+" : openTicketsCount}
+                    </span>
+                  )}
                 </NavLink>
               ))
             )}
@@ -1373,7 +1392,7 @@ export default function AdminLayout() {
                                   key={cat.id}
                                   onClick={() => {
                                     closeSearch();
-                                    navigate("/categories");
+                                    navigate("/settings/chatbot?tab=categories");
                                   }}
                                   className="w-full text-left px-3 py-2 rounded-lg hover:bg-[var(--bg-input)] transition-colors flex items-center justify-between group cursor-pointer"
                                 >

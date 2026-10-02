@@ -66,16 +66,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}/pages/dimensions',              [EkstraksiController::class, 'ukuranHalaman'])->name('api.documents.pages.dimensions');
         Route::match(['get', 'post'], '/{id}/chunks/preview', [EkstraksiController::class, 'potongan'])->name('api.documents.chunks.preview');
         Route::post('/{id}/embed',                        [EkstraksiController::class, 'simpanKorpus'])->name('api.documents.embed');
-
-        // Aliases for backward compatibility
-        Route::post('/{id}/ekstraksi',                    [EkstraksiController::class, 'mulai'])->name('api.documents.ekstraksi.mulai');
-        Route::post('/{id}/ekstraksi/jeda',               [EkstraksiController::class, 'jeda'])->name('api.documents.ekstraksi.jeda');
-        Route::get('/{id}/ekstraksi',                     [EkstraksiController::class, 'status'])->name('api.documents.ekstraksi.status');
-        Route::get('/{id}/halaman',                       [EkstraksiController::class, 'halaman'])->name('api.documents.halaman.index');
-        Route::put('/{id}/halaman/{pageNumber}',          [EkstraksiController::class, 'simpanHalaman'])->name('api.documents.halaman.update');
-        Route::get('/{id}/halaman/ukuran',                [EkstraksiController::class, 'ukuranHalaman'])->name('api.documents.halaman.ukuran');
-        Route::match(['get', 'post'], '/{id}/potongan', [EkstraksiController::class, 'potongan'])->name('api.documents.potongan');
-        Route::post('/{id}/simpan',                       [EkstraksiController::class, 'simpanKorpus'])->name('api.documents.simpan');
     });
 
     // API Key Management (Admin)
