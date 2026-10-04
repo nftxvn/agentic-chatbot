@@ -40,6 +40,12 @@ export default function IntegrationsPage() {
   const [copiedKey, setCopiedKey] = useState(false)
   const [deleteKeyTarget, setDeleteKeyTarget] = useState(null)
   const [deletingKey, setDeletingKey] = useState(false)
+  const [webhookTarget, setWebhookTarget] = useState(null)
+  const [webhookForm, setWebhookForm] = useState({ webhook_url: '', webhook_enabled: false })
+  const [savingWebhook, setSavingWebhook] = useState(false)
+  const [rotatingWebhookSecret, setRotatingWebhookSecret] = useState(false)
+  const [webhookSecretOnce, setWebhookSecretOnce] = useState('')
+  const [webhookDeliveries, setWebhookDeliveries] = useState([])
 
   // ── STATE: WHATSAPP SETTINGS ─────────────────────────────────
   const [initialWaForm, setInitialWaForm] = useState(null)
@@ -207,6 +213,54 @@ export default function IntegrationsPage() {
       setStatusMsg({ type: 'error', text: 'Gagal menghapus API Key.' })
     } finally {
       setDeletingKey(false)
+    }
+  }
+
+  const openWebhookSettings = async (key) => {
+    setWebhookTarget(key)
+    setWebhookForm({
+      webhook_url: key.webhook_url || '',
+      webhook_enabled: Boolean(key.webhook_enabled),
+    })
+    setWebhookSecretOnce('')
+    setWebhookDeliveries([])
+    try {
+      const result = await apiKeysApi.webhookDeliveries(key.id)
+      setWebhookDeliveries(Array.isArray(result?.data) ? result.data : [])
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const handleSaveWebhook = async (e) => {
+    e.preventDefault()
+    if (!webhookTarget) return
+    setSavingWebhook(true)
+    try {
+      const result = await apiKeysApi.updateWebhook(webhookTarget.id, webhookForm)
+      setKeys((prev) => prev.map((key) => key.id === webhookTarget.id ? { ...key, ...result.data } : key))
+      setWebhookTarget((prev) => prev ? { ...prev, ...result.data } : prev)
+      setStatusMsg({ type: 'success', text: result.message || 'Konfigurasi webhook tersimpan.' })
+      setWebhookTarget(null)
+    } catch (err) {
+      setStatusMsg({ type: 'error', text: err.response?.data?.message || 'Gagal menyimpan webhook.' })
+    } finally {
+      setSavingWebhook(false)
+    }
+  }
+
+  const handleRotateWebhookSecret = async () => {
+    if (!webhookTarget) return
+    setRotatingWebhookSecret(true)
+    try {
+      const result = await apiKeysApi.rotateWebhookSecret(webhookTarget.id)
+      setWebhookSecretOnce(result.data.plain_secret)
+      setKeys((prev) => prev.map((key) => key.id === webhookTarget.id ? { ...key, webhook_secret_configured: true } : key))
+      setWebhookTarget((prev) => prev ? { ...prev, webhook_secret_configured: true } : prev)
+    } catch (err) {
+      setStatusMsg({ type: 'error', text: err.response?.data?.message || 'Gagal membuat secret webhook.' })
+    } finally {
+      setRotatingWebhookSecret(false)
     }
   }
 
@@ -551,6 +605,7 @@ console.log("Rujukan:", data.sources);`
                     <th className="py-3 px-4">Nama Aplikasi / Klien</th>
                     <th className="py-3 px-4">Token Akses</th>
                     <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">Webhook Balasan</th>
                     <th className="py-3 px-4">Terakhir Digunakan</th>
                     <th className="py-3 px-4">Dibuat Pada</th>
                     <th className="py-3 px-4 text-right">Aksi</th>
@@ -573,6 +628,20 @@ console.log("Rujukan:", data.sources);`
                         >
                           {key.is_active ? 'Aktif' : 'Nonaktif'}
                         </button>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <button
+                          type="button"
+                          onClick={() => openWebhookSettings(key)}
+                          className="px-2.5 py-1.5 rounded-lg border border-[var(--border-color)] bg-[var(--bg-card)] hover:border-sky-500 text-[var(--text-secondary)] hover:text-sky-500 transition-colors cursor-pointer whitespace-nowrap"
+                        >
+                          {key.webhook_enabled ? 'Aktif' : 'Atur Webhook'}
+                        </button>
+                        {key.last_webhook_delivery && (
+                          <span className={`block mt-1 text-[11px] ${key.last_webhook_delivery.status === 'delivered' ? 'text-emerald-600 dark:text-emerald-400' : key.last_webhook_delivery.status === 'failed' ? 'text-rose-500' : 'text-amber-600 dark:text-amber-400'}`}>
+                            Terakhir: {key.last_webhook_delivery.status}
+                          </span>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-xs text-[var(--text-muted)]">
                         {key.last_used_at ? new Date(key.last_used_at).toLocaleString('id-ID') : 'Belum pernah'}
@@ -904,6 +973,25 @@ console.log("Rujukan:", data.sources);`
                 </label>
               </div>
 
+              {/* Bot Username */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-[var(--text-primary)] flex items-center">
+                  <span>Username Bot (Opsional)</span>
+                  <InfoTooltip
+                    align="left"
+                    content="Nama akun @username bot Telegram resmi instansi."
+                  />
+                </label>
+                <input
+                  type="text"
+                  name="telegram_bot_username"
+                  value={tgForm.telegram_bot_username}
+                  onChange={handleTgChange}
+                  placeholder="Contoh: @DiskominfotikBandaAcehBot"
+                  className="w-full px-3.5 py-2 text-xs rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-sky-500 transition-colors font-mono"
+                />
+              </div>
+
               {/* Bot Token */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-[var(--text-primary)] flex items-center">
@@ -939,25 +1027,6 @@ console.log("Rujukan:", data.sources);`
                 <p className="text-[11px] text-[var(--text-muted)]">
                   Dapatkan token resmi dengan membuka Telegram &rarr; cari akun terverifikasi <strong>@BotFather</strong> &rarr; kirim perintah <code>/newbot</code>.
                 </p>
-              </div>
-
-              {/* Bot Username */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-[var(--text-primary)] flex items-center">
-                  <span>Username Bot (Opsional)</span>
-                  <InfoTooltip
-                    align="left"
-                    content="Nama akun @username bot Telegram resmi instansi."
-                  />
-                </label>
-                <input
-                  type="text"
-                  name="telegram_bot_username"
-                  value={tgForm.telegram_bot_username}
-                  onChange={handleTgChange}
-                  placeholder="Contoh: @DiskominfotikBandaAcehBot"
-                  className="w-full px-3.5 py-2 text-xs rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-sky-500 transition-colors font-mono"
-                />
               </div>
 
               <div className="pt-2">
@@ -1286,6 +1355,86 @@ console.log("Rujukan:", data.sources);`
                 </button>
               </div>
             </div>
+          </div>,
+          document.body
+        )}
+
+      {webhookTarget &&
+        ReactDOM.createPortal(
+          <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+            <form onSubmit={handleSaveWebhook} className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl max-w-xl w-full p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-[var(--text-primary)]">Webhook Balasan Petugas</h3>
+                <p className="text-xs text-[var(--text-muted)]">Klien: <strong>{webhookTarget.name}</strong>. Balasan non-internal dari petugas akan dikirim ke URL ini.</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-[var(--text-primary)]">URL Penerima</label>
+                <input
+                  type="url"
+                  value={webhookForm.webhook_url}
+                  onChange={(e) => setWebhookForm((prev) => ({ ...prev, webhook_url: e.target.value }))}
+                  placeholder="https://sistem-anda.go.id/webhooks/sapa"
+                  className="w-full px-3 py-2.5 text-xs rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-primary)] focus:outline-none focus:border-sky-500 font-mono"
+                />
+                <p className="text-[11px] text-[var(--text-muted)]">HTTP lokal diizinkan untuk demo; gunakan HTTPS untuk server publik.</p>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-[var(--bg-input)]/50 border border-[var(--border-color)]">
+                <div>
+                  <p className="text-xs font-semibold text-[var(--text-primary)]">Aktifkan pengiriman event</p>
+                  <p className="text-[11px] text-[var(--text-muted)]">Event: ticket.reply.created</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={webhookForm.webhook_enabled}
+                  onChange={(e) => setWebhookForm((prev) => ({ ...prev, webhook_enabled: e.target.checked }))}
+                  className="w-4 h-4 accent-sky-500 cursor-pointer"
+                />
+              </div>
+
+              <div className="space-y-2 p-3 rounded-lg border border-[var(--border-color)]">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold text-[var(--text-primary)]">Secret tanda tangan</p>
+                    <p className="text-[11px] text-[var(--text-muted)]">{webhookTarget.webhook_secret_configured ? 'Secret sudah tersimpan.' : 'Belum ada secret.'} Nilai baru hanya ditampilkan sekali.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRotateWebhookSecret}
+                    disabled={rotatingWebhookSecret}
+                    className="shrink-0 px-3 py-1.5 rounded-lg text-[11px] font-semibold border border-[var(--border-color)] hover:border-sky-500 hover:text-sky-500 disabled:opacity-50 cursor-pointer"
+                  >
+                    {rotatingWebhookSecret ? 'Membuat...' : webhookTarget.webhook_secret_configured ? 'Ganti Secret' : 'Buat Secret'}
+                  </button>
+                </div>
+                {webhookSecretOnce && (
+                  <div className="p-2.5 rounded-lg bg-[var(--bg-input)] border border-[var(--border-color)] flex items-start gap-2">
+                    <code className="text-[11px] font-mono text-[var(--text-primary)] break-all flex-1">{webhookSecretOnce}</code>
+                    <button type="button" onClick={() => handleCopy(webhookSecretOnce, 'secret')} className="shrink-0 px-2 py-1 rounded-md bg-sky-600 text-white text-[11px] font-semibold cursor-pointer">{copiedKey ? 'Tersalin' : 'Salin'}</button>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-bold text-[var(--text-primary)]">Riwayat pengiriman terbaru</p>
+                {webhookDeliveries.length ? (
+                  <div className="max-h-32 overflow-y-auto divide-y divide-[var(--border-color)] border border-[var(--border-color)] rounded-lg px-3">
+                    {webhookDeliveries.map((delivery) => (
+                      <div key={delivery.id} className="py-2 flex items-start justify-between gap-3 text-[11px]">
+                        <div><span className="font-mono">{delivery.event_type}</span><span className="block text-[var(--text-muted)]">{delivery.created_at ? new Date(delivery.created_at).toLocaleString('id-ID') : ''}</span>{delivery.last_error && <span className="block text-rose-500 break-all">{delivery.last_error}</span>}</div>
+                        <span className={delivery.status === 'delivered' ? 'text-emerald-600 dark:text-emerald-400' : delivery.status === 'failed' ? 'text-rose-500' : 'text-amber-600 dark:text-amber-400'}>{delivery.status}{delivery.response_status ? ` · ${delivery.response_status}` : ''}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className="text-[11px] text-[var(--text-muted)]">Belum ada pengiriman webhook.</p>}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-[var(--border-color)]">
+                <button type="button" onClick={() => setWebhookTarget(null)} className="px-3.5 py-2 rounded-lg text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-input)] cursor-pointer">Tutup</button>
+                <button type="submit" disabled={savingWebhook} className="px-4 py-2 rounded-lg text-xs font-bold bg-sky-600 text-white hover:bg-sky-500 disabled:opacity-50 cursor-pointer">{savingWebhook ? 'Menyimpan...' : 'Simpan Webhook'}</button>
+              </div>
+            </form>
           </div>,
           document.body
         )}

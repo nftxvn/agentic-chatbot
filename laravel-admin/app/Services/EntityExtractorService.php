@@ -263,7 +263,7 @@ class EntityExtractorService
                     }
                 }
             }
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::warning("EntityExtractorService: Gagal membaca Redis session {$sessionId}: " . $e->getMessage());
         }
 

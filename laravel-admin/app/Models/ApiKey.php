@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
 class ApiKey extends Model
@@ -15,12 +17,27 @@ class ApiKey extends Model
         'key',
         'is_active',
         'last_used_at',
+        'webhook_url',
+        'webhook_secret',
+        'webhook_enabled',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
         'last_used_at' => 'datetime',
+        'webhook_secret' => 'encrypted',
+        'webhook_enabled' => 'boolean',
     ];
+
+    public function webhookDeliveries(): HasMany
+    {
+        return $this->hasMany(WebhookDelivery::class);
+    }
+
+    public function latestWebhookDelivery(): HasOne
+    {
+        return $this->hasOne(WebhookDelivery::class)->latestOfMany();
+    }
 
     /**
      * Generate a secure random API key prefixed with sk_live_

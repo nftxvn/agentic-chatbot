@@ -20,6 +20,7 @@ echo "=== [2/6] Menghentikan proses lama jika ada ==="
 pkill -f "uvicorn app.main:app" || true
 pkill -f "celery -A app.tasks" || true
 pkill -f "artisan serve" || true
+pkill -f '[p]hp artisan queue:work' || true
 pkill -f "vite" || true
 sleep 1
 
@@ -37,7 +38,9 @@ nohup ./venv/bin/celery -A app.tasks.process_document.celery_app worker --loglev
 
 echo "=== [6/6] Menjalankan Laravel Backend (Port 8000) & Vite Frontend (Port 5173) ==="
 cd "$ROOT_DIR/laravel-admin"
-nohup php artisan serve --host 0.0.0.0 --port 8000 > "$ROOT_DIR/laravel-admin/artisan.log" 2>&1 &
+php artisan migrate --force
+PHP_CLI_SERVER_WORKERS=4 nohup php artisan serve --no-reload --host 0.0.0.0 --port 8000 > "$ROOT_DIR/laravel-admin/artisan.log" 2>&1 &
+nohup php artisan queue:work --tries=5 --timeout=25 --sleep=1 > "$ROOT_DIR/laravel-admin/queue-worker.log" 2>&1 &
 
 cd "$ROOT_DIR/admin-frontend"
 export PATH="/home/nftxvn/.nvm/versions/node/v20.20.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"

@@ -168,6 +168,12 @@ class SettingController extends Controller
         $hasToken = !empty($rawToken);
         $botUsername = AppSetting::getVal('telegram_bot_username', '');
 
+        // Hapus username bot demo lama yang masih tersimpan di database aktif.
+        if (strcasecmp(ltrim($botUsername, '@'), 'TesterDiskoBot') === 0) {
+            AppSetting::setVal('telegram_bot_username', '');
+            $botUsername = '';
+        }
+
         return response()->json([
             'telegram_status' => AppSetting::getVal('telegram_status', 'false') === 'true',
             'telegram_bot_token' => $hasToken ? '••••••••••••' : '',

@@ -73,6 +73,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/',              [\App\Http\Controllers\Api\ApiKeyController::class, 'index'])->name('api.api-keys.index');
         Route::post('/',             [\App\Http\Controllers\Api\ApiKeyController::class, 'store'])->name('api.api-keys.store');
         Route::patch('/{id}/toggle', [\App\Http\Controllers\Api\ApiKeyController::class, 'toggle'])->name('api.api-keys.toggle');
+        Route::patch('/{id}/webhook', [\App\Http\Controllers\Api\ApiKeyController::class, 'updateWebhook'])->name('api.api-keys.webhook.update');
+        Route::post('/{id}/webhook-secret', [\App\Http\Controllers\Api\ApiKeyController::class, 'rotateWebhookSecret'])->name('api.api-keys.webhook.secret');
+        Route::get('/{id}/webhook-deliveries', [\App\Http\Controllers\Api\ApiKeyController::class, 'webhookDeliveries'])->name('api.api-keys.webhook.deliveries');
         Route::delete('/{id}',       [\App\Http\Controllers\Api\ApiKeyController::class, 'destroy'])->name('api.api-keys.destroy');
     });
 
@@ -154,6 +157,5 @@ Route::prefix('v1/internal')->middleware('auth.internal')->group(function () {
     Route::post('chat-tickets', [InternalTicketController::class, 'storeOrUpdate'])->name('api.v1.internal.chat-tickets');
     Route::post('tickets',      [InternalTicketController::class, 'storeOrUpdate'])->name('api.v1.internal.tickets');
 });
-
 
 

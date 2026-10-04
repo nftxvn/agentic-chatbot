@@ -79,6 +79,7 @@ class ChatController extends Controller
 
         $startTime = microtime(true);
         $sessionId = $validated['session_id'] ?? ('session-' . Str::random(16));
+        $apiKey = $request->attributes->get('authenticated_api_key');
 
         // Human Takeover Gatekeeper: Cek apakah ada tiket aktif (open / in_progress)
         $activeTicket = ChatTicket::where('session_id', $sessionId)
@@ -87,6 +88,9 @@ class ChatController extends Controller
             ->first();
 
         if ($activeTicket) {
+            if ($apiKey && !$activeTicket->api_key_id) {
+                $activeTicket->api_key_id = $apiKey->id;
+            }
             \App\Services\EntityExtractorService::enrichTicket($activeTicket, $validated['query']);
 
             $senderDisplayName = $activeTicket->citizen_name ?: 'Warga';
@@ -162,11 +166,22 @@ class ChatController extends Controller
             $answer = $aiData['reply'] ?? '';
             $sources = $aiData['sources'] ?? [];
 
+            // Python dispatches human handoffs back to Laravel before returning its reply.
+            // Associate that ticket with the public API key so agent replies can use its webhook.
+            $handoffTicket = ChatTicket::where('session_id', $sessionId)
+                ->whereIn('status', ['open', 'in_progress'])
+                ->latest('id')
+                ->first();
+            if ($handoffTicket && $apiKey && !$handoffTicket->api_key_id) {
+                $handoffTicket->api_key_id = $apiKey->id;
+                $handoffTicket->save();
+            }
+            $isHumanTakeover = (bool) $handoffTicket;
+
             // Detect fallback if no sources or fallback phrasing
-            $isFallback = empty($sources) || str_contains($answer, 'tidak ditemukan');
+            $isFallback = !$isHumanTakeover && (empty($sources) || str_contains($answer, 'tidak ditemukan'));
 
             // Record telemetry log (Privacy compliant: no raw query/answer text stored)
-            $apiKey = $request->attributes->get('authenticated_api_key');
             \App\Models\ChatLog::create([
                 'session_id' => $sessionId,
                 'channel' => 'api_v1',
@@ -186,6 +201,9 @@ class ChatController extends Controller
                 'answer' => $answer,
                 'sources' => $sources,
                 'is_fallback' => $isFallback,
+                'is_human_takeover' => $isHumanTakeover,
+                'ticket_id' => $handoffTicket?->id,
+                'ticket_number' => $handoffTicket?->ticket_number,
                 'response_time_ms' => $elapsedMs,
             ]);
         } catch (\Exception $e) {
@@ -219,6 +237,7 @@ class ChatController extends Controller
         ]);
 
         $sessionId = $validated['session_id'] ?? ('stream-' . Str::random(16));
+        $apiKey = $request->attributes->get('authenticated_api_key');
 
         // Human Takeover Gatekeeper: Cek apakah ada tiket aktif (open / in_progress)
         $activeTicket = ChatTicket::where('session_id', $sessionId)
@@ -227,6 +246,9 @@ class ChatController extends Controller
             ->first();
 
         if ($activeTicket) {
+            if ($apiKey && !$activeTicket->api_key_id) {
+                $activeTicket->api_key_id = $apiKey->id;
+            }
             \App\Services\EntityExtractorService::enrichTicket($activeTicket, $validated['query']);
 
             $senderDisplayName = $activeTicket->citizen_name ?: 'Warga';
@@ -274,7 +296,7 @@ class ChatController extends Controller
             'include_debug' => false,
         ];
 
-        return new StreamedResponse(function () use ($payload, $validated) {
+        return new StreamedResponse(function () use ($payload, $validated, $sessionId, $apiKey) {
             $hasEmittedData = false;
             $ch = curl_init($this->getAiBaseUrl() . '/api/chat/stream');
             curl_setopt($ch, CURLOPT_POST, true);
@@ -301,6 +323,17 @@ class ChatController extends Controller
             curl_exec($ch);
             $curlError = curl_error($ch);
             curl_close($ch);
+
+            // The Python stream may create a handoff ticket while forwarding SSE.
+            // Attach it to this public API key so staff replies reach this client.
+            if ($apiKey) {
+                ChatTicket::where('session_id', $sessionId)
+                    ->whereIn('status', ['open', 'in_progress'])
+                    ->whereNull('api_key_id')
+                    ->latest('id')
+                    ->limit(1)
+                    ->update(['api_key_id' => $apiKey->id]);
+            }
 
             // Jika cURL gagal dan belum ada data yang terkirim, lakukan graceful degradation stream
             if (!$hasEmittedData || $curlError) {

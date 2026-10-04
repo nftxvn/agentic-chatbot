@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useLayoutEffect } from 'react'
 import ReactDOM from 'react-dom'
+import gsap from 'gsap'
 import { ticketsApi } from '../api/tickets'
 import { InfoTooltip } from '../components/UI/InfoTooltip'
 import { SlidingTabs } from '../components/UI/SlidingTabs'
@@ -29,7 +30,43 @@ export default function LiveChatPage() {
   const messagesEndRef = useRef(null)
   const isNearBottomRef = useRef(true)
   const prevMessagesLengthRef = useRef(0)
+  const replyInputRef = useRef(null)
+  const shouldRefocusReplyInputRef = useRef(false)
+  const sendingTicketIdRef = useRef(null)
   const fileInputRef = useRef(null)
+  const headerRef = useRef(null)
+
+  useLayoutEffect(() => {
+    if (sending || !shouldRefocusReplyInputRef.current) return
+
+    if (sendingTicketIdRef.current === selectedTicket?.id && selectedTicket?.status !== 'resolved') {
+      replyInputRef.current?.focus()
+    }
+
+    shouldRefocusReplyInputRef.current = false
+    sendingTicketIdRef.current = null
+  }, [sending, selectedTicket?.id, selectedTicket?.status])
+
+  useLayoutEffect(() => {
+    if (!headerRef.current?.children?.length) return
+
+    const context = gsap.context(() => {
+      gsap.fromTo(
+        headerRef.current.children,
+        { opacity: 0, x: -16 },
+        {
+          opacity: 1,
+          x: 0,
+          duration: 0.5,
+          stagger: 0.08,
+          ease: 'power2.out',
+          clearProps: 'all',
+        },
+      )
+    }, headerRef)
+
+    return () => context.revert()
+  }, [])
 
   const handleScroll = () => {
     if (!messagesContainerRef.current) return
@@ -198,6 +235,8 @@ export default function LiveChatPage() {
     e?.preventDefault()
     if ((!replyText.trim() && !selectedFile) || !selectedTicket || sending) return
 
+    shouldRefocusReplyInputRef.current = true
+    sendingTicketIdRef.current = selectedTicket.id
     setSending(true)
     try {
       await ticketsApi.reply(selectedTicket.id, replyText.trim(), selectedFile)
@@ -205,11 +244,6 @@ export default function LiveChatPage() {
       handleClearFile()
       await fetchMessages(selectedTicket.id, false)
       scrollToBottom()
-      addAppNotification({
-        title: 'Balasan Terkirim',
-        message: `Pesan resmi telah dikirimkan kepada ${selectedTicket.citizen_name || 'Warga'}.`,
-        type: 'success',
-      })
     } catch (err) {
       console.error('Failed to send reply:', err)
       addAppNotification({
@@ -307,9 +341,9 @@ export default function LiveChatPage() {
   return (
     <div className="p-3 sm:p-4.5 max-w-[1700px] mx-auto flex flex-col h-[calc(100vh-76px)] overflow-hidden gap-3">
       {/* ── HEADER BANNER (CLEAN & COMPACT) ───────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 px-4 sm:px-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xs shrink-0">
-        <div className="flex items-center gap-2">
-          <h1 className="text-lg sm:text-xl font-black text-[var(--text-primary)] tracking-tight flex items-center">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 sm:p-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-sm shrink-0">
+        <div ref={headerRef} className="flex items-center gap-2">
+          <h1 className="text-xl sm:text-2xl font-black text-[var(--text-primary)] tracking-tight flex items-center">
             <span>LIVE CHAT & TIKET</span>
             <InfoTooltip
               size="lg"
@@ -318,32 +352,23 @@ export default function LiveChatPage() {
           </h1>
         </div>
 
-        {/* Best Practice: Clean Live Status Indicator + Sync Button */}
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          <div
-            className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-semibold border border-emerald-500/20 shadow-xs"
-            title="Sistem terhubung dan otomatis memperbarui pesan setiap 5 detik"
-          >
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            <span>Live</span>
-          </div>
-
+        {/* Manual Sync Button */}
+        <div className="flex items-center gap-2 self-start md:self-auto">
           <button
+            type="button"
             onClick={() => fetchTickets(false)}
-            className="p-1.5 rounded-xl bg-[var(--bg-input)] hover:bg-[var(--bg-card)] text-[var(--text-secondary)] hover:text-sky-500 border border-[var(--border-color)] transition-all duration-200 cursor-pointer shadow-xs active:scale-95"
-            title="Perbarui Data Manual"
+            disabled={isRefreshing}
+            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-sky-500 via-sky-500 to-sky-300 dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-sky-500/25 transition-all duration-200 hover:scale-[1.02] cursor-pointer disabled:opacity-50"
           >
             <svg
-              className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-sky-500' : ''}`}
+              className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`}
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
             >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
+            <span>{isRefreshing ? 'Memperbarui...' : 'Segarkan Data'}</span>
           </button>
         </div>
       </div>
@@ -797,6 +822,7 @@ export default function LiveChatPage() {
                   </button>
 
                   <input
+                    ref={replyInputRef}
                     type="text"
                     placeholder={selectedFile ? "Tambahkan pesan atau kirim lampiran..." : "Ketik balasan resmi petugas di sini..."}
                     value={replyText}

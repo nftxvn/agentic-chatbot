@@ -985,6 +985,30 @@ export default function AdminLayout() {
             </svg>
           </button>
 
+          {/* Mobile edge toggle, matching the desktop sidebar control */}
+          {mobileMenuOpen && (
+            <button
+              onClick={() => setMobileMenuOpen(false)}
+              title="Tutup Menu Utama"
+              aria-label="Tutup Menu Utama"
+              className="lg:hidden absolute -right-4 top-1/2 -translate-y-1/2 z-50 w-8 h-8 rounded-full bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-sky-500 hover:border-sky-500 shadow-md flex items-center justify-center cursor-pointer transition-all duration-300 hover:scale-115 group"
+            >
+              <svg
+                className="w-4.5 h-4.5 transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2.25}
+                  d="M15.75 19.5L8.25 12l7.5-7.5"
+                />
+              </svg>
+            </button>
+          )}
+
           {/* Sidebar Header */}
           <div className="h-[85px] px-3 border-b border-[var(--border-color)] flex items-center justify-center overflow-hidden relative">
             {isSidebarCollapsed ? (
@@ -1022,13 +1046,6 @@ export default function AdminLayout() {
               </div>
             )}
 
-            {/* Mobile Close Button */}
-            <button
-              onClick={() => setMobileMenuOpen(false)}
-              className="lg:hidden text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 rounded-lg cursor-pointer"
-            >
-              ✕
-            </button>
           </div>
 
           <nav
@@ -1140,7 +1157,7 @@ export default function AdminLayout() {
           }`}
           ref={mainRef}
         >
-          <header className="sticky top-0 z-30 h-[85px] px-4 lg:px-6 bg-[var(--bg-sidebar)]/90 backdrop-blur-md border-b border-[var(--border-color)] flex items-center justify-between gap-3 shadow-xs">
+          <header className="sticky top-0 z-30 h-[85px] px-3 sm:px-4 lg:px-6 bg-[var(--bg-sidebar)]/90 backdrop-blur-md border-b border-[var(--border-color)] flex items-center justify-between gap-2 sm:gap-3 shadow-xs">
             <div className="flex items-center gap-3 shrink-0">
               {/* Mobile Hamburger Button */}
               <button
@@ -1165,10 +1182,10 @@ export default function AdminLayout() {
 
               {/* Header Branding Logo & Title: Visible on mobile, and on desktop smoothly when sidebar is collapsed */}
               <div
-                className={`items-center gap-1 overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] flex ${
+                className={`hidden lg:flex items-center gap-1 overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${
                   isSidebarCollapsed
                     ? "opacity-100 max-w-[320px] translate-x-0"
-                    : "max-lg:opacity-100 max-lg:max-w-[320px] max-lg:translate-x-0 lg:opacity-0 lg:max-w-0 lg:-translate-x-4 lg:pointer-events-none"
+                    : "opacity-0 max-w-0 -translate-x-4 pointer-events-none"
                 }`}
               >
                 <div className="flex items-center gap-1 overflow-hidden shrink-0">
@@ -1200,7 +1217,7 @@ export default function AdminLayout() {
 
             <div
               ref={searchContainerRef}
-              className="relative w-full max-w-md mx-auto"
+              className="relative flex-1 min-w-0 max-w-md mx-auto"
             >
               <svg
                 ref={searchIconRef}
@@ -1441,7 +1458,7 @@ export default function AdminLayout() {
                       { scale: 1, duration: 0.35, ease: "back.out(2.2)" },
                     );
                   }}
-                  className="p-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-primary)] hover:border-sky-500 hover:text-sky-500 transition-all flex items-center justify-center cursor-pointer relative"
+                  className="p-2 sm:p-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-primary)] hover:border-sky-500 hover:text-sky-500 transition-all flex items-center justify-center cursor-pointer relative"
                   title="Notifikasi"
                 >
                   <svg
@@ -1671,7 +1688,7 @@ export default function AdminLayout() {
                     },
                   );
                 }}
-                className="p-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-primary)] hover:border-sky-500 hover:text-sky-500 transition-all flex items-center justify-center cursor-pointer"
+                className="p-2 sm:p-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-input)] text-[var(--text-primary)] hover:border-sky-500 hover:text-sky-500 transition-all flex items-center justify-center cursor-pointer"
                 title={isDarkMode ? "Mode Terang" : "Mode Gelap"}
               >
                 {isDarkMode ? (
@@ -1725,7 +1742,7 @@ export default function AdminLayout() {
                         { scale: 1, duration: 0.3, ease: "back.out(2)" },
                       );
                     }}
-                    className="flex items-center gap-2.5 pl-3 border-l border-[var(--border-color)] text-left hover:opacity-90 transition-opacity cursor-pointer group"
+                    className="flex items-center gap-2.5 pl-0 sm:pl-3 border-l-0 sm:border-l border-[var(--border-color)] text-left hover:opacity-90 transition-opacity cursor-pointer group"
                     title="Menu Akun Admin"
                   >
                     <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-500 via-sky-500 to-sky-100 text-white dark:from-sky-500 dark:via-blue-600 dark:to-blue-700 text-sm font-bold flex items-center justify-center shadow-sm shrink-0">
@@ -1740,7 +1757,7 @@ export default function AdminLayout() {
                       </span>
                     </div>
                     <svg
-                      className={`w-4 h-4 text-[var(--text-muted)] group-hover:text-[var(--text-primary)] transition-transform duration-200 ${
+                      className={`hidden sm:block w-4 h-4 text-[var(--text-muted)] group-hover:text-[var(--text-primary)] transition-transform duration-200 ${
                         isUserMenuOpen ? "rotate-180 text-sky-500" : ""
                       }`}
                       fill="none"

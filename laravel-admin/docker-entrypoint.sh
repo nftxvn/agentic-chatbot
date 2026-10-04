@@ -37,5 +37,10 @@ echo "[Laravel Entrypoint] Menjalankan migrasi database & seeding awal..."
 php artisan migrate --force || true
 php artisan db:seed --force || true
 
+if [ "${1:-}" = "queue:work" ]; then
+    echo "[Laravel Entrypoint] Memulai worker antrean Laravel..."
+    exec php artisan "$@"
+fi
+
 echo "[Laravel Entrypoint] Memulai server Laravel pada port 8000..."
 exec php artisan serve --host=0.0.0.0 --port=8000

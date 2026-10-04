@@ -17,6 +17,7 @@ class ChatTicket extends Model
     protected $fillable = [
         'ticket_number',
         'session_id',
+        'api_key_id',
         'citizen_name',
         'citizen_contact',
         'citizen_agency',

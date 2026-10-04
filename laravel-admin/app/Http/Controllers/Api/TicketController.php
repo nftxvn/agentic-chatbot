@@ -5,8 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Events\TicketMessageSent;
 use App\Events\TicketUpdated;
 use App\Http\Controllers\Controller;
+use App\Jobs\DeliverTicketWebhook;
+use App\Models\ApiKey;
 use App\Models\ChatTicket;
 use App\Models\ChatTicketMessage;
+use App\Models\WebhookDelivery;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -170,12 +173,7 @@ class TicketController extends Controller
         // Record and emit system message flags
         if ($newStatus === 'resolved' || $newStatus === 'closed') {
             // Bersihkan memori sesi AI di Redis agar saat warga chat kembali, sesi AI langsung bersih dari awal
-            try {
-                \Illuminate\Support\Facades\Redis::connection()->select(2);
-                \Illuminate\Support\Facades\Redis::del("chatbot:session:{$ticket->session_id}");
-            } catch (\Exception $e) {
-                // Ignore Redis cleanup errors
-            }
+            $this->forgetAiSessionMemory($ticket->session_id, $ticket->id);
 
             $systemMsg = $ticket->messages()->create([
                 'sender_type' => 'system',
@@ -297,6 +295,7 @@ class TicketController extends Controller
         // Dispatch outbound message to external channels (Telegram / WhatsApp)
         if (!$isInternal) {
             $this->dispatchOutboundMessage($ticket, $messageText, $attachments);
+            $this->queueApiWebhook($ticket, $message);
         }
 
         // Dispatch real-time events
@@ -386,6 +385,63 @@ class TicketController extends Controller
         }
     }
 
+    protected function queueApiWebhook(ChatTicket $ticket, ChatTicketMessage $message): void
+    {
+        if (!$ticket->api_key_id || $message->is_internal_note) {
+            return;
+        }
+
+        $apiKey = ApiKey::find($ticket->api_key_id);
+        if (!$apiKey || !$apiKey->is_active || !$apiKey->webhook_enabled || !$apiKey->webhook_url || !$apiKey->webhook_secret) {
+            return;
+        }
+
+        $delivery = WebhookDelivery::create([
+            'event_id' => (string) \Illuminate\Support\Str::uuid(),
+            'api_key_id' => $apiKey->id,
+            'ticket_id' => $ticket->id,
+            'ticket_message_id' => $message->id,
+            'event_type' => 'ticket.reply.created',
+            'status' => 'queued',
+        ]);
+
+        try {
+            DeliverTicketWebhook::dispatch($delivery->id);
+        } catch (\Throwable $exception) {
+            $delivery->update([
+                'status' => 'failed',
+                'last_error' => mb_substr($exception->getMessage(), 0, 2000),
+            ]);
+
+            \Illuminate\Support\Facades\Log::warning('Gagal memasukkan webhook balasan tiket ke antrean.', [
+                'delivery_id' => $delivery->id,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Redis session cleanup is best-effort: a missing PHP Redis extension or
+     * an unavailable Redis server must not prevent the MySQL ticket deletion.
+     */
+    protected function forgetAiSessionMemory(?string $sessionId, int $ticketId): void
+    {
+        if (empty($sessionId)) {
+            return;
+        }
+
+        try {
+            $connection = \Illuminate\Support\Facades\Redis::connection();
+            $connection->select(2);
+            $connection->del("chatbot:session:{$sessionId}");
+        } catch (\Throwable $exception) {
+            \Illuminate\Support\Facades\Log::warning('Gagal membersihkan memori sesi Redis saat menghapus tiket.', [
+                'ticket_id' => $ticketId,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+    }
+
     /**
      * DELETE /api/tickets/{id}
      * Delete a single ticket and its associated data/attachments.
@@ -403,15 +459,8 @@ class TicketController extends Controller
             \Illuminate\Support\Facades\Log::warning("Gagal menghapus folder berkas tiket #{$ticket->id}: " . $e->getMessage());
         }
 
-        // 2. Clean up AI session memory in Redis
-        try {
-            if (!empty($sessionId)) {
-                \Illuminate\Support\Facades\Redis::connection()->select(2);
-                \Illuminate\Support\Facades\Redis::del("chatbot:session:{$sessionId}");
-            }
-        } catch (\Exception $e) {
-            // Ignore Redis errors
-        }
+        // 2. Clean up AI session memory in Redis (best-effort).
+        $this->forgetAiSessionMemory($sessionId, $ticket->id);
 
         // 3. Delete ticket records (messages cascade delete automatically)
         $ticket->delete();
@@ -445,14 +494,7 @@ class TicketController extends Controller
                 // Ignore
             }
 
-            try {
-                if (!empty($ticket->session_id)) {
-                    \Illuminate\Support\Facades\Redis::connection()->select(2);
-                    \Illuminate\Support\Facades\Redis::del("chatbot:session:{$ticket->session_id}");
-                }
-            } catch (\Exception $e) {
-                // Ignore
-            }
+            $this->forgetAiSessionMemory($ticket->session_id, $ticket->id);
 
             $ticket->delete();
             $deletedCount++;

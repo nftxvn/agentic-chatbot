@@ -153,7 +153,7 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
-    environment:
+    environment: &laravel_backend_environment
       - APP_NAME=AgenticCopilot
       - APP_ENV=local
       - APP_DEBUG=true
@@ -186,6 +186,31 @@ services:
         condition: service_healthy
       python-ai:
         condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/up"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+
+  laravel-queue:
+    build:
+      context: ./laravel-admin
+      dockerfile: Dockerfile
+    container_name: agentic-laravel-queue
+    restart: unless-stopped
+    command: ["queue:work", "--tries=5", "--timeout=25", "--sleep=1"]
+    environment: *laravel_backend_environment
+    volumes:
+      - ./laravel-admin:/var/www/html
+      - /var/www/html/vendor
+    networks:
+      - agentic-net
+    depends_on:
+      laravel-backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   # ==============================================================================
   # 5. ADMIN FRONTEND (VITE REACT SPA)

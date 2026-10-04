@@ -2109,6 +2109,9 @@ def generate_response(
                 citizen_agency=c_agency,
                 issue_summary=c_issue or query,
             )
+            # Keep the conversation history available until Laravel has received
+            # the extracted handoff details, then stop AI memory for this session.
+            session_memory.clear_session(session_id)
 
             if include_debug:
                 yield {
@@ -2132,8 +2135,6 @@ def generate_response(
                     "chunks_count": 0,
                     "is_fallback": True,
                 }
-            session_memory.add_user_message(session_id, query)
-            session_memory.add_assistant_message(session_id, handoff_msg, topic="Permintaan Bantuan Petugas")
             yield handoff_msg
             return
 
@@ -2161,6 +2162,9 @@ def generate_response(
                 citizen_agency=c_agency,
                 issue_summary=c_issue,
             )
+            # Follow-up identity/issue details now belong to the human ticket,
+            # so they should not remain in AI session memory either.
+            session_memory.clear_session(session_id)
 
             greeting_target = f"Bapak/Ibu {c_name}" if c_name else "Bapak/Ibu"
             if c_agency:
@@ -2193,8 +2197,6 @@ def generate_response(
                     "chunks_count": 0,
                     "is_fallback": True,
                 }
-            session_memory.add_user_message(session_id, query)
-            session_memory.add_assistant_message(session_id, followup_ack, topic="Permintaan Bantuan Petugas")
             yield followup_ack
             return
 
