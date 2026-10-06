@@ -202,8 +202,18 @@ _STANDALONE_TOPIC_MARKERS = {
     "magang", "pkl", "kenaikan pangkat", "pangkat", "gaji", "cuti", "pensiun",
     "subdomain", "domain", "email", "server", "wifi", "internet", "hosting", "aplikasi", "sistem",
     "jaringan", "perwal", "sk", "csirt", "siber", "smart city", "statistik", "persandian",
-    "bappeda", "walikota", "kadis", "kepala dinas", "sekretaris", "zoom", "rapat", "sppd", "spt", "dinas"
+    "bappeda", "walikota", "kadis", "kepala dinas", "sekretaris", "zoom", "rapat", "sppd", "spt", "dinas",
+    "sop", "prosedur", "tupoksi", "struktur", "alamat", "kontak", "lokasi", "jam kerja", "operasional",
 }
+
+
+def _is_doc_or_sop_topic(topic_name: str | None) -> bool:
+    """Mengecek apakah topik sebelumnya memang merupakan topik dokumen/SOP resmi."""
+    if not topic_name:
+        return False
+    t = topic_name.lower()
+    doc_keywords = ["sop", "dokumen", "renja", "renstra", "rka", "dpa", "perwal", "sk", "prosedur", "surat", "lkjip", "sakip", "iku", "pk"]
+    return any(k in t for k in doc_keywords)
 
 
 _RE_SESSION_RECAP = re.compile(
@@ -286,7 +296,8 @@ def resolve_contextual_query(query: str, session_id: str) -> tuple[str, bool]:
             last_user_query = m.get("content", "")
             break
 
-    context_subject = clean_context_subject(last_entity or last_topic or last_user_query)
+    raw_subj = last_entity or last_topic or last_user_query
+    context_subject = clean_context_subject(raw_subj)
 
     if not context_subject:
         return query, False
@@ -294,11 +305,21 @@ def resolve_contextual_query(query: str, session_id: str) -> tuple[str, bool]:
     q_lower = query.lower().strip()
     words = set(re.findall(r"\w+", q_lower))
 
+    # Guard: Pertanyaan global/kolektif mengenai SOP (e.g. 'semua sop', 'seluruh sop', 'daftar sop')
+    if any(phrase in q_lower for phrase in ["semua sop", "seluruh sop", "daftar sop", "kumpulan sop", "semua dokumen", "seluruh dokumen"]):
+        return query, False
+
     # 1. Ganti kata ganti eksplisit / frasa komparatif jika ada
     resolved = query
     replaced_pronoun = False
     for pat, repl in _COMPARATIVE_PHRASE_PATTERNS:
         if pat.search(resolved):
+            # Guard scoping: Jika frasa menyebut 'sop/dokumen ini/tersebut', pastikan context_subject memang dokumen SOP
+            is_doc_pattern = bool(re.search(r"\b(?:sop|dokumen)\b", pat.pattern, re.IGNORECASE))
+            if is_doc_pattern and not _is_doc_or_sop_topic(context_subject):
+                # Topik sebelumnya bukan dokumen SOP (misal: Profil Kepala Dinas / Alamat), jangan timpa!
+                continue
+
             # Gunakan lambda agar karakter khusus/backslash di context_subject tidak memicu regex escape error
             resolved = pat.sub(lambda m, r=repl, s=context_subject: r.format(subj=s), resolved)
             replaced_pronoun = True

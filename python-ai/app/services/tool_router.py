@@ -305,11 +305,60 @@ def parse_and_sum_durations_from_context(context_text: str) -> dict[str, Any] | 
     }
 
 
+import calendar
+
+
+def _calculate_calendar_difference(d1: datetime, d2: datetime) -> tuple[int, int, int]:
+    """
+    Menghitung selisih kalender gregorian presisi (years, months, days)
+    antara dua objek datetime (d1 <= d2).
+    """
+    if d1 > d2:
+        d1, d2 = d2, d1
+
+    try:
+        from dateutil.relativedelta import relativedelta
+        rd = relativedelta(d2, d1)
+        return rd.years, rd.months, rd.days
+    except Exception:
+        pass
+
+    # Algoritma Kalender Gregorian Murni (Fallback Standar)
+    years = d2.year - d1.year
+    months = d2.month - d1.month
+    days = d2.day - d1.day
+
+    if days < 0:
+        months -= 1
+        prev_month = d2.month - 1 if d2.month > 1 else 12
+        prev_year = d2.year if d2.month > 1 else d2.year - 1
+        _, max_days_prev = calendar.monthrange(prev_year, prev_month)
+        days += max_days_prev
+
+    if months < 0:
+        years -= 1
+        months += 12
+
+    return years, months, days
+
+
+def _format_human_duration(years: int, months: int, days: int) -> str:
+    """Format durasi tahun, bulan, hari yang natural."""
+    parts = []
+    if years > 0:
+        parts.append(f"{years} tahun")
+    if months > 0:
+        parts.append(f"{months} bulan")
+    if days > 0:
+        parts.append(f"{days} hari")
+    return " ".join(parts) if parts else "0 hari"
+
+
 def _enrich_facts_with_date_calculations(facts_text: str) -> str:
     """
-    Kalkulator Masa Durasi Waktu:
+    Kalkulator Masa Durasi Waktu (Best Practice Kalender Riil):
     Mendeteksi tanggal di dalam fakta resmi dan menghitung selisih masa waktu
-    secara presisi (hari & bulan) hingga hari ini atau hitung mundur ke masa depan.
+    secara presisi kalender (hari, bulan, tahun) hingga hari ini atau hitung mundur.
     """
     now = datetime.now()
     parsed_date = _parse_date_from_text(facts_text)
@@ -323,23 +372,27 @@ def _enrich_facts_with_date_calculations(facts_text: str) -> str:
     tgl_peristiwa_str = f"{parsed_date.day} {_NAMA_BULAN[parsed_date.month]} {parsed_date.year}"
 
     if total_days >= 0:
-        months = total_days // 30
-        remaining_days = total_days % 30
+        years, months, days = _calculate_calendar_difference(parsed_date, now)
+        human_dur = _format_human_duration(years, months, days)
+        combined_dur = f"{human_dur} (total {total_days} hari)" if human_dur != f"{total_days} hari" else f"{total_days} hari"
+
         calc_note = (
             f"\n- Data Perhitungan Masa Durasi Waktu (Hingga Hari Ini: {hari_ini_str}):\n"
-            f"  * Selisih masa waktu dari tanggal {tgl_peristiwa_str} sampai hari ini ({hari_ini_str}) adalah TEPAT {total_days} hari "
-            f"(sekitar {months} bulan {remaining_days} hari).\n"
-            f"  * Jika pengguna menanyakan masa waktu, lama berlangsung, atau durasi hari/bulan, rujuk hasil perhitungan ini: {total_days} hari (sekitar {months} bulan {remaining_days} hari)."
+            f"  * Terhitung sejak tanggal {tgl_peristiwa_str} sampai hari ini ({hari_ini_str}), "
+            f"masa waktu yang telah berjalan adalah TEPAT {combined_dur}.\n"
+            f"  * Jika pengguna menanyakan masa waktu, lama berlangsung, atau durasi jabatan/kerja, "
+            f"rujuk hasil perhitungan kalender riil ini: {combined_dur}."
         )
     else:
         future_days = abs(total_days)
-        months = future_days // 30
-        remaining_days = future_days % 30
+        years, months, days = _calculate_calendar_difference(now, parsed_date)
+        human_dur = _format_human_duration(years, months, days)
+        combined_dur = f"{human_dur} (total {future_days} hari lagi)" if human_dur != f"{future_days} hari" else f"{future_days} hari lagi"
+
         calc_note = (
             f"\n- Data Perhitungan Estimasi Waktu ke Depan (Dari Hari Ini: {hari_ini_str}):\n"
-            f"  * Tanggal {tgl_peristiwa_str} adalah {future_days} hari lagi dari hari ini "
-            f"(sekitar {months} bulan {remaining_days} hari ke depan).\n"
-            f"  * Rujuk estimasi waktu ini bila pengguna menanyakan sisa waktu atau hitung mundur."
+            f"  * Tanggal {tgl_peristiwa_str} adalah {future_days} hari lagi dari hari ini ({human_dur} ke depan).\n"
+            f"  * Rujuk estimasi waktu ini bila pengguna menanyakan sisa waktu atau hitung mundur: {combined_dur}."
         )
 
     return facts_text + calc_note
@@ -591,11 +644,12 @@ def classify_semantic_intent(query: str) -> str | None:
         best_intent = max(scores, key=scores.get)
         best_score = scores[best_intent]
 
-        if best_intent == "human_escalation" and best_score >= 0.60:
+        # Guard: Kalimat tanya informasi tidak boleh diklasifikasi sebagai eskalasi tiket bantuan
+        if best_intent == "human_escalation" and best_score >= 0.80 and not _is_interrogative_query(query):
             return "human_escalation"
-        if best_intent == "session_recap" and best_score >= 0.60:
+        if best_intent == "session_recap" and best_score >= 0.75:
             return "session_recap"
-        if best_intent == "chitchat" and best_score >= 0.62:
+        if best_intent == "chitchat" and best_score >= 0.75:
             return "chitchat"
         return None
     except Exception as e:
@@ -623,7 +677,48 @@ _NAME_STOPWORDS = {
     "mahasiswa", "mahasiswi", "dosen", "guru", "honorer", "asn", "pns", "pppk", "siswa",
     "siswi", "pelajar", "alumni", "rekan", "anggota", "kepala", "ketua", "sekretaris",
     "bendahara", "kabid", "kasi", "kadis", "direktur", "dekan", "rektor",
+    "dimana", "di mana", "mana", "alamat", "lokasi", "tempat", "gedung", "kapan", "mengapa",
+    "kenapa", "bagaimana", "gimana", "berapa", "apakah", "apa", "adakah", "sekarang", "saat",
+    "hari", "ini", "itu",
 }
+
+_INVALID_AGENCY_TERMS = {
+    "sekarang", "saat ini", "ini", "itu", "terkait", "tersebut", "setempat",
+    "baru", "lama", "mana", "dimana", "apa", "siapa", "tanya", "tau", "tahu",
+    "aja", "saja", "nya", "kantor", "dinas", "badan", "opd", "instansi",
+    "bagian", "bidang", "puskesmas", "kecamatan", "kementerian", "rsud", "unit kerja"
+}
+
+_QUESTION_WORDS = {
+    "siapa", "dimana", "di mana", "kemana", "ke mana", "kapan", "kenapa",
+    "mengapa", "bagaimana", "gimana", "berapa", "apakah", "apa", "adakah",
+    "bisakah", "bolehkah", "pat", "kiban", "pajan", "pakon", "padup", "padum",
+    "so", "soe", "peue", "peu", "mana"
+}
+
+
+def _is_interrogative_query(text: str) -> bool:
+    """Mendeteksi apakah query adalah kalimat tanya (bukan pengisian data bantuan / intro)."""
+    if not text:
+        return False
+    t = text.lower().strip()
+    if "?" in t:
+        return True
+    cleaned = re.sub(r"[^\w\s]", " ", t)
+    tokens = cleaned.split()
+    if not tokens:
+        return False
+    # Kata tanya di awal kalimat
+    if tokens[0] in _QUESTION_WORDS:
+        return True
+    if len(tokens) >= 2 and f"{tokens[0]} {tokens[1]}" in _QUESTION_WORDS:
+        return True
+    # Kata tanya di dalam kalimat (misal: "tolong jelaskan siapa kepala dinas")
+    for q_kw in ["siapa", "dimana", "di mana", "kapan", "mengapa", "kenapa", "bagaimana", "gimana", "berapa", "apakah"]:
+        if re.search(rf"\b{re.escape(q_kw)}\b", t):
+            if not re.search(r"\b(?:nama|instansi|opd|kendala|masalah|keluhan)\s*[:=]", t):
+                return True
+    return False
 
 _AGENCY_ALIASES = {
     "kemenkes": "Kementerian Kesehatan",
@@ -720,11 +815,20 @@ def _clean_extracted_agency(raw: str | None) -> str | None:
     if not re.match(r"^(?:dinas|badan|bagian|bidang|kementerian|kecamatan|puskesmas|rsud|setda|inspektorat)\b", lower, flags=re.IGNORECASE):
         lower = re.sub(r"^(?:dari|staf\s+di|staf|pegawai\s+di|pegawai|mahasiswa\s+di|mahasiswa|mahasiswi\s+di|mahasiswi|dosen\s+di|dosen|guru|alumni|kantor|opd|instansi|asal)\s+", "", lower).strip(" \t\n\r.,:;!?-/|")
 
+    # Tolak jika nama instansi hanya berupa kata umum/keterangan waktu
+    if lower in _INVALID_AGENCY_TERMS:
+        return None
+
+    # Hapus imbuhan dinas/badan untuk mengecek apakah kata intinya valid
+    stripped_core = re.sub(r"^(?:dinas|badan|bagian|bidang|kementerian|kecamatan|puskesmas|rsud|setda|inspektorat)\s*", "", lower).strip()
+    if not stripped_core or stripped_core in _INVALID_AGENCY_TERMS:
+        return None
+
     sorted_aliases = sorted(_AGENCY_ALIASES.items(), key=lambda x: len(x[0]), reverse=True)
     for alias, canonical in sorted_aliases:
         if lower == alias or lower.startswith(alias + " ") or lower.startswith(alias + ","):
             suffix = lower[len(alias):].strip(" ,-")
-            if not suffix or suffix in canonical.lower():
+            if not suffix or suffix in canonical.lower() or suffix in _INVALID_AGENCY_TERMS:
                 return canonical
             return f"{canonical} {suffix.title()}".strip()
 
@@ -838,6 +942,7 @@ def route_intent(query: str, session_id: str | None = None) -> dict[str, Any]:
 
     q_lower = q.lower()
     search_lower = search_q.lower()
+    is_question = _is_interrogative_query(q)
 
     # 0. AI-Native Semantic Intent Classifier (Deteksi Makna Semantik Tanpa Ketergantungan Keyword)
     sem_intent = classify_semantic_intent(q)
@@ -849,7 +954,7 @@ def route_intent(query: str, session_id: str | None = None) -> dict[str, Any]:
         }
 
     # 0.1 Permintaan Handover / Eskalasi ke Petugas Manusia (Human Escalation)
-    if sem_intent == "human_escalation" or _RE_HUMAN_HANDOFF.search(q_lower) or _RE_HUMAN_HANDOFF.search(search_lower):
+    if _RE_HUMAN_HANDOFF.search(q_lower) or _RE_HUMAN_HANDOFF.search(search_lower) or (not is_question and sem_intent == "human_escalation"):
         return {
             "intent": "human_escalation",
             "params": {"raw_query": q},
@@ -859,7 +964,17 @@ def route_intent(query: str, session_id: str | None = None) -> dict[str, Any]:
     # 0.2 Jalur Chitchat, Sapaan & Persona Asisten (Prioritaskan sapaan agar tidak disalahartikan sebagai rincian kendala)
     is_greeting_or_chitchat = bool(sem_intent == "chitchat" or _RE_GREETING.match(q_lower) or _RE_CHITCHAT_CONVERSATIONAL.search(q_lower))
     clean_intro_test = re.sub(r"[*_•\-]+", " ", q_lower)
-    is_explicit_intro = bool(re.search(r"(?:nama\s*(?:saya|ku)?\s*[:=]?|instansi\s*[:=/\(\s]|opd\s*[:=/\(\s]|kantor\s*[:=/\(\s]|dinas\s+|dari\s+[a-z]+|kendala\s*(?:saya|kami)?\s*[:=]?|keluhan\s*(?:saya|kami)?\s*[:=]?|masalah\s*(?:saya|kami)?\s*[:=]?|keperluan\s*(?:saya|kami)?\s*[:=]?)", clean_intro_test))
+    
+    # Deteksi format form bantuan eksplisit
+    is_structured_form = bool(re.search(
+        r"(?:nama(?:\s*(?:saya|ku|lengkap))?\s*[:=]|instansi(?:\s*(?:\/|dan)\s*opd)?\s*[:=]|opd\s*[:=]|unit\s*kerja\s*[:=]|kendala(?:\s*(?:saya|kami))?\s*[:=]|keluhan(?:\s*(?:saya|kami))?\s*[:=]|masalah(?:\s*(?:saya|kami))?\s*[:=]|keperluan(?:\s*(?:saya|kami))?\s*[:=])",
+        clean_intro_test
+    ))
+    is_natural_intro = bool(re.search(
+        r"\b(?:perkenalkan\s+(?:nama\s+)?saya|nama\s+saya\s+[a-z]+|saya\s+[a-z\s'\.]+\s+dari\s+(?:dinas|badan|opd|bagian|bidang|kemen|kantor|puskesmas|rsud|setda|uin|usk)|kami\s+dari\s+(?:dinas|badan|opd|bagian|bidang|kemen|kantor))\b",
+        q_lower
+    ))
+    is_explicit_intro = is_structured_form or is_natural_intro
 
     if is_greeting_or_chitchat and not is_explicit_intro:
         return {
@@ -869,25 +984,36 @@ def route_intent(query: str, session_id: str | None = None) -> dict[str, Any]:
         }
 
     # 0.3 Follow-up informasi tambahan (Nama/Instansi/Kendala) setelah Permintaan Handover
-    if is_explicit_intro or (session_id and len(q.split()) >= 3):
+    # GUARD: Kalimat tanya normal TIDAK BOLEH memicu form eskalasi kecuali ada format key-value eksplisit
+    if is_structured_form or (not is_question and (is_natural_intro or session_id)):
         try:
             from app.services.session_memory import get_last_context
             last_topic, _ = get_last_context(session_id) if session_id else (None, None)
-            if (last_topic == "Permintaan Bantuan Petugas" or is_explicit_intro) and not any(kw in q_lower for kw in ["sop", "perwal", "sk", "berapa", "kapan", "bagaimana cara", "hitung", "aturan", "regulasi", "pasal"]):
-                parsed_details = extract_citizen_escalation_details(q)
-                if is_explicit_intro or parsed_details.get("citizen_name") or parsed_details.get("citizen_agency"):
-                    return {
-                        "intent": "human_escalation_followup",
-                        "params": {
-                            "raw_query": q,
-                            "citizen_name": parsed_details["citizen_name"],
-                            "citizen_agency": parsed_details["citizen_agency"],
-                            "issue_summary": parsed_details["issue_summary"],
-                        },
-                        "label": "Informasi Tambahan untuk Tim Petugas",
-                    }
-        except Exception:
-            pass
+            is_waiting_helpdesk = bool(
+                last_topic and any(kw in last_topic.lower() for kw in ["bantuan petugas", "handover", "helpdesk", "petugas", "informasi tambahan"])
+            )
+            
+            # Hanya ekstrak jika sesi memang menunggu bantuan petugas ATAU user secara eksplisit mengisi form/intro
+            if is_waiting_helpdesk or is_explicit_intro:
+                if not any(kw in q_lower for kw in ["sop", "perwal", "sk", "berapa", "kapan", "bagaimana cara", "hitung", "aturan", "regulasi", "pasal"]):
+                    parsed_details = extract_citizen_escalation_details(q)
+                    has_valid_info = bool(
+                        parsed_details.get("citizen_name") or 
+                        (parsed_details.get("citizen_agency") and parsed_details.get("issue_summary"))
+                    )
+                    if is_structured_form or has_valid_info:
+                        return {
+                            "intent": "human_escalation_followup",
+                            "params": {
+                                "raw_query": q,
+                                "citizen_name": parsed_details["citizen_name"],
+                                "citizen_agency": parsed_details["citizen_agency"],
+                                "issue_summary": parsed_details["issue_summary"],
+                            },
+                            "label": "Informasi Tambahan untuk Tim Petugas",
+                        }
+        except Exception as e:
+            logger.debug("Gagal evaluasi escalation follow-up: %s", e)
 
     # 1.5 Cek apakah query saat ini adalah koreksi/sanggahan atau follow-up dari topik RAG sebelumnya
     is_doubt = _is_doubt_or_correction_query(q) or _is_doubt_or_correction_query(search_q)
@@ -952,7 +1078,7 @@ def route_intent(query: str, session_id: str | None = None) -> dict[str, Any]:
             )
 
             return {
-                "intent": "rag",
+                "intent": "augmented_knowledge",
                 "params": {
                     "facts_context": facts,
                     "source_title": d["nama_bidang"],
@@ -975,7 +1101,7 @@ def route_intent(query: str, session_id: str | None = None) -> dict[str, Any]:
             )
             facts = _enrich_facts_with_date_calculations(facts)
             return {
-                "intent": "rag",
+                "intent": "augmented_knowledge",
                 "params": {
                     "facts_context": facts,
                     "source_title": fp["title"],
