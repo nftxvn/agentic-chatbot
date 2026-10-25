@@ -2,11 +2,20 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
+use App\Services\Ai\DocumentRequests;
+use App\Services\Ai\StagedExtractionRequests;
 
+/**
+ * Titik masuk kompatibel untuk request dokumen ke Python AI.
+ *
+ * Trait membagi operasi; konfigurasi dan pemformatan error tetap dimiliki kelas ini.
+ * Setiap operasi mempertahankan timeout, payload, logging, dan fallback sendiri.
+ */
 class AiMicroserviceClient
 {
+    use DocumentRequests;
+    use StagedExtractionRequests;
+
     /**
      * Base URL of the AI microservice.
      */
@@ -27,86 +36,29 @@ class AiMicroserviceClient
     }
 
     /**
-     * Send a document for processing to the Python AI service.
-     *
-     * @param int    $documentId  The document ID in the database
-     * @param string $filePath    Absolute path to the PDF file
-     * @param string $action      Processing action: 'overwrite' or 'new'
-     *
-     * @return array{success: bool, message: string, data: mixed}
+     * Safely format error message from HTTP response (handles string, array, or null).
      */
-    public function processDocument(int $documentId, string $filePath, string $action = 'overwrite'): array
+    protected function extractErrorMessage($response, string $fallback = 'Terjadi kesalahan pada AI service'): string
     {
-        try {
-            $response = Http::withToken($this->token)
-                ->timeout(30)
-                ->connectTimeout(10)
-                ->post("{$this->baseUrl}/api/docs/process", [
-                    'document_id' => $documentId,
-                    'file_path' => $filePath,
-                    'action' => $action,
-                ]);
-
-            if ($response->successful()) {
-                return [
-                    'success' => true,
-                    'message' => 'Dokumen berhasil dikirim untuk diproses.',
-                    'data' => $response->json(),
-                ];
+        $detail = $response->json('detail');
+        if (is_string($detail) && trim($detail) !== '') {
+            return $detail;
+        }
+        if (is_array($detail)) {
+            $messages = [];
+            foreach ($detail as $err) {
+                if (is_array($err) && isset($err['msg'])) {
+                    $field = isset($err['loc']) ? implode('.', (array)$err['loc']) . ': ' : '';
+                    $messages[] = $field . $err['msg'];
+                } else if (is_string($err)) {
+                    $messages[] = $err;
+                }
             }
-
-            Log::warning('AI Microservice returned error', [
-                'status' => $response->status(),
-                'body' => $response->body(),
-                'document_id' => $documentId,
-            ]);
-
-            return [
-                'success' => false,
-                'message' => 'AI Service mengembalikan error: ' . $response->status(),
-                'data' => $response->json(),
-            ];
-        } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            Log::error('AI Microservice connection failed', [
-                'error' => $e->getMessage(),
-                'document_id' => $documentId,
-            ]);
-
-            return [
-                'success' => false,
-                'message' => 'Tidak dapat terhubung ke AI Service. Pastikan service berjalan di ' . $this->baseUrl,
-                'data' => null,
-            ];
-        } catch (\Exception $e) {
-            Log::error('AI Microservice unexpected error', [
-                'error' => $e->getMessage(),
-                'document_id' => $documentId,
-            ]);
-
-            return [
-                'success' => false,
-                'message' => 'Terjadi kesalahan: ' . $e->getMessage(),
-                'data' => null,
-            ];
+            if (!empty($messages)) {
+                return implode(', ', $messages);
+            }
+            return json_encode($detail, JSON_UNESCAPED_UNICODE);
         }
-    }
-
-    /**
-     * Check if the AI microservice is healthy/reachable.
-     *
-     * @return bool
-     */
-    public function healthCheck(): bool
-    {
-        try {
-            $response = Http::withToken($this->token)
-                ->timeout(5)
-                ->connectTimeout(3)
-                ->get("{$this->baseUrl}/health");
-
-            return $response->successful();
-        } catch (\Exception $e) {
-            return false;
-        }
+        return $fallback . ' (HTTP ' . $response->status() . ')';
     }
 }

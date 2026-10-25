@@ -1,231 +1,115 @@
-# 🤖 Agentic IT Support Copilot
+# Central RAG Engine as a Service & Admin Management Panel
 
-Sistem chatbot berbasis AI lokal — memungkinkan penelolaan basis pengetahuan (dokumen PDF) secara mandiri tanpa modifikasi kode.
+Platform kecerdasan buatan berbasis *Retrieval-Augmented Generation (RAG)* mandiri untuk pengelolaan basis pengetahuan SOP dan layanan publik Diskominfotik Kota Banda Aceh.
+
+Untuk pembimbing lapangan, mulai dari [paket serah terima proyek magang](SERAH_TERIMA.md).
+Dokumen tersebut menghubungkan PPT yang telah dipresentasikan, ringkasan PDF,
+kode, hasil pengujian dan pekerjaan operasional berikutnya.
 
 ---
 
-## 📦 Struktur Proyek
+## 1. Struktur Proyek
 
 ```
 agentic-ai/
-├── docs/                          # Dokumentasi proyek
-│   ├── prd_agentic_copilot.md
-│   ├── api_spec_agentic_copilot.md
-│   ├── arsitektur_sistem_agentic_copilot.md
-│   ├── rencana_fitur_agentic_copilot.md
-│   └── pembagian_tugas_tim.md
-├── python-ai/                     # 🟦 AI Microservice (FastAPI)
-├── laravel-admin/                 # 🟩 Dashboard Admin (Laravel)
-└── react-widget/                  # 🟨 Chat Widget (React — testing only)
+├── admin-frontend/         # Dashboard Manajemen & RAG Playground (React + Vite + Tailwind)
+├── laravel-admin/          # Backend Admin API, Auth Sanctum & API Gateway (Laravel 13)
+├── python-ai/              # AI Microservice RAG, Hybrid Search & OCR Extraction (FastAPI + Celery)
+├── docs/                   # Spesifikasi teknis, arsitektur, panduan integrasi, dan telemetri
+├── start-all.sh            # Skrip peluncur seluruh layanan (Single-command launcher)
+└── stop-all.sh             # Skrip penghentian seluruh proses secara bersih
 ```
 
 ---
 
-## 🏗️ Tech Stack
+## 2. Tech Stack
 
-| Komponen              | Teknologi                             |
-| --------------------- | ------------------------------------- |
-| Dashboard Admin       | Laravel (PHP)                         |
-| AI Microservice       | Python + FastAPI                      |
-| Chat Widget (Testing) | React.js + Vite                       |
-| LLM Engine            | Ollama + Qwen2.5-Instruct             |
-| Embedding Model       | paraphrase-multilingual-MiniLM-L12-v2 |
-| Vector Database       | ChromaDB                              |
-| AI Orchestration      | LangChain                             |
-| OCR Engine            | Tesseract OCR                         |
-| Queue System          | Celery + Redis                        |
-| Database              | MySQL                                 |
-| Containerization      | Docker Compose                        |
-
----
-
-## 🌿 Struktur Branch
-
-| Branch               | Isi                        | Developer |
-| -------------------- | -------------------------- | --------- |
-| `main`               | Dokumentasi + `.gitignore` | Semua     |
-| `feat/python-ai`     | AI Microservice (FastAPI)  | Dev 1     |
-| `feat/laravel-admin` | Dashboard Admin (Laravel)  | Dev 2     |
-| `feat/react-widget`  | Chat Widget (React)        | Dev 3     |
+| Komponen | Teknologi | Keterangan |
+| :--- | :--- | :--- |
+| **Frontend Admin & Playground** | React 19, Vite, Tailwind CSS, GSAP | Single Page Application (SPA), Dark/Light Theme, Sub-pixel Squircle |
+| **Backend & API Gateway** | Laravel 13, PHP 8.3+, Sanctum | Manajemen Kunci API, Webhook WhatsApp, Audit Trail Percakapan |
+| **AI Microservice** | Python 3.10+, FastAPI, Uvicorn | Hybrid Search, Reciprocal Rank Fusion (RRF), SSE Streaming |
+| **LLM Engine (Teks)** | Ollama, model dari konfigurasi | Contoh profil `qwen3:8b` / `qwen2.5:7b`; pengaturan runtime dapat memilih model lain |
+| **LLM Engine (Vision/OCR)** | Ollama (`qwen2.5vl:7b`) | Model multimodal ekstraksi dokumen pindaian |
+| **Embedding Engine** | Sesuai `EMBEDDING_MODEL_NAME` | Contoh profil: `BAAI/bge-m3` (1024 dimensi); default kode masih MiniLM |
+| **Vector Database** | ChromaDB | Penyimpanan embeddings dan metadata chunk dokumen |
+| **Lexical Search** | RankBM25 | Pencarian kata kunci istilah kedinasan dan nomor SOP |
+| **OCR & Ekstraksi Dokumen** | PyMuPDF, Qwen2.5-VL Vision OCR | Pipeline ekstraksi berjenjang dengan *manual correction* |
+| **Task Queue & Broker** | Celery, Redis | Pemrosesan dokumen berat di latar belakang |
+| **Relational Database** | MySQL 8.0+ | Database transaksional (`agentic_copilot`) |
 
 ---
 
-## 🚀 Cara Menjalankan (Development)
+## 3. Pemetaan Port & Layanan
 
-### Prasyarat
-
-Pastikan sudah terinstall:
-
-- Python 3.10+
-- PHP 8.2+ & Composer
-- Node.js 18+ & npm
-- Redis
-- MySQL
-- Ollama
-- Tesseract OCR
+| Layanan | Host & Port | Keterangan |
+| :--- | :--- | :--- |
+| **Frontend Admin UI** | `http://localhost:5173` | Panel Dashboard, Kelola Dokumen, dan RAG Playground |
+| **Laravel Backend** | `http://localhost:8000` | Autentikasi Sanctum, API Dokumen, dan Public API Gateway (`/api/v1`) |
+| **Python AI Microservice** | `http://localhost:8080` | Endpoint Chat Stream (`/api/chat/stream`) & Health (`/api/health`) |
+| **Ollama LLM Engine** | `http://localhost:11434` | Server inferensi model lokal |
+| **Redis Broker** | `localhost:6379` | Queue worker Celery dan caching |
+| **MySQL Database** | `localhost:3306` | Database transaksional |
 
 ---
 
-### 🟦 1. Python AI Microservice
+## 4. Cara Menjalankan Sistem
+
+### A. Menjalankan Seluruh Layanan (Rekomendasi)
+
+Cukup jalankan skrip orkestrasi di direktori utama:
 
 ```bash
-cd python-ai/
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Setup environment
-cp .env.example .env
-# Edit .env sesuai konfigurasi lokal
-
-# Jalankan FastAPI (Terminal 1)
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-# Jalankan Celery Worker (Terminal 2)
-celery -A app.tasks worker --loglevel=info
+./start-all.sh
 ```
 
-> 🌐 API: `http://localhost:8000`  
-> 📖 API Docs: `http://localhost:8000/docs`
+Skrip ini secara otomatis akan:
+1. Menjalankan service MySQL, Redis, dan Ollama.
+2. Menghentikan proses gantung (*dangling processes*).
+3. Mereset antrean ekstraksi yang tertahan.
+4. Menjalankan Python AI Microservice pada Port 8080.
+5. Menjalankan Celery Worker untuk antrean OCR.
+6. Menjalankan Laravel Backend pada Port 8000.
+7. Menjalankan Vite Dev Server pada Port 5173.
 
----
-
-### 🟩 2. Laravel Admin Dashboard
+### B. Menghentikan Seluruh Layanan
 
 ```bash
-cd laravel-admin/
-
-# Install dependencies
-composer install
-npm install
-
-# Setup environment
-cp .env.example .env
-php artisan key:generate
-
-# Isi .env — wajib diisi:
-# DB_DATABASE, DB_USERNAME, DB_PASSWORD
-# AI_MICROSERVICE_URL=http://localhost:8000
-
-# Setup database
-php artisan migrate
-
-# Jalankan server (Terminal 3)
-php artisan serve --port=8080
-
-# Jalankan Vite (Terminal 4)
-npm run dev
-```
-
-> 🌐 Dashboard: `http://localhost:8080`
-
----
-
-### 🟨 3. React Chat Widget
-
-```bash
-cd react-widget/
-
-# Install dependencies
-npm install
-
-# Setup environment
-cp .env.example .env
-# Isi VITE_API_URL=http://localhost:8000
-
-# Jalankan dev server (Terminal 5)
-npm run dev
-```
-
-> 🌐 Widget: `http://localhost:5173`
-
----
-
-### 🔴 4. Ollama (LLM Engine)
-
-```bash
-# Install Ollama terlebih dahulu: https://ollama.ai
-
-# Pull model (Fase 1 - Development)
-ollama pull qwen2.5:3b
-
-# Jalankan (Terminal 6)
-ollama serve
+./stop-all.sh
 ```
 
 ---
 
-## 📋 Urutan Menjalankan
+## 5. Fitur Utama & Observabilitas RAG
 
-```
-1. redis-server                              # Queue
-2. ollama serve                              # LLM
-3. uvicorn app.main:app --reload             # FastAPI
-4. celery -A app.tasks worker                # Worker
-5. php artisan serve --port=8080             # Laravel
-6. npm run dev  (di react-widget/)           # React
-```
-
----
-
-## 🔌 Port yang Digunakan
-
-| Service          | Port    |
-| ---------------- | ------- |
-| FastAPI (Python) | `8000`  |
-| Laravel Admin    | `8080`  |
-| React Widget     | `5173`  |
-| Redis            | `6379`  |
-| MySQL            | `3306`  |
-| Ollama           | `11434` |
+1. **Pengelolaan Korpus Dokumen Mandiri:**
+   * Unggah dokumen PDF SOP, ekstraksi teks & tabel otomatis, pemisahan chunk adaptif, dan editor koreksi manual sebelum diindeks ke vektor.
+2. **RAG Playground & Prompt Studio:**
+   * Uji coba prompt sistem, penyesuaian parameter (*Temperature*, *Top-K*), dan pengujian simulasi obrolan secara *real-time*.
+3. **Observabilitas Tiga Tahap (3-Stage Live Pipeline Tracing):**
+   * *Stage 1 (Retrieval):* Pencarian vektor dense di ChromaDB dan pencarian leksikal di BM25.
+   * *Stage 2 (RRF Ranking):* Penggabungan peringkat Reciprocal Rank Fusion dan deduplikasi potongan teks.
+   * *Stage 3 (LLM Inference):* Inferensi model Ollama dengan jendela konteks terhitung.
+4. **Telemetri & Explainability Jawaban:**
+   * Flag fallback, estimasi token konteks, nama model/profil, jumlah chunk, tautan *Chunk Inspector*, serta durasi total stream.
+5. **System Health Indicator:**
+   * Indikator kesehatan admin dengan probe ChromaDB/MySQL/Redis/Ollama dan diagnostik hardware; cache serta status dijelaskan pada dokumentasi observabilitas.
+6. **Public API Gateway & WhatsApp Bot:**
+   * Endpoint publik berotentikasi token (`/api/v1/chat` dan `/api/v1/chat/stream`) untuk integrasi ke kanal eksternal dan bot WhatsApp.
 
 ---
 
-## 💻 Setup Beda Komputer (Tim)
+## 6. Daftar Dokumentasi Teknis
 
-Jika setiap developer bekerja di komputer berbeda dalam **1 jaringan WiFi yang sama**:
+| Dokumen | Deskripsi |
+| :--- | :--- |
+| [`docs/01-prd_agentic_copilot.md`](docs/01-prd_agentic_copilot.md) | Kebutuhan produk, kemampuan tersedia, dan pembagian modul |
+| [`docs/02-arsitektur_sistem_agentic_copilot.md`](docs/02-arsitektur_sistem_agentic_copilot.md) | Arsitektur, diagram ingest/SSE/fallback/handoff, skema data, dan komunikasi layanan |
+| [`docs/03-api_spec_agentic_copilot.md`](docs/03-api_spec_agentic_copilot.md) | Spesifikasi kontrak API terpadu |
+| [`docs/04-panduan_kerja_mandiri_dev.md`](docs/04-panduan_kerja_mandiri_dev.md) | Runner lokal, fixture, mock API, dan pemeriksaan integrasi |
+| [`docs/05-arsitektur-rag-python-ai.md`](docs/05-arsitektur-rag-python-ai.md) | Arsitektur teknis RAG, Hybrid Search & Chunking |
+| [`docs/06-panduan-integrasi-api-dan-rag-gateway.md`](docs/06-panduan-integrasi-api-dan-rag-gateway.md) | Panduan integrasi Public API Gateway & WhatsApp |
+| [`docs/07-observabilitas-dan-telemetri-rag.md`](docs/07-observabilitas-dan-telemetri-rag.md) | Panduan teknis observabilitas, pipeline tracing & telemetri |
+| [`docs/08-panduan-struktur-kode-dan-pemeliharaan.md`](docs/08-panduan-struktur-kode-dan-pemeliharaan.md) | Batas modul, kontrak integrasi, dan panduan pemeliharaan kode |
+| [`docs/09-status-refactor-dan-verifikasi.md`](docs/09-status-refactor-dan-verifikasi.md) | Status refactoring, audit A1/A2, penutupan, bukti uji, dan batas verifikasi UI |
 
-1. **Dev 1** jalankan FastAPI dengan `--host 0.0.0.0` agar bisa diakses dari luar
-2. **Dev 2** isi `.env` Laravel: `AI_MICROSERVICE_URL=http://<IP-Dev1>:8000`
-3. **Dev 3** isi `.env` React: `VITE_API_URL=http://<IP-Dev1>:8000`
-
-```bash
-# Cari IP komputer (Linux/WSL)
-ip addr show | grep "inet "
-
-# Cari IP komputer (Windows)
-ipconfig
-```
-
----
-
-## 📁 Dokumentasi
-
-| File                                                                                | Deskripsi                            |
-| ----------------------------------------------------------------------------------- | ------------------------------------ |
-| [`prd_agentic_copilot.md`](docs/prd_agentic_copilot.md)                             | Product Requirements Document        |
-| [`api_spec_agentic_copilot.md`](docs/api_spec_agentic_copilot.md)                   | Spesifikasi API antar komponen       |
-| [`arsitektur_sistem_agentic_copilot.md`](docs/arsitektur_sistem_agentic_copilot.md) | Arsitektur sistem keseluruhan        |
-| [`rencana_fitur_agentic_copilot.md`](docs/rencana_fitur_agentic_copilot.md)         | Rencana pengembangan fitur           |
-| [`pembagian_tugas_tim.md`](docs/pembagian_tugas_tim.md)                             | Pembagian tugas & tanggung jawab tim |
-
----
-
-## 🤝 Kontribusi
-
-1. Clone repo: `git clone https://github.com/nftxvn/agentic-chatbot.git`
-2. Checkout branch sesuai tugasmu:
-   ```bash
-   git checkout feat/python-ai      # Dev 1
-   git checkout feat/laravel-admin  # Dev 2
-   git checkout feat/react-widget   # Dev 3
-   ```
-3. Baca dokumen di folder `docs/` sebelum mulai coding
-4. Commit minimal 1x sehari dengan format: `feat: deskripsi singkat`
-5. Push ke branch masing-masing: `git push origin feat/<nama-branch>`
-
----
-
-## 📞 Kontak & Koordinasi
-
-> **Penting:** Dev 1 (Python) harus **share URL API & format response** ke Dev 2 & Dev 3 di **hari pertama**, bahkan sebelum logic selesai — cukup return dummy response dulu supaya tim lain bisa mulai coding integrasi.

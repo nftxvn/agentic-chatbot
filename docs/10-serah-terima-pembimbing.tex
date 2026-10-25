@@ -1,0 +1,171 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=21mm,headheight=15pt]{geometry}
+\usepackage{lmodern,tabularx,booktabs,xcolor,enumitem,fancyhdr,hyperref}
+\definecolor{navy}{HTML}{0B2756}
+\definecolor{blue}{HTML}{0984FD}
+\definecolor{muted}{HTML}{526473}
+\hypersetup{colorlinks=true,urlcolor=blue,pdftitle={Ringkasan Serah Terima Proyek Magang SAPA},pdfauthor={Muhammad Naufal Tiftazani}}
+\renewcommand{\familydefault}{\sfdefault}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+\setlist[itemize]{leftmargin=16pt,itemsep=3pt,topsep=3pt}
+\renewcommand{\arraystretch}{1.18}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{navy}\textbf{SAPA | Proyek Magang}}
+\fancyhead[R]{\small\color{muted}Pendamping presentasi}
+\fancyfoot[L]{\footnotesize\color{muted}Draf review pembimbing | 26 Oktober 2026}
+\fancyfoot[R]{\footnotesize\thepage/3}
+\renewcommand{\headrulewidth}{0.4pt}
+\newcommand{\topic}[1]{\vspace{5pt}{\large\color{navy}\bfseries #1}\par\vspace{2pt}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\begin{document}
+{\fontsize{28}{31}\selectfont\bfseries\color{navy}SAPA}\par
+{\large Sistem Asisten Pelayanan \& Administrasi}\par
+{\color{muted}Ringkasan serah terima hasil proyek magang untuk pembimbing lapangan}
+
+\vspace{4pt}
+\begin{tabularx}{\linewidth}{@{}p{36mm}Y@{}}
+\toprule
+Mahasiswa / NIM & Muhammad Naufal Tiftazani / 230705117 \\
+Instansi / unit & Diskominfotik Kota Banda Aceh / E-Government \\
+Fokus laporan & API Gateway dan sistem manajemen dokumen \\
+Pembimbing & \textit{Diisi sebelum penyerahan} \\
+Tanggal / versi paket & \textit{Diisi saat penyerahan / setelah versi kode dibekukan} \\
+\bottomrule
+\end{tabularx}
+
+\topic{1. Tujuan dan manfaat}
+SAPA dikembangkan untuk membantu layanan informasi yang bersumber dari
+dokumen resmi dinas. Presentasi yang telah disampaikan menunjukkan pengalaman
+penelusuran chat yang berakhir pada pesan petugas tidak tersedia dan formulir.
+Hal itu menjadi motivasi proyek, bukan hasil survei seluruh layanan.
+
+Manfaat yang dituju adalah memudahkan pemeliharaan basis pengetahuan,
+membantu menjawab pertanyaan berulang, menampilkan sumber jawaban, serta
+menyediakan jalur bantuan petugas ketika diperlukan.
+
+\topic{2. Alur sistem yang diserahkan}
+\begin{itemize}
+\item Admin mengunggah dokumen, memeriksa hasil ekstraksi, dan memperbaiki teks.
+\item Teks yang disetujui diolah menjadi basis pengetahuan untuk pencarian.
+\item Pertanyaan diproses menggunakan konteks dokumen dan model AI.
+\item Tiket membantu tindak lanjut yang memerlukan penanganan petugas.
+\end{itemize}
+
+\begin{tabularx}{\linewidth}{@{}p{38mm}Y@{}}
+\toprule
+Komponen & Tanggung jawab \\
+\midrule
+Admin frontend & Dashboard dokumen, koreksi, pengaturan, percakapan dan monitoring. \\
+Laravel Admin & Autentikasi, API Gateway, data dokumen/tiket dan integrasi kanal. \\
+Python AI & Ekstraksi, embedding, pencarian dokumen, respons AI dan worker. \\
+\bottomrule
+\end{tabularx}
+
+\vfill
+{\small\color{muted}Identitas mengikuti laporan yang tersedia. Kontribusi pribadi
+perlu dijelaskan sesuai pekerjaan/logbook aktual; cakupan sistem tidak
+menyatakan seluruh modul dikerjakan oleh satu orang.}
+
+\newpage
+\topic{3. Hubungan dengan presentasi sebelumnya}
+Dokumen ini mendampingi \textbf{PPT DISKOMINFOTIK.pptx} yang berisi 18 slide.
+Alurnya tetap sama: observasi, kebutuhan, ide layanan, arsitektur, lalu demo.
+
+\begin{tabularx}{\linewidth}{@{}p{24mm}Y@{}}
+\toprule
+Slide & Penjelasan pendamping \\
+\midrule
+1--8 & Masalah yang diamati serta kebutuhan warga, petugas dan dinas. \\
+9--11 & Gagasan hubungan pertanyaan, dokumen resmi dan bantuan petugas. \\
+12 & Unggah, ekstraksi, koreksi manual dan pengindeksan dokumen. \\
+13--17 & Pencarian, reranker, model jawaban dan eskalasi tiket. Reranker tersedia
+melalui konfigurasi; profil integrasi terakhir diuji dengan reranker nonaktif. \\
+18 & Demo alur nyata, hasil uji, keterbatasan dan penyerahan kode. \\
+\bottomrule
+\end{tabularx}
+
+\topic{4. Status hasil dan bukti pemeriksaan}
+\begin{tabularx}{\linewidth}{@{}p{39mm}Y@{}}
+\toprule
+Area & Bukti yang tersedia \\
+\midrule
+Refactoring & Cakupan awal serta temuan audit A1/A2 telah ditutup; dokumentasi
+dan verifier disertakan. \\
+Backend Laravel & 227 tes / 1403 assertion lulus pada audit. \\
+Python AI & 228 tes lulus pada audit. \\
+Pipeline dokumen/chat & 16 pemeriksaan integrasi nyata pada layanan sementara,
+termasuk OCR, koreksi, embedding, JSON/SSE dan pembatalan. \\
+Pemulihan cleanup & 9 pemeriksaan termasuk setup, untuk pemulihan setelah
+gangguan Chroma/API. \\
+Form dan UI & 18 pemeriksaan browser terkelompok per run; 210 pengukuran
+kontrol cocok. 21/24 pasangan screenshot identik; tiga selisih raster kecil ditinjau. \\
+\bottomrule
+\end{tabularx}
+
+{\small Hasil di atas berasal dari run yang didokumentasikan pada 25--26 Oktober
+2026. Tes unit menggunakan dependency tiruan; uji integrasi memakai data
+sintetis dan layanan sementara. Angka tersebut bukan hasil baru pada server instansi.}
+
+\topic{5. Batas penggunaan yang perlu dipahami}
+\begin{itemize}
+\item Jawaban AI tetap perlu dinilai terhadap dokumen dan pertanyaan instansi;
+pengujian sintetis tidak membuktikan akurasi umum.
+\item Pengiriman kanal eksternal ke penerima nyata dan penerapan server instansi
+belum dibuktikan oleh penutupan refactoring.
+\item Dua migrasi pembatalan/outbox diuji pada database sementara; rollout
+operasional memerlukan persiapan operator.
+\end{itemize}
+
+\newpage
+\topic{6. Demo untuk pembimbing}
+Siapkan layanan, akun demo dan dokumen contoh sebelum pertemuan. Alokasi
+berikut adalah susunan presentasi sekitar 14 menit, bukan janji waktu inferensi.
+
+\begin{tabularx}{\linewidth}{@{}p{17mm}p{37mm}Y@{}}
+\toprule
+Alokasi & Kegiatan & Bukti yang ditunjukkan \\
+\midrule
+2 menit & Masalah dan tujuan & Hubungan kebutuhan dinas dengan ruang lingkup proyek. \\
+4 menit & Dokumen & Contoh unggahan, hasil ekstraksi, koreksi dan basis pengetahuan. \\
+4 menit & Pertanyaan & Satu jawaban dari dokumen beserta sumber, lalu pertanyaan di luar cakupan. \\
+2 menit & Tindak lanjut & Tiket internal atau direktori, status layanan dan monitoring. \\
+2 menit & Penyerahan & Hasil uji, lokasi kode, batas penggunaan dan masukan pembimbing. \\
+\bottomrule
+\end{tabularx}
+
+Gunakan data yang boleh ditampilkan. Jika memakai hasil ekstraksi yang sudah
+diproses, jelaskan hal itu. Catat keluaran yang tidak sesuai sebagai hasil
+evaluasi. Untuk demo yang mengubah data, gunakan lingkungan demo terpisah.
+
+\topic{7. Paket penyerahan yang disarankan}
+\begin{itemize}
+\item Ringkasan ini, PPT yang telah dipresentasikan, dan PDF laporan akademik final.
+\item Kode ketiga aplikasi, modul baru, lock file, migrasi, tes dan dokumentasi.
+\item Contoh konfigurasi, kebutuhan layanan/model, dan panduan menjalankan.
+\item Data demo yang boleh dibagikan, bukti uji dan daftar tindak lanjut.
+\end{itemize}
+
+Bekukan versi kode dan pastikan file baru ikut dalam paket. Pilih berkas yang
+dibagikan; environment berisi kredensial, token, database operasional, log dan
+referensi laporan pihak lain tidak menjadi isi paket kode. Akses operasional
+diserahkan terpisah kepada pihak yang berwenang bila diperlukan.
+
+\topic{8. Hal yang diminta dari pembimbing}
+\begin{itemize}
+\item Konfirmasi kesesuaian alur dengan kebutuhan unit.
+\item Prioritas dokumen dan pertanyaan untuk evaluasi berikutnya.
+\item Penetapan penerima kode, operator dan lingkungan uji penerapan.
+\item Catatan hasil review dan tindak lanjut yang disepakati.
+\end{itemize}
+
+\vfill
+{\small\color{muted}\textbf{Panduan pembacaan repository:} mulai dari
+\texttt{SERAH\_TERIMA.md}. Bukti rinci tersedia pada dokumen status,
+audit dan penutupan refactoring di folder \texttt{docs/}. Ringkasan ini
+adalah draf untuk review, bukan pernyataan sudah diterima atau disetujui pembimbing.}
+\end{document}

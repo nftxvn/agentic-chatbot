@@ -1,42 +1,38 @@
 <?php
 
-use App\Http\Controllers\DocumentController;
-use Illuminate\Support\Facades\Route;
-
 /*
 |--------------------------------------------------------------------------
 | Web Routes
 |--------------------------------------------------------------------------
+| Laravel sekarang berfungsi sebagai pure API backend.
+| Satu-satunya web route yang tersisa adalah fallback untuk React SPA
+| dan endpoint reset password (karena link dikirim via email ke browser).
 |
-| Here is where you can register web routes for your application. These
-| routes are loaded by the RouteServiceProvider and all of them will
-| be assigned to the "web" middleware group.
-|
+| React frontend menangani semua UI — Laravel hanya melayani JSON.
+|--------------------------------------------------------------------------
 */
 
-Route::get('/', function () {
-    return redirect()->route('dashboard');
-});
+use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth'])->group(function () {
-    Route::get('/dashboard', [DocumentController::class, 'index'])->name('dashboard');
-    Route::get('/documents/{id}', [DocumentController::class, 'show'])->name('documents.show');
-    Route::post('/documents/upload', [DocumentController::class, 'upload'])->name('documents.upload');
-    Route::post('/documents/{id}/replace', [DocumentController::class, 'replace'])->name('documents.replace');
-    Route::delete('/documents/{id}', [DocumentController::class, 'destroy'])->name('documents.destroy');
-    Route::get('/documents/{id}/pdf', [DocumentController::class, 'servePdf'])->name('documents.pdf');
-});
-
-Route::get('/login', function() {
-    $user = \App\Models\User::firstOrCreate(
-        ['email' => 'admin@admin.com'],
-        ['name' => 'Admin', 'password' => bcrypt('password')]
-    );
-    \Illuminate\Support\Facades\Auth::login($user);
-    return redirect()->route('dashboard');
+Route::get('/login', function () {
+    return response()->json(['message' => 'Unauthenticated.'], 401);
 })->name('login');
 
-Route::post('/logout', function() {
-    \Illuminate\Support\Facades\Auth::logout();
-    return redirect()->route('login');
-})->name('logout');
+// Reset password route — tetap di web karena link dikirim via email ke browser
+// React SPA akan menangani form-nya, tapi token dikirim ke API
+Route::get('/reset-password/{token}', function () {
+    // Redirect ke React frontend dengan token yang sama
+    $frontendUrl = config('app.frontend_url', 'http://localhost:5173');
+    $token = request()->route('token');
+    $email = request()->query('email', '');
+    return redirect("{$frontendUrl}/reset-password?token={$token}&email={$email}");
+})->name('password.reset');
+
+// File & Image streaming routes with session cookie auth for direct browser tabs/windows
+use App\Http\Controllers\Api\DocumentController;
+use App\Http\Controllers\Api\EkstraksiController;
+
+Route::middleware('auth:sanctum,web')->prefix('api/documents')->group(function () {
+    Route::get('/{id}/pdf', [DocumentController::class, 'servePdf'])->name('api.documents.pdf');
+    Route::get('/{id}/pages/{pageNumber}/image', [EkstraksiController::class, 'citraHalaman'])->name('api.documents.pages.image');
+});
