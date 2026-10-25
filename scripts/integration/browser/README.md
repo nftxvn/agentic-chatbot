@@ -90,7 +90,7 @@ Kegagalan jaringan total, browser lain, lampiran, CRUD kategori, mutasi integras
 sandbox SSE serta pengiriman kanal eksternal belum dicakup tahap ini.
 
 Artefak lokal di `output/playwright/browser-integration/` diabaikan Git.
-Ringkasan hasil ada di [catatan verifikasi](../../../docs/13-status-refactor-dan-verifikasi.md).
+Ringkasan hasil ada di [catatan verifikasi](../../../docs/09-status-refactor-dan-verifikasi.md).
 
 Penutupan form memakai working directory `output/playwright/refactor-closure/`.
 Skenario `settings-crud.js` dapat dijalankan standalone; mode URL

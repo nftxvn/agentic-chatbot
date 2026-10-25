@@ -2,6 +2,10 @@
 
 Platform kecerdasan buatan berbasis *Retrieval-Augmented Generation (RAG)* mandiri untuk pengelolaan basis pengetahuan SOP dan layanan publik Diskominfotik Kota Banda Aceh.
 
+Untuk pembimbing lapangan, mulai dari [paket serah terima proyek magang](SERAH_TERIMA.md).
+Dokumen tersebut menghubungkan PPT yang telah dipresentasikan, ringkasan PDF,
+kode, hasil pengujian dan pekerjaan operasional berikutnya.
+
 ---
 
 ## 1. Struktur Proyek
@@ -9,7 +13,7 @@ Platform kecerdasan buatan berbasis *Retrieval-Augmented Generation (RAG)* mandi
 ```
 agentic-ai/
 ├── admin-frontend/         # Dashboard Manajemen & RAG Playground (React + Vite + Tailwind)
-├── laravel-admin/          # Backend Admin API, Auth Sanctum & API Gateway (Laravel 11)
+├── laravel-admin/          # Backend Admin API, Auth Sanctum & API Gateway (Laravel 13)
 ├── python-ai/              # AI Microservice RAG, Hybrid Search & OCR Extraction (FastAPI + Celery)
 ├── docs/                   # Spesifikasi teknis, arsitektur, panduan integrasi, dan telemetri
 ├── start-all.sh            # Skrip peluncur seluruh layanan (Single-command launcher)
@@ -22,12 +26,12 @@ agentic-ai/
 
 | Komponen | Teknologi | Keterangan |
 | :--- | :--- | :--- |
-| **Frontend Admin & Playground** | React 18, Vite, Tailwind CSS, GSAP | Single Page Application (SPA), Dark/Light Theme, Sub-pixel Squircle |
-| **Backend & API Gateway** | Laravel 11, PHP 8.2+, Sanctum | Manajemen Kunci API, Webhook WhatsApp, Audit Trail Percakapan |
+| **Frontend Admin & Playground** | React 19, Vite, Tailwind CSS, GSAP | Single Page Application (SPA), Dark/Light Theme, Sub-pixel Squircle |
+| **Backend & API Gateway** | Laravel 13, PHP 8.3+, Sanctum | Manajemen Kunci API, Webhook WhatsApp, Audit Trail Percakapan |
 | **AI Microservice** | Python 3.10+, FastAPI, Uvicorn | Hybrid Search, Reciprocal Rank Fusion (RRF), SSE Streaming |
-| **LLM Engine (Teks)** | Ollama (`qwen3:8b` / `qwen2.5:7b`) | Model inferensi lokal berpresisi tinggi |
+| **LLM Engine (Teks)** | Ollama, model dari konfigurasi | Contoh profil `qwen3:8b` / `qwen2.5:7b`; pengaturan runtime dapat memilih model lain |
 | **LLM Engine (Vision/OCR)** | Ollama (`qwen2.5vl:7b`) | Model multimodal ekstraksi dokumen pindaian |
-| **Embedding Engine** | `BAAI/bge-m3` | Dense Vector Representation 1024-dim |
+| **Embedding Engine** | Sesuai `EMBEDDING_MODEL_NAME` | Contoh profil: `BAAI/bge-m3` (1024 dimensi); default kode masih MiniLM |
 | **Vector Database** | ChromaDB | Penyimpanan embeddings dan metadata chunk dokumen |
 | **Lexical Search** | RankBM25 | Pencarian kata kunci istilah kedinasan dan nomor SOP |
 | **OCR & Ekstraksi Dokumen** | PyMuPDF, Qwen2.5-VL Vision OCR | Pipeline ekstraksi berjenjang dengan *manual correction* |
@@ -45,7 +49,7 @@ agentic-ai/
 | **Python AI Microservice** | `http://localhost:8080` | Endpoint Chat Stream (`/api/chat/stream`) & Health (`/api/health`) |
 | **Ollama LLM Engine** | `http://localhost:11434` | Server inferensi model lokal |
 | **Redis Broker** | `localhost:6379` | Queue worker Celery dan caching |
-| **MySQL Database** | `localhost:3306` | Basis data transaksional |
+| **MySQL Database** | `localhost:3306` | Database transaksional |
 
 ---
 
@@ -87,9 +91,9 @@ Skrip ini secara otomatis akan:
    * *Stage 2 (RRF Ranking):* Penggabungan peringkat Reciprocal Rank Fusion dan deduplikasi potongan teks.
    * *Stage 3 (LLM Inference):* Inferensi model Ollama dengan jendela konteks terhitung.
 4. **Telemetri & Explainability Jawaban:**
-   * Status grounding (*Terjawab dari Korpus* / *Fallback*), estimasi token konteks, nama model, tautan langsung ke *Chunk Inspector*, dan latensi pemrosesan milidetik.
+   * Flag fallback, estimasi token konteks, nama model/profil, jumlah chunk, tautan *Chunk Inspector*, serta durasi total stream.
 5. **System Health Indicator:**
-   * Bilah pemantauan kesehatan klaster pada topbar admin dengan diagnostik 4 subsistem (FastAPI, Ollama, ChromaDB, MySQL/Redis).
+   * Indikator kesehatan admin dengan probe ChromaDB/MySQL/Redis/Ollama dan diagnostik hardware; cache serta status dijelaskan pada dokumentasi observabilitas.
 6. **Public API Gateway & WhatsApp Bot:**
    * Endpoint publik berotentikasi token (`/api/v1/chat` dan `/api/v1/chat/stream`) untuk integrasi ke kanal eksternal dan bot WhatsApp.
 
@@ -99,12 +103,13 @@ Skrip ini secara otomatis akan:
 
 | Dokumen | Deskripsi |
 | :--- | :--- |
-| [`docs/01-prd_agentic_copilot.md`](docs/01-prd_agentic_copilot.md) | Product Requirements Document (PRD) |
-| [`docs/02-arsitektur_sistem_agentic_copilot.md`](docs/02-arsitektur_sistem_agentic_copilot.md) | Arsitektur sistem dan diagram relasi modul |
-| [`docs/03-rencana_fitur_agentic_copilot.md`](docs/03-rencana_fitur_agentic_copilot.md) | Roadmap dan rencana pengembangan fitur |
-| [`docs/04-api_spec_agentic_copilot.md`](docs/04-api_spec_agentic_copilot.md) | Spesifikasi kontrak API terpadu |
-| [`docs/05-pembagian_tugas_tim.md`](docs/05-pembagian_tugas_tim.md) | Pembagian modul dan status deliverables |
-| [`docs/07-arsitektur-rag-python-ai.md`](docs/07-arsitektur-rag-python-ai.md) | Arsitektur teknis RAG, Hybrid Search & Chunking |
-| [`docs/09-panduan-integrasi-api-dan-rag-gateway.md`](docs/09-panduan-integrasi-api-dan-rag-gateway.md) | Panduan integrasi Public API Gateway & WhatsApp |
-| [`docs/10-observabilitas-dan-telemetri-rag.md`](docs/10-observabilitas-dan-telemetri-rag.md) | Panduan teknis observabilitas, pipeline tracing & telemetri |
+| [`docs/01-prd_agentic_copilot.md`](docs/01-prd_agentic_copilot.md) | Kebutuhan produk, kemampuan tersedia, dan pembagian modul |
+| [`docs/02-arsitektur_sistem_agentic_copilot.md`](docs/02-arsitektur_sistem_agentic_copilot.md) | Arsitektur, diagram ingest/SSE/fallback/handoff, skema data, dan komunikasi layanan |
+| [`docs/03-api_spec_agentic_copilot.md`](docs/03-api_spec_agentic_copilot.md) | Spesifikasi kontrak API terpadu |
+| [`docs/04-panduan_kerja_mandiri_dev.md`](docs/04-panduan_kerja_mandiri_dev.md) | Runner lokal, fixture, mock API, dan pemeriksaan integrasi |
+| [`docs/05-arsitektur-rag-python-ai.md`](docs/05-arsitektur-rag-python-ai.md) | Arsitektur teknis RAG, Hybrid Search & Chunking |
+| [`docs/06-panduan-integrasi-api-dan-rag-gateway.md`](docs/06-panduan-integrasi-api-dan-rag-gateway.md) | Panduan integrasi Public API Gateway & WhatsApp |
+| [`docs/07-observabilitas-dan-telemetri-rag.md`](docs/07-observabilitas-dan-telemetri-rag.md) | Panduan teknis observabilitas, pipeline tracing & telemetri |
+| [`docs/08-panduan-struktur-kode-dan-pemeliharaan.md`](docs/08-panduan-struktur-kode-dan-pemeliharaan.md) | Batas modul, kontrak integrasi, dan panduan pemeliharaan kode |
+| [`docs/09-status-refactor-dan-verifikasi.md`](docs/09-status-refactor-dan-verifikasi.md) | Status refactoring, audit A1/A2, penutupan, bukti uji, dan batas verifikasi UI |
 

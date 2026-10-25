@@ -14,7 +14,7 @@ Dua tanggung jawab utamanya:
    dengan LLM, disertai rujukan halaman sumbernya.
 
 > Rancangan retrieval-nya dijelaskan terpisah di
-> [`docs/07-arsitektur-rag-python-ai.md`](../docs/07-arsitektur-rag-python-ai.md).
+> [`docs/05-arsitektur-rag-python-ai.md`](../docs/05-arsitektur-rag-python-ai.md).
 
 ---
 
@@ -28,7 +28,7 @@ Dua tanggung jawab utamanya:
 | Redis                        | 6+        | Broker antrean Celery                    |
 
 Tesseract **tidak** dibutuhkan. OCR dikerjakan model vision lewat REST API
-Ollama (`pdf_processor.py:181`), bukan mesin OCR terpisah.
+Ollama (`app/services/ocr/vision.py::vision_extract_general`), bukan mesin OCR terpisah.
 
 Tarik dua model Ollama berikut:
 
@@ -71,7 +71,7 @@ cp .env.example .env
 
 > **Isi `LLM_MODEL_NAME`, `VISION_MODEL_NAME`, dan `EMBEDDING_MODEL_NAME` secara
 > eksplisit.** Nilai default di `app/config.py` masih menunjuk model lama
-> (`qwen2.5:3b`, MiniLM) dan tidak sama dengan yang dipakai serta diuji.
+> (`qwen2.5:7b`, MiniLM). Pilihan model runtime dapat berbeda melalui `.env` dan pengaturan chatbot di Laravel.
 
 | Variabel                      | Contoh                      | Keterangan                                                                                                                                                                                |
 | ----------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -130,24 +130,26 @@ redis-server
 ollama serve
 
 # 3. Server API
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 
 # 4. Pekerja Celery (terminal terpisah)
-celery -A app.tasks.process_document worker --loglevel=info --pool=solo
+celery -A app.tasks.process_document.celery_app worker --loglevel=info --pool=solo
 ```
 
 Dua catatan penting soal perintah Celery:
 
-- Modulnya **`app.tasks.process_document`**, bukan `app.tasks`.
-  `app/tasks/__init__.py` kosong, sehingga `-A app.tasks` tidak akan
-  menemukan instance Celery-nya.
+- Path **`app.tasks.process_document.celery_app`** sama dengan launcher dan
+  Docker Compose. `app/celery_app.py` membuat instance bersama; impor melalui
+  `app.tasks.process_document` sekaligus mendaftarkan ketiga task dokumen.
+  Alias `app.tasks.celery` tetap tersedia melalui `app/tasks/__init__.py`.
+  Gunakan path worker yang ditulis di atas agar registrasi task ikut dimuat.
 - `--pool=solo` diperlukan di Windows. Di Linux boleh dihilangkan.
 
 Setelah jalan:
 
-- API — <http://localhost:8000>
-- Dokumentasi interaktif — <http://localhost:8000/docs>
-- Health check — <http://localhost:8000/health>
+- API — <http://localhost:8080>
+- Dokumentasi interaktif — <http://localhost:8080/docs>
+- Health check — <http://localhost:8080/health>
 
 ---
 
@@ -159,8 +161,17 @@ Setelah jalan:
 | `POST` | `/api/chat/message`     | Bearer    | Tanya-jawab sekali balas untuk WhatsApp  |
 | `GET`  | `/api/docs`             | Bearer    | Daftar seluruh dokumen                   |
 | `GET`  | `/api/docs/{id}/status` | Bearer    | Status pemrosesan satu dokumen           |
-| `POST` | `/api/docs/process`     | Bearer    | Kirim dokumen ke antrean ingest          |
+| `POST` | `/api/docs/{id}/extraction` | Bearer | Mulai atau lanjutkan OCR bertahap |
+| `POST` | `/api/docs/{id}/extraction/pause` | Bearer | Minta jeda pada batas halaman |
+| `GET` | `/api/docs/{id}/extraction` | Bearer | Status/progres ekstraksi |
+| `GET` | `/api/docs/{id}/extraction/stream` | Bearer | Progres ekstraksi melalui SSE |
+| `GET` / `PUT` | `/api/docs/{id}/pages` / `/api/docs/{id}/pages/{n}` | Bearer | Baca teks / simpan koreksi |
+| `GET` / `POST` | `/api/docs/{id}/chunks/preview` | Bearer | Pratinjau pemotongan |
+| `POST` | `/api/docs/{id}/embed` | Bearer | Antrekan embedding hasil koreksi |
+| `POST` | `/api/docs/{id}/cancel` | Bearer | Cleanup pembatalan; lihat batas antrean di bawah |
 | `GET`  | `/health`               | tidak ada | Health check                             |
+| `GET`  | `/api/health`           | tidak ada | Alias health check                       |
+| `GET`  | `/api/health/hardware`  | Bearer    | Diagnostik mesin dan estimasi model       |
 
 ¹ Bisa dimatikan lewat `CHAT_STREAM_REQUIRE_AUTH=false` untuk pengembangan lokal.
 
@@ -169,7 +180,7 @@ seperti Laravel bisa mengandalkan kode itu untuk membedakan "tidak punya
 kredensial" dari "payload-nya salah bentuk".
 
 Bentuk payload dan responsnya ada di
-[`docs/04-api_spec_agentic_copilot.md`](../docs/04-api_spec_agentic_copilot.md).
+[`docs/03-api_spec_agentic_copilot.md`](../docs/03-api_spec_agentic_copilot.md).
 
 > **Widget di browser tidak boleh memegang `INTERNAL_API_TOKEN`.** Token yang
 > sama juga membuka `/api/docs/*`, dan apa pun yang masuk ke JavaScript sisi
@@ -181,194 +192,76 @@ Bentuk payload dan responsnya ada di
 
 ## Evaluasi mutu jawaban
 
-Ada dua alat, dan keduanya menjawab pertanyaan yang berbeda.
-
-### 1. `evaluasi_sederhana.py` — pencocokan fakta (mulai dari sini)
+Gunakan korpus serta pertanyaan yang sama untuk membandingkan hasil sebelum dan sesudah perubahan model atau algoritme. Skrip yang tersedia untuk merekam jawaban adalah `jawab_rag.py`:
 
 ```bash
-python evaluasi_sederhana.py              # nilai jawaban tersimpan, seketika
-python evaluasi_sederhana.py --all        # seluruh 26 pertanyaan
-python evaluasi_sederhana.py --jalankan   # panggil pipeline RAG (lambat)
-python evaluasi_sederhana.py --nilai-ulang # nilai ulang jawaban tersimpan
+python jawab_rag.py "Apa persyaratan layanan dalam dokumen ini?" --keluaran hasil_rag.md
+python jawab_rag.py --berkas pertanyaan.txt --keluaran hasil_perbandingan.md
 ```
 
-Menanyakan satu hal saja: **apakah fakta yang wajib ada benar-benar muncul di
-jawaban?** Kriterianya ditulis di kolom `penilaian` pada
-`reference_eval_dataset.json`:
+Satu pertanyaan per baris pada `pertanyaan.txt`; baris kosong dan komentar `#` dilewati. Skrip memanggil pipeline nyata dan menyimpan jawaban beserta durasi, sehingga memerlukan konfigurasi database, Redis, Ollama, serta korpus yang sudah di-ingest. Skrip ini tidak memberikan skor kebenaran otomatis. Cocokkan fakta, jumlah item, halaman sumber, dan penolakan atas informasi yang memang tidak ada dengan dokumen asli.
 
-```json
-"penilaian": {
-  "wajib":   [["395"], ["2025"]],
-  "minimal": {"jumlah": 5, "dari": ["Renstra", "Renja", "..."]}
-}
-```
-
-- `wajib` — tiap kelompok harus terpenuhi; isi kelompok adalah alternatif
-  penulisan, salah satu cocok sudah cukup
-- `minimal` — untuk pertanyaan terbuka, cukup N item dari daftar
-
-Keluarannya berupa vonis yang langsung terbaca — **BENAR**, **SEBAGIAN**,
-**SALAH**, **TIDAK MENJAWAB** — beserta daftar fakta mana yang hilang.
-Deterministik, gratis, selesai dalam sekejap, dan tidak mengirim isi dokumen
-ke pihak mana pun.
-
-`TIDAK MENJAWAB` sengaja dipisahkan dari `SALAH`: menjawab "tidak ditemukan"
-adalah perilaku yang benar ketika konteksnya memang tidak memuat jawaban, dan
-menyamakannya dengan halusinasi akan menyesatkan.
-
-> Alat ini pernah menangkap apa yang RAGAS lewatkan: pada q04, jawaban
-> menyebut "46 SOP" padahal seharusnya 74 — kurang 28 item. RAGAS memberi
-> `factual_correctness = 0.99` untuk jawaban itu, karena 46 item yang ada
-> memang semuanya benar dan 28 yang hilang tidak pernah menjadi klaim.
-
-#### Dataset lawan
-
-`reference_eval_dataset.json` berisi pertanyaan yang jawabannya memang ada di
-dokumen. Skor tinggi di sana tidak membuktikan sistem tahan ditipu, jadi ada
-dataset pasangannya:
-
-```bash
-python evaluasi_sederhana.py --dataset reference_eval_lawan.json --all --jalankan
-```
-
-Isinya 26 pertanyaan yang menyerang butir bernomor sama dari sisi berlawanan —
-kalau yang asli menanyakan SOP Renstra, yang lawan menanyakan Renja; kalau yang
-asli menanyakan fakta yang ada, yang lawan menanyakan yang tidak ada. Rinciannya
-ada di [`dataset_lawan.md`](dataset_lawan.md). Sumber kebenarannya tetap
-`reference_eval_lawan.json` — itulah yang dibaca penilai; berkas markdown
-hanya salinan untuk dibaca manusia.
-
-Dataset ini memakai dua kriteria tambahan:
-
-| Kriteria         | Arti                                                                                                                                                                                                              |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `terlarang`      | Ungkapan yang **tidak boleh** muncul; kemunculannya menggugurkan jawaban walau fakta lain sudah benar. Dipakai menangkap jawaban yang diambil dari SOP yang salah — dua SOP di dokumen ini isinya hampir kembar.  |
-| `harus_menolak`  | Jawaban yang benar adalah **menolak menjawab**, untuk pertanyaan berpremis palsu (mis. "Diktum KEEMPAT" yang tidak ada).                                                                                          |
-| `jumlah`         | Angka yang harus dinyatakan **sebagai jumlah**, bukan sekadar muncul. Tanpa ini, kriteria `9` ikut cocok dengan penanda daftar `9. Format Renja` — sehingga jawaban yang menyebut jumlah salah tetap dapat nilai. |
-| `menolak_premis` | Frasa yang menunjukkan premis palsunya berhasil dibantah. Jawaban yang membantah tapi kurang presisi dinilai SEBAGIAN, tidak disamakan dengan yang mengarang.                                                     |
-
-Setiap butir juga menyimpan `jawaban_umpan`: satu jawaban SALAH yang khas untuk
-pertanyaan itu. Unit test memastikan kriteria **menjatuhkan** umpan itu, bukan
-sekadar meluluskan jawaban yang benar. Uji satu arah saja pernah membiarkan
-empat kriteria terlalu longgar lolos — dan baru ketahuan setelah dua jam
-eksekusi, saat laporannya menyebut 65% padahal yang sebenarnya 55%.
-
-Jawaban mentah tiap eksekusi disimpan ke `hasil_evaluasi_lawan.jawaban.json`,
-sehingga kriteria yang diperbaiki bisa diuji ulang seketika dengan
-`--nilai-ulang` tanpa memanggil LLM lagi.
-
-Laporannya ditulis terpisah ke `hasil_evaluasi_lawan.md`, jadi tidak menimpa
-hasil dataset utama.
-
-### 2. `test_ragas.py` — RAGAS
-
-Mengukur hal yang tidak bisa ditangkap pencocokan fakta, terutama
-**faithfulness** (apakah jawaban mengarang di luar konteks). Model yang
-menjawab (`qwen2.5:7b`) sengaja dipisah dari model yang menilai supaya model
-tidak menilai jawabannya sendiri.
-
-**Juri bawaannya DeepSeek.** Dua alasan: juri lokal berarti model menilai
-jawabannya sendiri sehingga angkanya bukan penilaian independen, dan juri
-lokal juga berebut Ollama dengan model yang sedang menjawab — pada mesin
-ber-RAM terbatas itu terbukti membuat permintaan menggantung puluhan menit.
-
-> **Kerahasiaan.** Juri di server luar menerima pertanyaan, jawaban, **dan
-> seluruh isi konteks dokumen**. Untuk dokumen internal instansi, pastikan itu
-> memang diizinkan — atau pakai `--ollama`, satu-satunya pilihan yang tidak
-> mengirim apa pun keluar mesin.
-
-```bash
-python test_ragas.py --list-models     # lihat model juri yang tersedia
-python test_ragas.py --limit 3         # evaluasi 3 pertanyaan
-python test_ragas.py --limit 10 --reuse  # pakai ulang jawaban tersimpan
-```
-
-| Flag                   | Fungsi                                                          |
-| ---------------------- | --------------------------------------------------------------- |
-| `--limit N`            | Jumlah pertanyaan dari `reference_eval_dataset.json`            |
-| `--deepseek`           | Juri DeepSeek — **bawaan**. Butuh `DEEPSEEK_API_KEY`            |
-| `--gemini`             | Juri Gemini. Butuh `GEMINI_API_KEY`. Berjatah harian sempit     |
-| `--ollama`             | Juri lokal. Tidak keluar mesin, tapi bukan penilaian independen |
-| `--judge-model=<nama>` | Ganti model juri (jatah gratis dihitung per model per hari)     |
-| `--reuse`              | Pakai ulang jawaban RAG dari cache, hanya ulangi penilaian      |
-| `--list-models`        | Daftar model yang boleh dipakai API key ini                     |
-| `--verbose`            | Tampilkan seluruh log                                           |
-
-Hasilnya ditulis ke `hasil_ragas.md`: pertanyaan, jawaban RAG, ground
-truth, skor per metrik, **dan seluruh chunk konteks yang dikirim ke LLM**
-(terlipat dalam blok `<details>`). Skor rendah nyaris selalu berujung pada
-pertanyaan "chunk apa yang sebenarnya diambil?", jadi jawabannya ada di tempat
-yang sama dengan skornya — tidak perlu membuka `.ragas_cache_phase1.json`.
-
-Skrip mencetak taksiran jumlah permintaan ke juri sebelum mulai — jatah gratis
-Gemini dihitung **per model per hari**, jadi berganti model memberi jatah baru
-seketika.
-
-### Membaca `factual_correctness`
-
-Metrik ini memecah jawaban **dan** ground truth menjadi klaim-klaim, lalu
-menghitung F1 dari klaim yang saling terverifikasi. Konsekuensinya: **cara
-ground truth ditulis ikut dinilai.** Ground truth yang menyelipkan letak
-halaman, rujukan ke soal lain, atau kata "misalnya" akan terpecah menjadi klaim
-yang tidak mungkin dibuktikan dari jawaban — dan skornya jatuh meski jawabannya
-benar. Terukur pada q02: `0.0000` dengan ground truth apa adanya, `1.0000`
-dengan ground truth yang sama isinya tetapi ditulis sebagai kalimat fakta biasa.
-
-Keterangan letak dan kejanggalan dokumen punya tempatnya sendiri: kolom
-`source_pages` dan `notes` di `reference_eval_dataset.json`. Keduanya **tidak
-ikut dinilai** — hanya `ground_truth` yang dikirim ke juri.
-
-Metrik ini juga tidak sepenuhnya stabil. Teks yang persis sama, dinilai tiga
-kali, pernah menghasilkan `0.57`, `0.00`, `0.00`. Jangan menyimpulkan regresi
-dari selisih kecil pada satu pertanyaan.
+Dokumen arsitektur masih menyimpan catatan evaluasi pengembangan lama. Berkas `evaluasi_sederhana.py`, `test_ragas.py`, dan dataset `reference_eval_*.json` tidak tersedia pada checkout ini; perintah serta angka hasil lamanya tidak menjadi bukti pengujian versi sekarang.
 
 ---
 
 ## Pengujian
 
 ```bash
-python -m unittest test_rag_units test_api_kontrak    # 147 tes, ~9 detik, tanpa layanan apa pun
+python -m unittest discover -s tests
 ```
 
-Dua berkas, dua lapisan berbeda.
+Tes yang tersedia pada checkout ini:
 
-**`test_rag_units.py` — 110 tes, logika RAG.** Menguji fungsi tanpa efek
-samping: peringkat RRF, filter `where` ChromaDB, deteksi pertanyaan daftar,
-pemecahan daftar per batas item, pembacaan konfigurasi, penjaga premis palsu,
-pembeda dua SOP yang nyaris kembar, pemulihan penanda daftar yang rontok saat
-OCR, serta kriteria penilai evaluasi. Dependensi berat digantikan stub, lalu
-stub-nya dibuang lagi dari `sys.modules` supaya berkas tes lain tidak ikut
-menerimanya.
+- `tests/test_security.py`: bearer token, penolakan kredensial, dan pengaturan autentikasi stream untuk pengembangan lokal.
+- `tests/test_backend_client.py`: payload handoff tiket ke Laravel serta penanganan kegagalan pengiriman.
+- `tests/test_source_references.py`: format halaman sitasi retrieval, kompatibilitas separator lama, judul dengan tanda hubung, serta resolusi ID yang unik dalam scope dokumen permintaan.
+- `tests/test_rag_contract.py`: filter dokumen, RRF, cache BM25, retrieval flat/hierarkis, reranker, penjaga konteks, daftar lengkap, sitasi, riwayat percakapan, fallback alokasi memori, parameter sandbox, dan pembungkus event SSE.
+- `tests/test_ocr_regression.py`: prioritas/cache model vision, komposisi prompt, retry HTTP/hasil kosong, kepala SOP/NIP, pemulihan daftar, render PDF tiruan, serta jalur native/gambar tertanam.
+- `tests/test_routing_extraction_regression.py`: prioritas handoff/direktori/FAQ/RAG, normalisasi, ekstraksi data warga, cache anchor, kalkulator, simpan-jeda-resume, batas halaman, kegagalan OCR, retry Celery, serta antrean batch lanjutan.
+- `tests/test_health_contract.py`: respons HTTP health/hardware, autentikasi sebelum membaca cache, TTL, probe dependensi, parser hardware, serta perhitungan rekomendasi/model-fit.
+- `tests/test_database_contract.py`: parameter SQL, opsi engine, metadata dokumen, konversi/fallback pengaturan, cache direktori/FAQ, serta debounce log.
+- `tests/test_vector_store_client.py`: pilihan embedded/HTTP, cache client lazy, metadata cosine, serta kegagalan server eksplisit tanpa fallback ke korpus lokal lain.
+- `tests/test_document_operations.py`: token operasi persisten, lock satu koneksi, cancel/resume, status/progres generasi lama, serta perlindungan korpus yang telah selesai.
+- `tests/test_vector_cancellation.py`: pembatalan saat encoding, otorisasi upsert/delete, callback di luar lock, serta cleanup vektor hanya untuk token yang dibatalkan.
+- `tests/test_vector_cleanup.py`: outbox persisten, retry/backoff, rollback fence/cleanup, dokumen terhapus, perlindungan generasi baru, serta reset ekstraksi yang terlambat.
+- `tests/test_document_workflows.py`: HTTP dokumen/ekstraksi, prioritas opsi kategori, simpan koreksi, konflik embedding, preview, citra/cache, SSE, urutan cancel, serta retry dan batas worker.
+- `tests/test_task_workflows.py`: cleanup lintas halaman sebelum review, retry gambar, dan penghentian penulisan/progres ketika dokumen dihapus.
 
-Beberapa di antaranya menjaga alat ukurnya sendiri: kriteria dataset lawan
-diuji **dua arah** — harus meluluskan ground truth, dan harus menjatuhkan
-`jawaban_umpan`. Uji satu arah saja pernah membiarkan empat kriteria terlalu
-longgar lolos tanpa ketahuan.
+Dependency jaringan digantikan mock pada tes ini; tidak ada koneksi MySQL, Redis, ChromaDB, unduhan model, atau inferensi Ollama. Paket aplikasi tetap harus terpasang karena modul layanan diimpor. Ini menguji kontrak kode, bukan kualitas jawaban model atau integrasi worker yang berjalan.
 
-**`test_api_kontrak.py` — 37 tes, lapisan HTTP.** Mengunci apa yang dilihat
-pemanggil: kode status, bentuk event SSE, nama kunci, dan header. Ini bagian
-yang dipakai Dev 2 (Laravel) dan Dev 3 (React), dan sebelumnya satu-satunya
-lapisan tanpa uji sama sekali — padahal di sinilah integrasi paling mungkin
-patah.
+Nama lama `test_rag_units.py` dan `test_api_kontrak.py` yang pernah disebut dalam dokumentasi tidak tersedia pada checkout ini. Tes health memeriksa kontrak HTTP dan konfigurasi middleware dengan dependensi tiruan. Pengujian integrasi antarlayanan, CORS melalui browser, probe mesin/database nyata, OCR nyata, dan mutu model perlu dijalankan tersendiri dengan lingkungan yang sesuai.
 
-Yang dikunci antara lain:
+Smoke test layanan nyata yang terisolasi tersedia di
+[`../scripts/integration/README.md`](../scripts/integration/README.md).
+Runner memakai instance MySQL/Redis baru, storage/Chroma sementara, dan model
+Ollama lokal yang sudah terpasang. Hasilnya dicatat terpisah dari tes unit.
 
-- **Bentuk event SSE** — `{"type":"chunk","content":...}`, ditutup
-  `{"type":"done"}`. Ini ketidakcocokan nomor 1 di `docs/04` §0; kalau namanya
-  berubah, jawaban tidak muncul sama sekali di widget.
-- **401 yang konsisten** di seluruh endpoint, termasuk jaminan bahwa
-  `CHAT_STREAM_REQUIRE_AUTH=false` **hanya** melonggarkan `/api/chat/stream`
-  dan tidak pernah membuka `/api/docs/*`.
-- **`{"status":"accepted"}`** pada `POST /api/docs/process` — ketidakcocokan
-  nomor 3.
-- **Kegagalan tidak membocorkan rincian** — pesan exception, path, dan
-  kredensial tidak boleh sampai ke klien, baik lewat event SSE maupun 500.
-- **CORS tidak pernah kembali ke `*`.**
-- **`/health` membalas 503** saat ada dependensi mati, dan hasilnya di-cache
-  5 detik.
+Callback handoff menerima `LARAVEL_BASE_URL`, misalnya
+`http://127.0.0.1:8000`. Bila diberikan, callback hanya mencoba instance tersebut;
+kegagalan tidak diteruskan ke instance lain. Nilai kosong mempertahankan daftar
+discovery Docker/local lama. `.env.example` membiarkannya kosong agar deployment
+yang belum mengatur alamat eksplisit tetap memakai perilaku lama.
 
-Seluruh dependensi (Ollama, ChromaDB, MySQL, Redis, Celery) digantikan tiruan,
-jadi berkas ini berjalan tanpa satu pun layanan menyala.
+Sitasi JSON mengenali suffix halaman dari retrieval (` - Halaman ...`) dan
+separator em dash lama. Nama hanya dipetakan ke ID jika cocok secara tepat dan
+unik dalam `document_ids` permintaan. Judul duplikat, tidak cocok, atau tanpa
+scope tetap dapat menghasilkan `document_id: null`; nomor halaman tetap dibaca
+bila tersedia. Teks jawaban dan protokol SSE tetap sama.
+
+### Pemeliharaan health dan database
+
+`app/main.py` merakit aplikasi, lifecycle, dan CORS. HTTP serta cache health berada di `app/routers/health.py`; probe dan kalkulasi hardware berada di `app/services/diagnostics/`.
+
+- `/health` dan `/api/health` berbagi cache per proses selama 5 detik, termasuk hasil gagal. Semua probe berhasil menghasilkan HTTP 200/`healthy`; satu kegagalan menghasilkan HTTP 503/`degraded`. Koleksi ChromaDB kosong tetap sehat bila dapat dibaca. Ollama diperiksa terhadap model dari konfigurasi environment.
+- Diagnostik hardware selalu memeriksa bearer token sebelum handler/cache. TTL efektifnya 3 detik; `nocache=true` memaksa pembacaan ulang. Pada cache aktif, parameter `model` hanya menghitung ulang `model_fit`, sementara konfigurasi dan rekomendasi tetap berasal dari snapshot tersimpan. Konstanta lama `_MESIN_CACHE_TTL=10` tetap diekspor untuk kompatibilitas, tetapi tidak dipakai kondisi cache.
+- Pembacaan NVIDIA memakai GPU pertama. Angka RAM/VRAM dilaporkan dalam MiB; rekomendasi kapasitas merupakan estimasi dengan aturan yang sama seperti sebelum pemisahan modul, bukan hasil benchmark inferensi.
+
+`app/database.py` menyediakan ekspor kompatibilitas; implementasi query berada di `app/repositories/`. `connection.py` memiliki satu engine lazy per proses (`pool_pre_ping=True`, `pool_size=5`, `max_overflow=10`, `pool_recycle=3600`). SQL, parameter, dan transaksi tetap sama. `directories.py` memiliki cache FAQ/direktori terpisah selama 5 detik; bila pembacaan gagal, nilai cache lama tetap dikembalikan tanpa memperbarui timestamp.
+
+`settings.py` mempertahankan fallback seluruh konfigurasi RAG bila query atau konversi nilai gagal. `document_logs.py` mempertahankan debounce 15 detik dan menangani kegagalan query; kegagalan pembuatan engine pada `get_app_setting` dan `record_document_log` tetap dapat diteruskan ke pemanggil.
+
+Saat membuat mock, patch dependency pada modul yang menggunakannya, misalnya `app.repositories.documents.get_engine` atau `app.routers.health._baca_nvidia_smi`. Ekspor lama adalah alias fungsi, bukan salinan engine/cache.
 
 ---
 
@@ -377,46 +270,226 @@ jadi berkas ini berjalan tanpa satu pun layanan menyala.
 ```
 python-ai/
 ├── app/
-│   ├── main.py               # Aplikasi FastAPI, CORS, health check
+│   ├── main.py               # Perakitan FastAPI, lifecycle, dan CORS
 │   ├── config.py             # Pembacaan .env
-│   ├── database.py           # Koneksi MySQL (SQLAlchemy)
+│   ├── celery_app.py         # Instance Celery bersama; registrasi melalui app.tasks
+│   ├── database.py           # Ekspor query MySQL yang kompatibel
+│   ├── repositories/
+│   │   ├── connection.py     # Engine SQLAlchemy lazy per proses
+│   │   ├── documents.py      # Status, metadata, dan nama sitasi
+│   │   ├── settings.py       # Pengaturan tunggal dan konfigurasi RAG
+│   │   ├── directories.py    # FAQ/direktori beserta cache
+│   │   └── document_logs.py  # Log dokumen dan debounce
 │   ├── schemas.py            # Model request/response Pydantic
 │   ├── routers/
 │   │   ├── chat.py           # /api/chat/*
-│   │   └── documents.py      # /api/docs/*
+│   │   ├── documents.py      # HTTP daftar/status, chunk, citra, cleanup, prompt
+│   │   ├── ekstraksi.py      # Ekstraksi bertahap, koreksi, preview, embedding
+│   │   └── health.py         # Health publik, hardware bertoken, cache respons
 │   ├── services/
-│   │   ├── rag_service.py         # Retrieval + penyusunan jawaban
-│   │   ├── embedding_service.py   # Chunking + embedding + ChromaDB
-│   │   ├── pdf_processor.py       # Ekstraksi PDF + OCR
+│   │   ├── vector_cleanup.py     # Outbox cleanup SQL, retry background dan CLI
+│   │   ├── document_workflows/   # Query/lifecycle/citra/prompt dan kendali/koreksi/chunk
+│   │   ├── task_workflows/       # Legacy ingest, OCR bertahap, embedding, cleanup
+│   │   ├── diagnostics/
+│   │   │   ├── health.py          # Probe ChromaDB, MySQL, Redis, Ollama
+│   │   │   └── hardware.py        # Pembacaan mesin dan estimasi kapasitas
+│   │   ├── rag_service.py         # Orkestrasi chat, routing, memory, dan ekspor kompatibilitas
+│   │   ├── rag/
+│   │   │   ├── retrieval.py       # Hybrid search, BM25, reranking, sitasi
+│   │   │   ├── grounding.py       # Penjaga konteks, enumerasi, petunjuk perbandingan/waktu
+│   │   │   ├── generation.py      # Streaming Ollama dan fallback alokasi memori
+│   │   │   └── prompts.py         # Prompt bawaan, tanggal, profil instansi
+│   │   ├── backend_client.py      # Handoff tiket ke Laravel
+│   │   ├── embedding_service.py   # Ekspor kompatibilitas embedding/chunking/vektor
+│   │   ├── embeddings/
+│   │   │   ├── models.py          # Encoder, reranker, dan fallback Ollama
+│   │   │   ├── chunking.py        # Judul/konteks halaman dan parent-child chunking
+│   │   │   ├── vector_store.py    # Koleksi ChromaDB, baca/hapus/upsert vektor
+│   │   │   └── corpus.py          # Versi korpus dan invalidasi indeks BM25
+│   │   ├── ekstraksi_bertahap.py  # Ekspor kompatibilitas workflow dan penyimpanan
+│   │   ├── extraction/
+│   │   │   ├── contracts.py       # Status, protokol Penyimpanan, dan Kemajuan
+│   │   │   ├── workflow.py        # Ekstraksi per halaman, jeda/resume, flush cache
+│   │   │   ├── mysql_storage.py   # Halaman/job MySQL dan progres embedding Redis
+│   │   │   └── memory_storage.py  # Penyimpanan CLI satu proses
+│   │   ├── pdf_processor.py       # Ekspor kompatibilitas PDF/OCR
+│   │   ├── ocr/
+│   │   │   ├── pdf_io.py          # Path, render editor, ukuran, deteksi, teks native
+│   │   │   ├── prompts.py         # Prompt OCR dan petunjuk kategori/formulir
+│   │   │   ├── vision.py          # Pemilihan model, cache autodeteksi, request/retry
+│   │   │   ├── sop.py             # Deteksi SOP dan pemeriksaan kepala/NIP
+│   │   │   ├── cleanup.py         # Pembersihan teks dan pemulihan penanda daftar
+│   │   │   └── pipeline.py        # Gambar tertanam, OCR per halaman, pewarisan petunjuk
+│   │   ├── tool_router.py         # Ekspor kompatibilitas intent dan tool
+│   │   ├── routing/
+│   │   │   ├── dispatch.py        # Urutan pemilihan intent dan payload routing
+│   │   │   ├── language.py        # Slang, filler, keyword, penjaga kalimat tanya
+│   │   │   ├── patterns.py        # Pola sapaan, handoff, rangkuman, koreksi
+│   │   │   ├── semantic.py        # Cache anchor dan klasifikasi semantik
+│   │   │   ├── citizen.py         # Ekstraksi nama, instansi, dan kendala
+│   │   │   └── calendar.py        # Parsing tanggal/durasi dan hari kerja
 │   │   └── document_processor.py  # Deteksi jenis dokumen
 │   └── tasks/
-│       └── process_document.py    # Tugas Celery untuk ingest
+│       ├── process_document.py    # Ingest sekali jalan dan registrasi task
+│       └── ekstraksi.py           # Task OCR bertahap dan potong/embed
 ├── data/chromadb/            # Basis data vektor (tidak di-commit)
 ├── requirements.txt          # Dependensi terkurasi
-├── requirements.lock.txt     # Penutupan lengkap, untuk reproduksi persis
-└── analisa_dependensi.py     # Pembuat lock file
+└── requirements.lock.txt     # Penutupan lengkap, untuk reproduksi persis
 ```
+
+---
+
+## Batas pipeline dokumen
+
+Pemanggil yang sudah ada tetap memakai `app.services.embedding_service` dan
+`app.services.ekstraksi_bertahap`. Modul tersebut meneruskan fungsi, kelas,
+dan konstanta ke pemilik implementasinya; jangan membuat salinan cache model
+atau koleksi di modul kompatibilitas.
+
+| Bagian | Perilaku yang dipertahankan |
+| --- | --- |
+| Ekstraksi bertahap | Halaman yang sudah tersimpan dilewati. Hasil OCR dan petunjuk format disimpan sebelum pemeriksaan jeda sesudah halaman. Batas `maks_halaman` dapat menjadwalkan task lanjutan. |
+| Penyimpanan | `PenyimpananMySQL` tetap memakai `ekstraksi_job`/`ekstraksi_halaman` dari migrasi Laravel. SQL upsert dan perhitungan progres tetap sama; `PenyimpananMemori` hanya untuk CLI satu proses. |
+| Koreksi | Task OCR berhenti pada `menunggu_koreksi`. Pemulihan penanda daftar lintas halaman dilakukan setelah seluruh halaman terkumpul; embedding dijalankan melalui task terpisah setelah tindakan admin. |
+| Chunking | Parent 1500/overlap 200, child 300/overlap 50 secara bawaan. Daftar minimal 10 item memakai jalur khusus dengan batas blok 6000 karakter. Judul/label dan opsi custom tetap mengikuti algoritme lama. |
+| Embedding | Urutan fallback: Ollama → SentenceTransformer dari cache lokal → unduhan SentenceTransformer sebagai pilihan terakhir. Ukuran batch dan bentuk payload Ollama tetap sama. |
+| Vektor | Koleksi `documents` memakai cosine. Parent dan child tetap di-embed; ID `doc_{id}_parent_{index}`/`doc_{id}_child_{index}` serta metadata dan callback progres tetap sama. |
+| Invalidasi | Perubahan korpus menulis `corpus_version.txt` pada `CHROMA_PERSIST_DIR` dan membatalkan cache BM25 proses saat ini. Penanda versi tetap diperlukan ketika ingest berjalan di proses Celery. |
+
+Cache encoder/reranker dimiliki `embeddings/models.py`; koleksi ChromaDB
+dimiliki `embeddings/vector_store.py`; cache BM25 dimiliki `rag/retrieval.py`.
+Ketiganya tetap lazy. `.env` dimuat sebelum dependency model membaca mode
+Hugging Face offline. Pemisahan modul tidak memindahkan data, memuat model saat
+impor, mengubah prompt OCR, atau mengganti skema database.
+
+Konfigurasi Celery tetap memakai JSON, zona `Asia/Jakarta`, acknowledgment
+setelah task selesai, prefetch 1, dan concurrency 1. Nama task tetap
+`process_document_task`, `ekstrak_dokumen_task`, serta `potong_dan_embed_task`;
+payload dan aturan retry masing-masing task tetap dipertahankan. Modul task
+memiliki registrasi/decorator dan meneruskan task instance serta collaborator
+ke `services/task_workflows/`; workflow mempertahankan urutan status, retry,
+penjadwalan lanjutan, dan penulisan vektor.
+
+Router `documents.py` dan `ekstraksi.py` mempertahankan signature, dependency
+autentikasi, dan schema request/response. Metadata OpenAPI cancel menyatakan
+pembatalan kooperatif. Implementasi berada
+di `services/document_workflows/`: `document_queries`, `document_lifecycle`,
+`document_pages`, `document_prompts`, `extraction_control`,
+`extraction_corrections`, dan `extraction_chunks`. Helper lookup/storage
+ekstraksi dimiliki `extraction_control`; modul koreksi/chunk memakai helper itu.
+Saat membuat mock, patch dependency pada modul workflow yang menggunakannya.
+
+Pembatalan sekarang menggunakan `document_operations.py` dengan kolom
+`documents.processing_token` dan `cancellation_requested`. Setiap mulai/resume
+atau embedding memperoleh token baru; task, retry dan kelanjutan membawa
+`_operation_token`. Cancel menandai hanya dokumen tersebut dan mempertahankan
+token yang dibatalkan agar cleanup dapat diulang. Tidak ada purge antrean atau
+unload model bersama dari endpoint cancel.
+
+OCR/encoding berjalan di luar lock. Penyimpanan halaman, status, audit dan
+mutasi vektor memvalidasi token di dalam transaksi yang mengunci baris dokumen.
+Hasil operasi lama tidak dapat ditulis setelah cancel atau menggantikan hasil
+resume. Panggilan model yang sedang berjalan tidak dibunuh; worker membuang
+hasilnya pada batas aman berikutnya. Callback progres berjalan setelah lock
+upsert dilepas agar tidak membuka transaksi lain sambil menahan lock yang sama.
+
+Vektor worker diberi metadata `operation_token`. Cleanup menggunakan filter
+document ID dan token, dengan lock yang sama, sehingga tidak menghapus generasi
+baru atau dokumen lain. Cancel setelah pekerjaan selesai mempertahankan korpus
+yang telah selesai; timestamp `processed_at` dibersihkan saat operasi baru
+dimulai. Penggantian korpus belum merupakan transaksi atomik lintas MySQL/Chroma:
+bila penyimpanan vektor tidak tersedia, fence database tetap berlaku dan cleanup
+tetap tercatat pada outbox `document_vector_cleanups`. Resume setelah cancel
+parsial boleh membuat token baru; retry cleanup lama tetap memakai token lama.
+
+`services/vector_cleanup.py` memiliki penyimpanan request dan drainer. Laravel
+menulis request di transaksi yang sama dengan fence sebelum HTTP Python, dan
+Python juga menulisnya saat cancel/delete langsung. Tidak ada FK cascade ke
+`documents`: cleanup tetap ada setelah dokumen dihapus. Token kosong berarti
+cleanup seluruh dokumen untuk replace/delete, termasuk vektor lama tanpa token.
+Mulai/resume/embedding baru ditahan sampai cleanup penuh selesai; handler
+mencoba cleanup segera dan mengembalikan HTTP 503 bila masih tertunda. Setelah
+layanan pulih, lanjutkan dokumen melalui endpoint yang sudah ada.
+
+Lifespan FastAPI menguras maksimal 10 request saat startup dan setiap 30 detik
+melalui thread, tanpa bergantung pada broker Celery. Request gagal tetap ada,
+dengan `attempts`, `last_error` (nama kelas exception), dan jadwal retry UTC
+30/60/120/240/300 detik. Lock diambil dengan urutan dokumen lalu outbox;
+penghapusan Chroma memakai predicate asli, dan acknowledgement SQL dilakukan
+setelah operasi vektor serta pemanggilan invalidasi cache. Pengulangan setelah
+acknowledgement gagal aman, termasuk ketika vektor sudah tidak ada. Callback
+reset ekstraksi pada DELETE memeriksa flag cancellation di bawah lock agar
+tidak menghapus halaman dari generasi yang telah dilanjutkan.
+
+Retry manual saat diperlukan, dari direktori `python-ai` dengan konfigurasi
+database/Chroma yang sesuai (hanya memproses request yang sudah tercatat):
+
+```bash
+venv/bin/python -m app.services.vector_cleanup --limit 100
+venv/bin/python -m app.services.vector_cleanup --document-id 42 --limit 100
+```
+
+CLI mengabaikan backoff untuk retry eksplisit, mencetak jumlah selesai/gagal/
+vektor terhapus, dan keluar nonzero bila ada cleanup yang gagal. Retry otomatis
+memerlukan proses FastAPI hidup; worker Celery saja tidak menguras outbox.
+Jangan menghapus request tertunda secara manual untuk melewati gate generasi.
+Vektor orphan masih dapat berada di Chroma selama outage; outbox memberi
+pemulihan eventual, bukan pergantian korpus atomik atau filter retrieval baru.
+
+**Urutan rollout:** migrasi
+`2026_10_25_000001_add_document_operation_fences.php` dan
+`2026_10_25_000002_create_document_vector_cleanups_table.php` harus tersedia sebelum
+API/worker baru dijalankan. Selesaikan/hentikan worker versi lama, jalankan
+`php artisan migrate` pada database deployment yang benar, lalu jalankan API dan
+worker yang menggunakan protokol token bersama. Task lama yang tidak membawa
+token ditolak sebelum akses database/model; mulai ulang dokumennya melalui
+endpoint mulai/resume. Jangan melakukan purge antrean bersama untuk migrasi ini.
+Pengujian hanya menjalankan migrasi pada database sementara, bukan database
+operasional. Pemanggilan helper Python langsung tanpa guard tidak termasuk
+koordinasi task; semua entry point worker aplikasi selalu memakai guard.
+
+Kompilasi/import dan perbandingan struktur kode hanya memeriksa susunan modul.
+OCR nyata, kualitas embedding, SQL MySQL, progres Redis, serta eksekusi worker
+perlu diperiksa tersendiri dengan layanan dan data yang sesuai.
 
 ---
 
 ## Hal yang perlu diketahui
 
-**`chromadb` wajib tetap di 0.5.x.** Isi `data/chromadb` ditulis dengan
-format versi tersebut; chromadb 1.x memakai format berbeda, sehingga
-menaikkan versinya berarti seluruh dokumen harus di-ingest ulang.
+**Versi ChromaDB saat ini dipatok ke 1.5.9** di `requirements.txt` dan
+`requirements.lock.txt`. Sebelum mengubah versi, buat cadangan `data/chromadb`
+dan uji indeks yang sudah ada dengan versi target. Bila format penyimpanan tidak
+kompatibel, indeks perlu dibangun ulang dari dokumen sumber.
 
-**`ragas` 0.4.3 tidak bisa di-import begitu saja.** Ia mengimpor
-`langchain_community.chat_models.vertexai`, modul yang sudah dihapus dari
-langchain-community 0.4.x. Penambalnya sudah ada di `test_ragas.py`
-(fungsi `_patch_langchain_community_vertexai`, baris 139) dan berjalan
-sebelum ragas di-import. **Skrip evaluasi baru harus memanggil penambal yang
-sama.**
+**API dan worker terpisah memakai satu server Chroma.** Pengujian integrasi
+menemukan kegagalan query segmen HNSW ketika API membuka koleksi embedded kosong
+lalu worker lain menulis indeks pada path yang sama. Gunakan mode HTTP untuk
+profil beberapa proses:
 
-**Kebisingan telemetri ChromaDB.** chromadb 0.5.5 memanggil `posthog.capture()`
-dengan tiga argumen, sedangkan posthog 7.x hanya menerima satu — hasilnya
-setiap operasi ChromaDB menulis baris `Failed to send telemetry event ...`.
-Tidak ada dampak fungsional. Peredamnya dipasang di `app/main.py` dan
-`test_ragas.py`; skrip baru perlu mengulangnya.
+```bash
+chroma run --path ./data/chromadb --host 127.0.0.1 --port 9090
+# .env yang sama untuk FastAPI dan Celery:
+# CHROMA_HTTP_HOST=127.0.0.1
+# CHROMA_HTTP_PORT=9090
+# CHROMA_HTTP_SSL=false
+```
+
+Hentikan pemakai embedded sebelum membuka datadir tersebut melalui server.
+Host kosong mempertahankan `PersistentClient` lama; host eksplisit memilih
+`HttpClient` dan kegagalan koneksi tidak beralih ke database lokal lain.
+`CHROMA_PERSIST_DIR` tetap menjadi lokasi penanda versi korpus yang harus
+terlihat oleh API dan worker, termasuk ketika database vektor diakses lewat
+HTTP. Mode server serta client dijelaskan pada
+[dokumentasi resmi Chroma](https://docs.trychroma.com/production/chroma-server/client-server-mode).
+Launcher/Compose lama tetap perlu dikonfigurasi untuk profil ini; runner
+integrasi melakukannya pada layanan sementara tanpa mengubah `.env` aplikasi.
+
+**Evaluasi RAGAS.** Dependensi evaluasi tercantum dalam requirements, tetapi skrip evaluasi dan penambal kompatibilitas lama tidak tersedia pada checkout ini. Periksa kompatibilitas paket dan ketersediaan dataset sebelum menambahkan alur evaluasi baru.
+
+**Kebisingan telemetri ChromaDB.** `app/main.py` menurunkan level log dari
+telemetri ChromaDB dan dependensinya agar kegagalan pengiriman statistik tidak
+menutupi log aplikasi. Jangan menyalin konfigurasi itu ke skrip baru tanpa
+memastikan skrip tersebut memang perlu menonaktifkan log telemetri.
 
 **Menambah dokumen membatalkan indeks pencarian.** Indeks BM25 di-cache di
 memori. Kesahihannya ditentukan dua penanda: jumlah vektor di ChromaDB, dan
@@ -447,3 +520,56 @@ prosedurnya — tanpa galat apa pun. Ekstraksi kini mendeteksi halaman yang
 memuat `Nomor SOP` tetapi kehilangan `Nama SOP`, lalu mengulang OCR halaman itu
 sampai dua kali; kalau tetap gagal, kejadiannya dicatat sebagai `ERROR` di log
 alih-alih lolos diam-diam.
+
+## Batas PDF/OCR dan routing intent
+
+`pdf_processor.py` dan `tool_router.py` tetap menjadi titik masuk bagi router,
+worker, adaptor format dokumen, dan RAG. Implementasi di `ocr/` dan `routing/`
+mempertahankan signature fungsi, konstanta prompt, aturan, serta bentuk keluaran.
+
+| Bagian | Perilaku yang dipertahankan |
+| --- | --- |
+| Halaman native | Teks minimal 300 karakter menggunakan jalur native. Gambar tertanam yang memenuhi aturan ukuran/signifikansi tetap dapat dibaca melalui vision. |
+| Render editor | `ocr/pdf_io.py::render_halaman` memakai zoom bawaan 2.0; zoom API hanya 1.5/2/3/4. Sisi terpanjang dibatasi 2560 piksel dan JPEG memakai kualitas 80. |
+| Render OCR PDF | `ocr/pipeline.py::_ekstrak_halaman` memakai zoom 1.5 dengan batas sisi 2048 piksel dan JPEG kualitas 85. Jalur ini tetap berbeda dari render editor. |
+| Pemilihan model | Model eksplisit kategori/payload → pengaturan global vision → autodeteksi Ollama dengan cache 60 detik → fallback konfigurasi. Cache hanya dimiliki `ocr/vision.py`. |
+| Prompt | Prompt dasar/custom `dasar` → tambahan kategori → istilah/jabatan → petunjuk format. Alias `{kata_kunci}` dan `{job_titles}` tetap didukung. Petunjuk tabel diwariskan; petunjuk kepala hanya dipakai ketika kepala terlihat. |
+| Penjaga SOP | Hasil yang memuat `Nomor SOP` tetapi kehilangan `Nama SOP` atau NIP dapat diulang dua kali lagi. Bila tetap tidak lengkap, hasil terbaik tetap dikembalikan dan kehilangan bagian dicatat sebagai error. |
+| Routing | Bentuk hasil tetap `{intent, params, label}`. Urutan rangkuman, handoff, sapaan/follow-up, verifikasi dokumen, kalkulator, direktori, FAQ, dan RAG tetap sama. |
+| Classifier | Anchor embedding tetap lazy dan disimpan pada `routing/semantic.py`; ambang handoff 0.80 disertai penjaga kalimat tanya, sedangkan rangkuman/sapaan memakai 0.75. |
+| Kalkulator | Perhitungan hari kerja tetap memakai Senin–Jumat, dimulai setelah tanggal awal. Kalender libur nasional/cuti bersama belum dipakai, meskipun teks keluaran lama tetap dipertahankan. |
+
+Logger tetap menggunakan nama `app.services.pdf_processor` dan
+`app.services.tool_router` agar konfigurasi penyaringan log lama tetap cocok.
+Mengimpor modul tidak menjalankan OCR, memuat model, mengisi cache anchor,
+atau meminta daftar model Ollama. Pemanggilan fungsi yang bersangkutan tetap
+memerlukan layanan/dependency runtime yang sama seperti sebelumnya.
+
+Helper istilah kategori mempertahankan perilaku lama: bila satu prompt memuat
+kedua alias `{kata_kunci}` dan `{job_titles}`, penggantian berhenti pada jenis
+alias pertama yang ditemukan menurut urutan pemeriksaan tersebut. Gunakan satu
+jenis placeholder dalam prompt bila keduanya dimaksudkan sebagai istilah yang sama.
+
+## Struktur dan verifikasi
+
+- `app/routers/` menangani HTTP; `app/security.py` menyediakan dependency
+  autentikasi bearer yang dipakai router.
+- `app/services/rag_service.py` tetap menjadi titik masuk `generate_response` dan `invalidate_bm25_cache` bagi router/worker. Implementasi terpisah berada di `app/services/rag/`; cache BM25 hanya dimiliki `retrieval.py`.
+- `app/services/embeddings/` memisahkan model, chunking, penyimpanan vektor, dan invalidasi korpus. `embedding_service.py` tetap menyediakan titik masuk lama.
+- `app/services/extraction/` memisahkan kontrak, workflow, dan penyimpanan progres. `ekstraksi_bertahap.py` tetap menyediakan kelas dan fungsi pada path lama.
+- `app/services/ocr/` memisahkan akses PDF, prompt, komunikasi vision, pemeriksaan SOP, pembersihan teks, dan pipeline halaman. `pdf_processor.py` tetap menyediakan fungsi/konstanta pada path lama, termasuk konstanta prompt yang dibaca endpoint diagnostik.
+- `app/services/routing/` memisahkan normalisasi bahasa, pola intent, klasifikasi semantik, data warga, kalkulasi waktu, dan dispatch. `tool_router.py` tetap menyediakan fungsi lama bagi RAG dan session memory.
+- Prompt, ambang retrieval, format sitasi, event debug/telemetri, serta urutan penjaga dipertahankan saat pemisahan modul.
+- `app/services/backend_client.py` mengirim handoff tiket ke Laravel dan
+  membentuk payload kontrak internal.
+- `app/celery_app.py` membuat satu instance Celery; `app/tasks/` mendaftarkan task ingestion/ekstraksi dan tetap menjadi titik masuk worker.
+- Jaga path HTTP, bentuk JSON/SSE, serta payload yang dipakai Laravel.
+
+Jalankan tes unit tanpa Ollama/MySQL/Redis:
+
+```bash
+python -m unittest discover -s tests
+```
+
+Panduan batas kontrak dan pemeliharaan lintas aplikasi ada di
+[`../docs/08-panduan-struktur-kode-dan-pemeliharaan.md`](../docs/08-panduan-struktur-kode-dan-pemeliharaan.md).
