@@ -20,6 +20,12 @@ return Application::configure(basePath: dirname(__DIR__))
         // Sanctum SPA stateful middleware for cookie-based session auth
         $middleware->statefulApi();
 
+        // Editor corrections contain meaningful indentation and final newlines.
+        $middleware->trimStrings(except: [
+            fn (Request $request) => $request->isMethod('PUT')
+                && $request->is('api/documents/*/pages/*'),
+        ]);
+
         // Register route middleware aliases
         $middleware->alias([
             'auth.apikey' => \App\Http\Middleware\AuthenticateApiKey::class,

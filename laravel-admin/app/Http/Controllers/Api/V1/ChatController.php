@@ -2,14 +2,14 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Http\Controllers\Api\SettingController;
+use App\Services\Settings\ChatbotSettingsService;
+use App\Services\Channels\AiChatGateway;
 use App\Http\Controllers\Controller;
 use App\Models\AppSetting;
 use App\Models\ChatTicket;
 use App\Events\TicketMessageSent;
 use App\Events\TicketUpdated;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -49,7 +49,7 @@ class ChatController extends Controller
     {
         $chatbotName = AppSetting::getVal('chatbot_name', 'Asisten Virtual Diskominfotik');
         $chatbotPersona = AppSetting::getVal('chatbot_persona', 'Asisten AI Resmi Layanan Informasi Diskominfotik');
-        $rawPrompt = AppSetting::getVal('rag_system_prompt', SettingController::getDefaultRagPrompt());
+        $rawPrompt = AppSetting::getVal('rag_system_prompt', ChatbotSettingsService::getDefaultRagPrompt());
 
         $systemPrompt = str_replace(
             ['{chatbot_name}', '{chatbot_persona}'],
@@ -138,10 +138,9 @@ class ChatController extends Controller
         ];
 
         try {
-            $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $this->getInternalToken(),
-                'Content-Type' => 'application/json',
-            ])->timeout(60)->post($this->getAiBaseUrl() . '/api/chat/message', $payload);
+            $response = app(AiChatGateway::class)->postMessage(
+                $this->getAiBaseUrl() . '/api/chat/message', $this->getInternalToken(), $payload,
+            );
 
             if (!$response->successful()) {
                 Log::warning('AI Service offline/error on message endpoint, applying graceful degradation', [
@@ -298,31 +297,20 @@ class ChatController extends Controller
 
         return new StreamedResponse(function () use ($payload, $validated, $sessionId, $apiKey) {
             $hasEmittedData = false;
-            $ch = curl_init($this->getAiBaseUrl() . '/api/chat/stream');
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Authorization: Bearer ' . $this->getInternalToken(),
-                'Content-Type: application/json',
-                'Accept: text/event-stream',
-            ]);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, false);
-            curl_setopt($ch, CURLOPT_WRITEFUNCTION, function ($ch, $data) use (&$hasEmittedData) {
-                if (strlen($data) > 0) {
-                    $hasEmittedData = true;
-                }
-                echo $data;
-                if (ob_get_level() > 0) {
-                    ob_flush();
-                }
-                flush();
-                return strlen($data);
-            });
-            curl_setopt($ch, CURLOPT_TIMEOUT, 120);
-
-            curl_exec($ch);
-            $curlError = curl_error($ch);
-            curl_close($ch);
+            $curlError = app(AiChatGateway::class)->stream(
+                $this->getAiBaseUrl() . '/api/chat/stream', $this->getInternalToken(), $payload,
+                function ($ch, $data) use (&$hasEmittedData) {
+                    if (strlen($data) > 0) {
+                        $hasEmittedData = true;
+                    }
+                    echo $data;
+                    if (ob_get_level() > 0) {
+                        ob_flush();
+                    }
+                    flush();
+                    return strlen($data);
+                },
+            );
 
             // The Python stream may create a handoff ticket while forwarding SSE.
             // Attach it to this public API key so staff replies reach this client.

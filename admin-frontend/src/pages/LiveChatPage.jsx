@@ -1,51 +1,49 @@
-import { useState, useEffect, useRef, useLayoutEffect } from 'react'
+import { useState, useRef, useLayoutEffect } from 'react'
 import ReactDOM from 'react-dom'
 import gsap from 'gsap'
-import { ticketsApi } from '../api/tickets'
 import { InfoTooltip } from '../components/UI/InfoTooltip'
 import { SlidingTabs } from '../components/UI/SlidingTabs'
-import { addAppNotification } from '../utils/notifications'
+import { TicketStatusBadge } from '../components/Tickets/TicketStatusBadge'
+import { useLiveChat } from '../hooks/tickets/useLiveChat'
 
 export default function LiveChatPage() {
-  const [activeTab, setActiveTab] = useState('all') // all | open | in_progress | resolved
-  const [tickets, setTickets] = useState([])
-  const [stats, setStats] = useState({ open: 0, in_progress: 0, resolved: 0, total: 0 })
-  const [selectedTicket, setSelectedTicket] = useState(null)
-  const [messages, setMessages] = useState([])
-  const [replyText, setReplyText] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [loadingMessages, setLoadingMessages] = useState(false)
-  const [sending, setSending] = useState(false)
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false)
-  const [unreadWhileScrolled, setUnreadWhileScrolled] = useState(0)
-  const [selectedFile, setSelectedFile] = useState(null)
-  const [filePreviewUrl, setFilePreviewUrl] = useState(null)
+  const {
+    activeTab,
+    setActiveTab,
+    tickets,
+    selectedTicket,
+    messages,
+    replyText,
+    setReplyText,
+    loading,
+    loadingMessages,
+    sending,
+    isRefreshing,
+    searchQuery,
+    setSearchQuery,
+    showScrollBottomBtn,
+    unreadWhileScrolled,
+    selectedFile,
+    filePreviewUrl,
+    ticketToDelete,
+    setTicketToDelete,
+    isDeleting,
+    messagesContainerRef,
+    messagesEndRef,
+    replyInputRef,
+    fileInputRef,
+    handleScroll,
+    scrollToBottom,
+    fetchTickets,
+    handleSelectTicket,
+    handleFileChange,
+    handleClearFile,
+    handleSendReply,
+    handleStatusChange,
+    handleDeleteTicket,
+  } = useLiveChat()
   const [previewModalImg, setPreviewModalImg] = useState(null)
-  const [ticketToDelete, setTicketToDelete] = useState(null)
-  const [isDeleting, setIsDeleting] = useState(false)
-
-  const messagesContainerRef = useRef(null)
-  const messagesEndRef = useRef(null)
-  const isNearBottomRef = useRef(true)
-  const prevMessagesLengthRef = useRef(0)
-  const replyInputRef = useRef(null)
-  const shouldRefocusReplyInputRef = useRef(false)
-  const sendingTicketIdRef = useRef(null)
-  const fileInputRef = useRef(null)
   const headerRef = useRef(null)
-
-  useLayoutEffect(() => {
-    if (sending || !shouldRefocusReplyInputRef.current) return
-
-    if (sendingTicketIdRef.current === selectedTicket?.id && selectedTicket?.status !== 'resolved') {
-      replyInputRef.current?.focus()
-    }
-
-    shouldRefocusReplyInputRef.current = false
-    sendingTicketIdRef.current = null
-  }, [sending, selectedTicket?.id, selectedTicket?.status])
 
   useLayoutEffect(() => {
     if (!headerRef.current?.children?.length) return
@@ -67,276 +65,6 @@ export default function LiveChatPage() {
 
     return () => context.revert()
   }, [])
-
-  const handleScroll = () => {
-    if (!messagesContainerRef.current) return
-    const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current
-    const distanceFromBottom = scrollHeight - scrollTop - clientHeight
-    const isNear = distanceFromBottom < 100
-
-    isNearBottomRef.current = isNear
-
-    if (isNear) {
-      setShowScrollBottomBtn(false)
-      setUnreadWhileScrolled(0)
-    } else {
-      setShowScrollBottomBtn(true)
-    }
-  }
-
-  const scrollToBottom = (behavior = 'smooth') => {
-    if (messagesContainerRef.current) {
-      messagesContainerRef.current.scrollTo({
-        top: messagesContainerRef.current.scrollHeight,
-        behavior,
-      })
-    } else if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior })
-    }
-    isNearBottomRef.current = true
-    setShowScrollBottomBtn(false)
-    setUnreadWhileScrolled(0)
-  }
-
-  // Fetch ticket lists & stats
-  const fetchTickets = async (showLoading = false) => {
-    if (showLoading) setLoading(true)
-    setIsRefreshing(true)
-    try {
-      const [ticketRes, statRes] = await Promise.all([
-        ticketsApi.list({
-          status: activeTab !== 'all' ? activeTab : undefined,
-          search: searchQuery.trim() || undefined,
-        }),
-        ticketsApi.getStats().catch(() => null),
-      ])
-
-      const list = ticketRes?.data || ticketRes?.tickets || (Array.isArray(ticketRes) ? ticketRes : [])
-      setTickets(list)
-
-      if (statRes?.data || statRes) {
-        setStats(statRes?.data || statRes)
-        window.dispatchEvent(new CustomEvent('app-tickets-updated'))
-      }
-
-      // If a ticket is currently selected, refresh its detail
-      if (selectedTicket) {
-        const updated = list.find((t) => t.id === selectedTicket.id)
-        if (updated) setSelectedTicket(updated)
-      } else if (list.length > 0 && !selectedTicket) {
-        handleSelectTicket(list[0])
-      }
-    } catch (err) {
-      console.error('Failed to load tickets:', err)
-    } finally {
-      if (showLoading) setLoading(false)
-      setTimeout(() => setIsRefreshing(false), 400)
-    }
-  }
-
-  // Fetch messages for selected ticket
-  const fetchMessages = async (ticketId, isInitial = false) => {
-    if (isInitial) {
-      setLoadingMessages(true)
-      setUnreadWhileScrolled(0)
-      setShowScrollBottomBtn(false)
-      isNearBottomRef.current = true
-    }
-    try {
-      const res = await ticketsApi.getMessages(ticketId)
-      const msgList = res?.data || res?.messages || (Array.isArray(res) ? res : [])
-      setMessages(msgList)
-      if (isInitial) {
-        prevMessagesLengthRef.current = msgList.length
-        setTimeout(() => scrollToBottom('auto'), 50)
-      }
-    } catch (err) {
-      console.error('Failed to load messages for ticket:', ticketId, err)
-    } finally {
-      if (isInitial) setLoadingMessages(false)
-    }
-  }
-
-  useEffect(() => {
-    fetchTickets(true)
-  }, [activeTab])
-
-  useEffect(() => {
-    if (selectedTicket?.id) {
-      fetchMessages(selectedTicket.id, true)
-    }
-  }, [selectedTicket?.id])
-
-  // Auto-scroll to bottom like WhatsApp when new messages arrive
-  useEffect(() => {
-    if (messages.length === 0) return
-
-    const diff = messages.length - prevMessagesLengthRef.current
-    prevMessagesLengthRef.current = messages.length
-
-    if (diff > 0) {
-      if (isNearBottomRef.current) {
-        const timer = setTimeout(() => {
-          scrollToBottom('smooth')
-        }, 50)
-        return () => clearTimeout(timer)
-      } else {
-        // User is scrolled up reading previous history -> don't yank view, show unread badge!
-        setUnreadWhileScrolled((prev) => prev + diff)
-        setShowScrollBottomBtn(true)
-      }
-    }
-  }, [messages])
-
-  // Real-time background sync timer (5s)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchTickets(false)
-      if (selectedTicket?.id) {
-        fetchMessages(selectedTicket.id, false)
-      }
-    }, 5000)
-    return () => clearInterval(interval)
-  }, [selectedTicket?.id, activeTab, searchQuery])
-
-  const handleSelectTicket = (t) => {
-    setSelectedTicket(t)
-  }
-
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (file.size > 10 * 1024 * 1024) {
-      addAppNotification({
-        title: 'Ukuran File Terlalu Besar',
-        message: 'Maksimal ukuran file lampiran adalah 10 MB.',
-        type: 'warning',
-      })
-      return
-    }
-    setSelectedFile(file)
-    if (file.type.startsWith('image/')) {
-      setFilePreviewUrl(URL.createObjectURL(file))
-    } else {
-      setFilePreviewUrl(null)
-    }
-  }
-
-  const handleClearFile = () => {
-    setSelectedFile(null)
-    if (filePreviewUrl) {
-      URL.revokeObjectURL(filePreviewUrl)
-      setFilePreviewUrl(null)
-    }
-    if (fileInputRef.current) fileInputRef.current.value = ''
-  }
-
-  const handleSendReply = async (e) => {
-    e?.preventDefault()
-    if ((!replyText.trim() && !selectedFile) || !selectedTicket || sending) return
-
-    shouldRefocusReplyInputRef.current = true
-    sendingTicketIdRef.current = selectedTicket.id
-    setSending(true)
-    try {
-      await ticketsApi.reply(selectedTicket.id, replyText.trim(), selectedFile)
-      setReplyText('')
-      handleClearFile()
-      await fetchMessages(selectedTicket.id, false)
-      scrollToBottom()
-    } catch (err) {
-      console.error('Failed to send reply:', err)
-      addAppNotification({
-        title: 'Gagal Mengirim Balasan',
-        message: err?.response?.data?.message || 'Terjadi kesalahan saat mengirim pesan balasan.',
-        type: 'warning',
-      })
-    } finally {
-      setSending(false)
-    }
-  }
-
-  const handleStatusChange = async (newStatus) => {
-    if (!selectedTicket) return
-    try {
-      await ticketsApi.updateStatus(selectedTicket.id, newStatus)
-      setSelectedTicket((prev) => ({ ...prev, status: newStatus }))
-      fetchTickets(false)
-      addAppNotification({
-        title: 'Status Tiket Diperbarui',
-        message: `Tiket ${selectedTicket.ticket_number || `#${selectedTicket.id}`} sekarang berstatus ${newStatus.toUpperCase()}.`,
-        type: 'info',
-      })
-    } catch (err) {
-      console.error('Failed to update status:', err)
-    }
-  }
-
-  const handleDeleteTicket = async (ticket) => {
-    if (!ticket) return
-    setIsDeleting(true)
-    try {
-      await ticketsApi.delete(ticket.id)
-      addAppNotification({
-        title: 'Tiket Berhasil Dihapus',
-        message: `Tiket ${ticket.ticket_number || `#${ticket.id}`} (${ticket.citizen_name || 'Warga'}) telah dihapus secara permanen.`,
-        type: 'success',
-      })
-
-      // Update local state
-      setTickets((prev) => prev.filter((t) => t.id !== ticket.id))
-      setStats((prev) => ({
-        ...prev,
-        total: Math.max(0, (prev.total || 1) - 1),
-        [ticket.status]: Math.max(0, (prev[ticket.status] || 1) - 1),
-      }))
-
-      if (selectedTicket?.id === ticket.id) {
-        setSelectedTicket(null)
-        setMessages([])
-      }
-
-      setTicketToDelete(null)
-    } catch (err) {
-      console.error('Failed to delete ticket:', err)
-      addAppNotification({
-        title: 'Gagal Menghapus Tiket',
-        message: err?.response?.data?.message || 'Terjadi kesalahan saat menghapus tiket.',
-        type: 'warning',
-      })
-    } finally {
-      setIsDeleting(false)
-    }
-  }
-
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case 'open':
-        return (
-          <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20">
-            Terbuka
-          </span>
-        )
-      case 'in_progress':
-        return (
-          <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-sky-500/10 text-sky-500 border border-sky-500/20">
-            Diproses
-          </span>
-        )
-      case 'resolved':
-        return (
-          <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-            Selesai
-          </span>
-        )
-      default:
-        return (
-          <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-slate-500/10 text-slate-400 border border-slate-500/20">
-            {status}
-          </span>
-        )
-    }
-  }
 
   return (
     <div className="p-3 sm:p-4.5 max-w-[1700px] mx-auto flex flex-col h-[calc(100vh-76px)] overflow-hidden gap-3">
@@ -461,7 +189,7 @@ export default function LiveChatPage() {
 
                     <div className="flex items-center justify-between pt-1">
                       <div className="flex items-center gap-2">
-                        {getStatusBadge(t.status)}
+                        <TicketStatusBadge status={t.status} />
                         <span className="text-[10px] font-mono text-[var(--text-muted)] font-semibold">
                           {t.ticket_number || `#${t.id}`}
                         </span>

@@ -8,13 +8,13 @@ use App\Events\TicketUpdated;
 use App\Models\ChatTicket;
 use App\Models\ChatTicketMessage;
 use App\Models\User;
-use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 class TicketAdversarialTest extends TestCase
 {
-    use DatabaseTransactions;
+    use RefreshDatabase;
 
     protected string $validToken = 'dev-internal-token-secret-1234567890';
 
@@ -32,49 +32,27 @@ class TicketAdversarialTest extends TestCase
     {
         $payload = ['session_id' => 'sess-test', 'message' => 'Test message'];
 
-        // 1. Missing Authorization header completely
-        $this->postJson('/api/v1/internal/chat-tickets', $payload)
-            ->assertStatus(401)
-            ->assertJson(['success' => false]);
+        // Pass request-scoped headers so one invalid case cannot mask another.
+        $invalidHeaders = [
+            [],
+            ['Authorization' => 'Bearer ' . $this->validToken . ' '],
+            ['Authorization' => 'Bearer ' . strtoupper($this->validToken)],
+            ['Authorization' => 'Bearer ' . substr($this->validToken, 0, -2)],
+            ['Authorization' => 'Bearer' . $this->validToken],
+            ['Authorization' => 'Bearer '],
+            ['X-Internal-Token' => 'invalid-token-here'],
+            ['X-AI-Service-Token' => 'invalid-token-here'],
+        ];
 
-        // 2. Trailing whitespace in token
-        $this->withHeader('Authorization', 'Bearer ' . $this->validToken . ' ')
-            ->postJson('/api/v1/internal/chat-tickets', $payload)
-            ->assertStatus(401);
+        foreach ($invalidHeaders as $headers) {
+            $this->postJson('/api/v1/internal/chat-tickets', $payload, $headers)
+                ->assertStatus(401)
+                ->assertJson(['success' => false]);
+        }
 
-        // 3. Uppercase version (tokens are case-sensitive)
-        $this->withHeader('Authorization', 'Bearer ' . strtoupper($this->validToken))
-            ->postJson('/api/v1/internal/chat-tickets', $payload)
-            ->assertStatus(401);
-
-        // 4. Truncated token (checking timing attack resilience / exact match)
-        $this->withHeader('Authorization', 'Bearer ' . substr($this->validToken, 0, -2))
-            ->postJson('/api/v1/internal/chat-tickets', $payload)
-            ->assertStatus(401);
-
-        // 5. Malformed prefix (no space after Bearer)
-        $this->withHeader('Authorization', 'Bearer' . $this->validToken)
-            ->postJson('/api/v1/internal/chat-tickets', $payload)
-            ->assertStatus(401);
-
-        // 6. Empty Bearer token
-        $this->withHeader('Authorization', 'Bearer ')
-            ->postJson('/api/v1/internal/chat-tickets', $payload)
-            ->assertStatus(401);
-
-        // 7. Invalid custom header token
-        $this->withHeader('X-Internal-Token', 'invalid-token-here')
-            ->postJson('/api/v1/internal/chat-tickets', $payload)
-            ->assertStatus(401);
-
-        $this->withHeader('X-AI-Service-Token', 'invalid-token-here')
-            ->postJson('/api/v1/internal/chat-tickets', $payload)
-            ->assertStatus(401);
-
-        // 8. Valid token in X-AI-Service-Token succeeds
-        $this->withHeader('X-AI-Service-Token', $this->validToken)
-            ->postJson('/api/v1/internal/chat-tickets', $payload)
-            ->assertStatus(201);
+        $this->postJson('/api/v1/internal/chat-tickets', $payload, [
+            'X-AI-Service-Token' => $this->validToken,
+        ])->assertStatus(201);
     }
 
     // =========================================================================
@@ -181,7 +159,7 @@ class TicketAdversarialTest extends TestCase
         $this->assertEquals($xssName, $ticket->citizen_name);
         $this->assertEquals($sqliIssue, $ticket->issue_summary);
 
-        $msg = $ticket->messages()->first();
+        $msg = $ticket->messages()->where('sender_type', 'citizen')->first();
         $this->assertNotNull($msg);
         $this->assertEquals($emojiMessage, $msg->message);
     }
@@ -224,6 +202,7 @@ class TicketAdversarialTest extends TestCase
 
     public function test_internal_session_reuse_and_status_isolation(): void
     {
+        $this->freezeTime();
         $headers = ['Authorization' => 'Bearer ' . $this->validToken];
         $sessionId = 'sess-cycle-123';
 
@@ -243,33 +222,81 @@ class TicketAdversarialTest extends TestCase
         $res2->assertStatus(200);
         $this->assertEquals($t1Id, $res2->json('data.ticket_id'));
 
-        // 3. Mark T1 as 'resolved'
+        // A resolved ticket reopens on the same day, keeping its conversation.
         $t1 = ChatTicket::find($t1Id);
-        $t1->status = 'resolved';
-        $t1->save();
+        $t1->update(['status' => 'resolved', 'resolved_at' => now()]);
 
-        // 4. Third message from citizen -> should NOT append to resolved ticket; creates new ticket T2!
         $res3 = $this->withHeaders($headers)->postJson('/api/v1/internal/chat-tickets', [
             'session_id' => $sessionId,
             'message' => 'Saya mau buka keluhan baru',
         ]);
-        $res3->assertStatus(201);
-        $t2Id = $res3->json('data.ticket_id');
-        $this->assertNotEquals($t1Id, $t2Id);
+        $res3->assertStatus(200)
+            ->assertJsonPath('data.ticket_id', $t1Id)
+            ->assertJsonPath('data.status', 'in_progress');
+        $t1->refresh();
+        $this->assertNull($t1->resolved_at);
+        $this->assertNull($t1->closed_at);
+        $this->assertDatabaseHas('chat_ticket_messages', [
+            'ticket_id' => $t1Id,
+            'sender_type' => 'system',
+            'message' => "Ticket Re-opened: {$t1->ticket_number}",
+        ]);
 
-        // 5. Mark T2 as 'closed'
-        $t2 = ChatTicket::find($t2Id);
-        $t2->status = 'closed';
-        $t2->save();
+        // Closed tickets also reopen on the same day.
+        $t1->update(['status' => 'closed', 'closed_at' => now()]);
+        $this->withHeaders($headers)->postJson('/api/v1/internal/chat-tickets', [
+            'session_id' => $sessionId,
+            'message' => 'Masih ada kendala hari ini',
+        ])->assertStatus(200)
+            ->assertJsonPath('data.ticket_id', $t1Id)
+            ->assertJsonPath('data.status', 'in_progress');
+        $this->assertNull($t1->fresh()->closed_at);
 
-        // 6. Fourth message from citizen -> creates new ticket T3!
+        // An older resolved ticket stays resolved; the next day starts a new ticket.
+        $t1->update(['status' => 'resolved', 'resolved_at' => now()]);
+        $messageCount = $t1->messages()->count();
+        $this->travel(1)->days();
         $res4 = $this->withHeaders($headers)->postJson('/api/v1/internal/chat-tickets', [
+            'session_id' => $sessionId,
+            'message' => 'Keluhan hari berikutnya',
+        ]);
+        $res4->assertStatus(201);
+        $t2Id = $res4->json('data.ticket_id');
+        $this->assertNotEquals($t1Id, $t2Id);
+        $this->assertEquals('resolved', $t1->fresh()->status);
+        $this->assertEquals($messageCount, $t1->messages()->count());
+
+        // An older closed ticket also remains separate from a later day's ticket.
+        ChatTicket::find($t2Id)->update(['status' => 'closed', 'closed_at' => now()]);
+        $this->travel(1)->days();
+        $res5 = $this->withHeaders($headers)->postJson('/api/v1/internal/chat-tickets', [
             'session_id' => $sessionId,
             'message' => 'Keluhan ketiga',
         ]);
-        $res4->assertStatus(201);
-        $t3Id = $res4->json('data.ticket_id');
+        $res5->assertStatus(201);
+        $t3Id = $res5->json('data.ticket_id');
         $this->assertNotEquals($t2Id, $t3Id);
+    }
+
+    public function test_internal_reopens_older_ticket_resolved_today(): void
+    {
+        $this->freezeTime();
+        $ticket = ChatTicket::create([
+            'session_id' => 'older-ticket-resolved-today',
+            'status' => 'resolved',
+            'resolved_at' => now(),
+        ]);
+        $ticket->forceFill(['created_at' => now()->subDays(2)])->save();
+
+        $this->postJson('/api/v1/internal/chat-tickets', [
+            'session_id' => $ticket->session_id,
+            'message' => 'Masih perlu bantuan setelah ditutup tadi',
+        ], ['Authorization' => 'Bearer ' . $this->validToken])
+            ->assertStatus(200)
+            ->assertJsonPath('data.ticket_id', $ticket->id)
+            ->assertJsonPath('data.status', 'in_progress');
+
+        $this->assertNull($ticket->fresh()->resolved_at);
     }
 
     // =========================================================================
@@ -399,13 +426,21 @@ class TicketAdversarialTest extends TestCase
         $this->actingAs($admin)
             ->postJson("/api/tickets/{$ticket->id}/messages", [])
             ->assertStatus(422)
-            ->assertJsonValidationErrors(['message']);
+            ->assertExactJson([
+                'success' => false,
+                'message' => 'Pesan atau lampiran tidak boleh kosong.',
+            ]);
 
         // 2. Empty string message
         $this->actingAs($admin)
             ->postJson("/api/tickets/{$ticket->id}/messages", ['message' => ''])
             ->assertStatus(422)
-            ->assertJsonValidationErrors(['message']);
+            ->assertExactJson([
+                'success' => false,
+                'message' => 'Pesan atau lampiran tidak boleh kosong.',
+            ]);
+
+        $this->assertSame(0, $ticket->messages()->count());
 
         // 3. Non-boolean is_internal_note (array)
         $this->actingAs($admin)

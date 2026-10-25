@@ -4,17 +4,23 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Document;
-use App\Models\DocumentLog;
 use App\Services\AiMicroserviceClient;
+use App\Services\Documents\DocumentPresenter;
+use App\Services\Documents\DocumentWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 
 class DocumentController extends Controller
 {
+    public function __construct(
+        private AiMicroserviceClient $client,
+        private DocumentPresenter $presenter,
+        private DocumentWorkflowService $workflow,
+    ) {
+    }
+
     /**
      * Return a paginated list of all documents with summary stats.
      */
@@ -24,8 +30,7 @@ class DocumentController extends Controller
             ->orderBy('created_at', 'desc')
             ->paginate(15);
 
-        $aiClient = new AiMicroserviceClient();
-        $vectorCounts = $aiClient->getVectorCounts();
+        $vectorCounts = $this->client->getVectorCounts();
 
         $allDocs = Document::with('ekstraksiJob')->get();
 
@@ -57,7 +62,7 @@ class DocumentController extends Controller
         return response()->json([
             'success' => true,
             'data'    => [
-                'documents'      => $documents->map(fn ($doc) => $this->formatDocument($doc, false, $vectorCounts)),
+                'documents'      => $documents->map(fn ($doc) => $this->presenter->format($doc, false, $vectorCounts)),
                 'meta'           => [
                     'current_page' => $documents->currentPage(),
                     'last_page'    => $documents->lastPage(),
@@ -76,13 +81,12 @@ class DocumentController extends Controller
     public function show(int $id): JsonResponse
     {
         $document = Document::with(['uploader', 'category', 'logs', 'ekstraksiJob'])->findOrFail($id);
-        $aiClient = new AiMicroserviceClient();
-        $vectorCounts = $aiClient->getVectorCounts();
+        $vectorCounts = $this->client->getVectorCounts();
 
         return response()->json([
             'success' => true,
             'data'    => [
-                'document' => $this->formatDocument($document, true, $vectorCounts),
+                'document' => $this->presenter->format($document, true, $vectorCounts),
             ],
         ]);
     }
@@ -104,50 +108,26 @@ class DocumentController extends Controller
             'pdf_file.max'      => 'Ukuran file maksimal 50MB.',
         ]);
 
-        $file             = $request->file('pdf_file');
-        $rawFilename      = $file->getClientOriginalName();
-        // Sanitize original filename (strip path traversal and unsafe characters)
-        $originalFilename = preg_replace('/[^\w\s\-\.\(\)\[\]]/u', '_', basename($rawFilename));
-        $sanitizedTitle   = strip_tags(trim($request->input('title')));
+        $result = $this->workflow->upload(
+            $request->file('pdf_file'),
+            $request->input('title'),
+            $request->input('category_id'),
+            Auth::user(),
+        );
+        $document = $result->document;
 
-        // Generate a secure random hashed filename (SHA-256)
-        $extension        = strtolower($file->getClientOriginalExtension() ?: $file->extension() ?: 'bin');
-        $hashedName       = hash('sha256', Str::uuid()->toString() . microtime(true) . $file->getContent()) . '.' . $extension;
-        $storagePath      = $file->storeAs('documents', $hashedName, 'local');
-        $absolutePath     = Storage::disk('local')->path($storagePath);
-
-        $document = Document::create([
-            'title'         => $sanitizedTitle,
-            'original_name' => $originalFilename,
-            'file_path'     => $absolutePath,
-            'status'        => 'pending',
-            'pdf_type'      => 'unknown',
-            'category_id'   => $request->input('category_id'),
-            'uploaded_by'   => Auth::id(),
-        ]);
-
-        $document->recordLog('uploaded', "File \"{$originalFilename}\" diunggah oleh " . Auth::user()->name);
-
-        $client = new AiMicroserviceClient();
-        if (!$client->healthCheck()) {
-            $document->update([
-                'status'        => 'failed',
-                'error_message' => 'Server AI (Python Uvicorn / Celery) sedang tidak berjalan. Silakan aktifkan service AI terlebih dahulu.',
-            ]);
-
+        if (!$result->aiAvailable) {
             return response()->json([
                 'success' => false,
-                'message' => 'Server AI (Python Uvicorn / Celery) sedang tidak berjalan. Silakan aktifkan service AI terlebih dahulu.',
-                'data'    => ['document' => $this->formatDocument($document->fresh())],
+                'message' => DocumentWorkflowService::AI_UNAVAILABLE_MESSAGE,
+                'data' => ['document' => $this->presenter->format($document->fresh())],
             ], 503);
         }
-
-        $this->dispatchToAiService($document, 'new');
 
         return response()->json([
             'success' => true,
             'message' => "Dokumen \"{$document->title}\" berhasil diunggah dan sedang diproses.",
-            'data'    => ['document' => $this->formatDocument($document)],
+            'data' => ['document' => $this->presenter->format($document)],
         ], 201);
     }
 
@@ -166,57 +146,12 @@ class DocumentController extends Controller
             'pdf_file.max'      => 'Ukuran file maksimal 50MB.',
         ]);
 
-        $client = new AiMicroserviceClient();
-
-        // 1. Batalkan tugas ekstraksi aktif di background jika ada
-        $client->cancelDocument($document->id);
-
-        // 2. Hapus berkas fisik lama dari disk storage
-        $oldPath = $document->file_path ?? Storage::disk('local')->path($document->storage_path ?? '');
-        if ($oldPath && file_exists($oldPath)) {
-            @unlink($oldPath);
-        }
-
-        // 3. Bersihkan data ekstraksi lama di database (halaman & job)
-        DB::table('ekstraksi_halaman')->where('document_id', $document->id)->delete();
-        DB::table('ekstraksi_job')->where('document_id', $document->id)->delete();
-
-        // 4. Bersihkan embedding vektor lama dari ChromaDB
-        $client->deleteDocument($document->id);
-
-        // 5. Simpan file baru ke storage
-        $file             = $request->file('pdf_file');
-        $rawFilename      = $file->getClientOriginalName();
-        $originalFilename = preg_replace('/[^\w\s\-\.\(\)\[\]]/u', '_', basename($rawFilename));
-
-        // Generate a secure random hashed filename (SHA-256)
-        $extension        = strtolower($file->getClientOriginalExtension() ?: $file->extension() ?: 'bin');
-        $hashedName       = hash('sha256', Str::uuid()->toString() . microtime(true) . $file->getContent()) . '.' . $extension;
-        $storagePath      = $file->storeAs('documents', $hashedName, 'local');
-        $absolutePath     = Storage::disk('local')->path($storagePath);
-
-        // 6. Reset status dan metadata dokumen di database
-        $document->update([
-            'original_name'   => $originalFilename,
-            'file_path'       => $absolutePath,
-            'status'          => 'pending',
-            'pdf_type'        => 'unknown',
-            'error_message'   => null,
-            'total_pages'     => null,
-            'processed_pages' => 0,
-            'total_chunks'    => null,
-            'processed_at'    => null,
-        ]);
-
-        $document->recordLog('replaced', "File diganti dengan \"{$originalFilename}\" oleh " . (Auth::user()?->name ?? 'Admin'));
-
-        // 7. Mulai proses ekstraksi ulang dari awal
-        $this->dispatchToAiService($document, 'overwrite');
+        $this->workflow->replace($document, $request->file('pdf_file'), Auth::user());
 
         return response()->json([
             'success' => true,
             'message' => 'File dokumen berhasil diganti dan sedang diproses ulang dari awal.',
-            'data'    => ['document' => $this->formatDocument($document->fresh())],
+            'data' => ['document' => $this->presenter->format($document->fresh())],
         ]);
     }
 
@@ -226,22 +161,12 @@ class DocumentController extends Controller
     public function cancel(int $id): JsonResponse
     {
         $document = Document::findOrFail($id);
-
-        $document->update([
-            'status'        => 'failed',
-            'error_message' => 'Pemrosesan dibatalkan oleh Admin.',
-        ]);
-
-        $document->recordLog('cancelled', 'Pemrosesan AI dibatalkan oleh ' . (Auth::user()?->name ?? 'Admin') . '.', 15);
-
-        // Explicitly cancel background task in Python AI & release GPU/CPU memory
-        $client = new AiMicroserviceClient();
-        $client->cancelDocument($document->id);
+        $this->workflow->cancel($document, Auth::user());
 
         return response()->json([
             'success' => true,
             'message' => 'Pemrosesan dokumen berhasil dibatalkan dan resource sistem telah dibebaskan.',
-            'data'    => ['document' => $this->formatDocument($document->fresh())],
+            'data' => ['document' => $this->presenter->format($document->fresh())],
         ]);
     }
 
@@ -251,37 +176,18 @@ class DocumentController extends Controller
     public function resume(int $id): JsonResponse
     {
         $document = Document::findOrFail($id);
-        $client   = new AiMicroserviceClient();
-
-        if (!$client->healthCheck()) {
-            $document->update([
-                'status'        => 'failed',
-                'error_message' => 'Server AI (Python Uvicorn / Celery) sedang tidak berjalan. Silakan aktifkan service AI terlebih dahulu.',
-            ]);
-
+        if (!$this->workflow->resume($document, Auth::user())) {
             return response()->json([
                 'success' => false,
-                'message' => 'Server AI (Python Uvicorn / Celery) sedang tidak berjalan. Silakan aktifkan service AI terlebih dahulu.',
-                'data'    => ['document' => $this->formatDocument($document->fresh())],
+                'message' => DocumentWorkflowService::AI_UNAVAILABLE_MESSAGE,
+                'data' => ['document' => $this->presenter->format($document->fresh())],
             ], 503);
         }
-
-        $document->update([
-            'status'        => 'processing',
-            'error_message' => null,
-        ]);
-
-        $document->recordLog('resumed', 'Ekstraksi AI dilanjutkan kembali oleh ' . (Auth::user()?->name ?? 'Admin') . '.', 15);
-
-        $categoryOptions = $this->buildCategoryOptions($document);
-
-        // Start / resume staged extraction in Python AI
-        $client->mulaiEkstraksi($document->id, null, $categoryOptions);
 
         return response()->json([
             'success' => true,
             'message' => 'Ekstraksi dokumen berhasil dilanjutkan.',
-            'data'    => ['document' => $this->formatDocument($document->fresh())],
+            'data' => ['document' => $this->presenter->format($document->fresh())],
         ]);
     }
 
@@ -291,49 +197,12 @@ class DocumentController extends Controller
     public function destroy(int $id): JsonResponse
     {
         $document = Document::findOrFail($id);
-
-        $filePath = $document->file_path ?? Storage::disk('local')->path($document->storage_path ?? '');
-        if ($filePath && file_exists($filePath)) {
-            @unlink($filePath);
-        }
-
-        // Batalkan tugas background aktif & bersihkan resource AI
-        $client = new AiMicroserviceClient();
-        $client->cancelDocument($document->id);
-        $client->deleteDocument($document->id);
-
-        // Bersihkan data ekstraksi bertahap dari database
-        DB::table('ekstraksi_halaman')->where('document_id', $document->id)->delete();
-        DB::table('ekstraksi_job')->where('document_id', $document->id)->delete();
-
-        $document->delete();
+        $this->workflow->delete($document);
 
         return response()->json([
             'success' => true,
             'message' => 'Dokumen berhasil dihapus.',
         ]);
-    }
-
-    /**
-     * Build category extraction options for Python AI.
-     */
-    protected function buildCategoryOptions(Document $document): array
-    {
-        $category = $document->category;
-        if (!$category && $document->category_id) {
-            $category = \App\Models\DocumentCategory::find($document->category_id);
-        }
-
-        $kataKunci = data_get($category, 'prompt_variables.kata_kunci')
-            ?? data_get($category, 'prompt_variables.job_titles', []);
-        $customPrompts = data_get($category, 'prompt_variables.custom_prompts', []);
-
-        return [
-            'category_prompt' => $category?->vision_prompt,
-            'job_titles'      => is_array($kataKunci) ? implode(', ', $kataKunci) : $kataKunci,
-            'vision_model'    => $category?->vision_model,
-            'custom_prompts'  => !empty($customPrompts) ? $customPrompts : null,
-        ];
     }
 
     /**
@@ -362,156 +231,11 @@ class DocumentController extends Controller
     }
 
     /**
-     * Dispatch document processing to the AI microservice using staged extraction.
-     */
-    protected function dispatchToAiService(Document $document, string $action): void
-    {
-        $client = new AiMicroserviceClient();
-
-        $document->update([
-            'status'        => 'processing',
-            'error_message' => null,
-        ]);
-
-        $document->recordLog('processing', 'Dokumen dikirim ke antrean Ekstraksi AI bertahap.', 15);
-
-        $categoryOptions = $this->buildCategoryOptions($document);
-
-        // Dispatch staged extraction: every page is saved to database immediately upon completion
-        $result = $client->mulaiEkstraksi($document->id, null, $categoryOptions);
-
-        if (!$result['success']) {
-            $document->recordLog('failed', $result['message'] ?? 'Gagal memulai ekstraksi', 10);
-
-            $document->update([
-                'status'        => 'pending',
-                'error_message' => $result['message'] ?? 'Gagal memulai ekstraksi',
-            ]);
-        }
-    }
-
-    /**
-     * Determine the unified effective status and label for a document.
+     * Preserve the existing status resolver entrypoint for callers.
      */
     public function resolveEffectiveStatus(Document $document, int $donePages = 0, int $totalPages = 0): array
     {
-        $job    = $document->ekstraksiJob;
-        $status = $document->status;
-
-        // 1. Selesai (Completed / Indexed to corpus)
-        if ($job?->status === 'selesai' || $status === 'completed') {
-            return ['status' => 'completed', 'label' => 'Selesai'];
-        }
-
-        // 2. Menunggu Verifikasi (All pages extracted, waiting for human admin review)
-        if ($job?->status === 'menunggu_koreksi' || $status === 'menunggu_koreksi' || ($totalPages > 0 && $donePages >= $totalPages && $job?->status !== 'gagal')) {
-            return ['status' => 'menunggu_koreksi', 'label' => 'Menunggu Verifikasi'];
-        }
-
-        // 3. Sedang Berjalan / Antre (Processing) - Prioritaskan agar background worker aktif langsung tercermin di UI
-        if ($job?->status === 'berjalan' || $job?->status === 'ekstraksi' || $job?->status === 'antre' || $status === 'processing') {
-            if ($job?->jeda_diminta) {
-                return ['status' => 'processing', 'label' => 'Menjeda...'];
-            }
-            return ['status' => 'processing', 'label' => 'Memproses'];
-        }
-
-        // 4. Dijeda (Paused)
-        if ($job?->status === 'jeda' || $status === 'paused') {
-            return ['status' => 'jeda', 'label' => 'Dijeda'];
-        }
-
-        // 5. Gagal (Failed)
-        if ($job?->status === 'gagal' || $status === 'failed') {
-            return ['status' => 'failed', 'label' => 'Gagal'];
-        }
-
-        return [
-            'status' => $status ?? 'pending',
-            'label'  => $document->status_badge['label'] ?? 'Menunggu',
-        ];
-    }
-
-    /**
-     * Format a document model for API response.
-     */
-    protected function formatDocument(Document $document, bool $withLogs = false, array $vectorCounts = []): array
-    {
-        $job = $document->ekstraksiJob;
-
-        $savedCount  = $document->relationLoaded('ekstraksiHalaman') ? $document->ekstraksiHalaman->count() : $document->ekstraksiHalaman()->count();
-        $realTotal   = (int) ($document->total_pages ?: ($job?->halaman_total && $job->halaman_total != 100 ? $job->halaman_total : $savedCount));
-        $rawDone     = max($savedCount, (int) ($document->processed_pages ?? 0), ($job && $job->halaman_total != 100 ? (int) $job->halaman_selesai : 0));
-        $donePages   = $realTotal > 0 ? min($realTotal, $rawDone) : $rawDone;
-        $totalPages  = $realTotal > 0 ? $realTotal : $donePages;
-        $percent     = ($totalPages > 0) ? min(100, (int) round(($donePages / $totalPages) * 100)) : 0;
-
-        $resolved    = $this->resolveEffectiveStatus($document, $donePages, $totalPages);
-        $status      = $resolved['status'];
-        $statusLabel = $resolved['label'];
-
-        // Sinkronisasi jumlah vektor aktif ChromaDB
-        $actualVectors = null;
-        if (!empty($vectorCounts) && array_key_exists($document->id, $vectorCounts)) {
-            $actualVectors = (int) $vectorCounts[$document->id];
-        }
-
-        $effectiveChunks = $actualVectors !== null
-            ? $actualVectors
-            : ($status === 'completed' ? (int) ($document->total_chunks ?? 0) : null);
-
-        // Jika dokumen completed dan jumlah chunk di DB belum sinkron dengan ChromaDB, update diam-diam
-        if ($actualVectors !== null && $document->total_chunks !== $actualVectors && $status === 'completed') {
-            try {
-                $document->updateQuietly(['total_chunks' => $actualVectors]);
-            } catch (\Throwable $e) {
-                // Ignore silent update errors
-            }
-        }
-
-        $data = [
-            'id'                => $document->id,
-            'title'             => $document->title,
-            'original_filename' => $document->original_name ?? $document->original_filename,
-            'original_name'     => $document->original_name ?? $document->original_filename,
-            'file_path'         => $document->file_path,
-            'status'            => $status,
-            'status_label'      => $statusLabel,
-            'pdf_type'          => $document->pdf_type,
-            'pdf_type_label'    => $document->pdf_type_label,
-            'category_id'       => $document->category_id,
-            'category_name'     => $document->category?->name ?? 'Umum',
-            'category_ui_layout'=> $document->category?->ui_layout ?? 'general',
-            'total_pages'       => $totalPages,
-            'processed_pages'   => $donePages,
-            'total_chunks'      => $effectiveChunks,
-            'vector_count'      => $effectiveChunks,
-            'error_message'     => $document->error_message,
-            'uploaded_by'       => $document->uploader?->name,
-            'pdf_url'           => url("/api/documents/{$document->id}/pdf"),
-            'created_at'        => $document->created_at ? \Carbon\Carbon::parse($document->created_at)->toIso8601String() : null,
-            'updated_at'        => $document->updated_at ? \Carbon\Carbon::parse($document->updated_at)->toIso8601String() : null,
-            'processed_at'      => $document->processed_at ? \Carbon\Carbon::parse($document->processed_at)->toIso8601String() : null,
-
-            // Staged extraction progress
-            'ekstraksi_status'  => $job?->status,
-            'jeda_diminta'      => (bool) $job?->jeda_diminta,
-            'halaman_selesai'   => $donePages,
-            'persen_ekstraksi'  => $percent,
-        ];
-
-        if ($withLogs) {
-            $data['logs'] = $document->logs->map(fn ($log) => [
-                'id'          => $log->id,
-                'action'      => $log->action,
-                'action_label'=> $log->action_label,
-                'action_color'=> $log->action_color,
-                'details'     => $log->details,
-                'created_at'  => $log->created_at ? \Carbon\Carbon::parse($log->created_at)->toIso8601String() : null,
-            ])->values();
-        }
-
-        return $data;
+        return $this->presenter->resolveEffectiveStatus($document, $donePages, $totalPages);
     }
 
     /**
@@ -521,8 +245,7 @@ class DocumentController extends Controller
     {
         $document = Document::findOrFail($id);
         
-        $aiClient = new \App\Services\AiMicroserviceClient();
-        $chunks = $aiClient->getDocumentChunks($document->id);
+        $chunks = $this->client->getDocumentChunks($document->id);
         
         return response()->json($chunks);
     }

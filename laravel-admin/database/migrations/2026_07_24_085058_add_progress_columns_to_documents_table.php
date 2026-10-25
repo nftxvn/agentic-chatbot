@@ -17,7 +17,9 @@ return new class extends Migration
         });
         
         // Modifikasi ENUM status untuk mendukung cicil (paused) dan pembatalan (cancelled)
-        DB::statement("ALTER TABLE documents MODIFY COLUMN status ENUM('pending', 'processing', 'completed', 'failed', 'paused', 'cancelled') DEFAULT 'pending'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE documents MODIFY COLUMN status ENUM('pending', 'processing', 'completed', 'failed', 'paused', 'cancelled') DEFAULT 'pending'");
+        }
     }
 
     /**
@@ -30,6 +32,8 @@ return new class extends Migration
         });
         
         // Kembalikan ke ENUM awal
-        DB::statement("ALTER TABLE documents MODIFY COLUMN status ENUM('pending', 'processing', 'completed', 'failed') DEFAULT 'pending'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE documents MODIFY COLUMN status ENUM('pending', 'processing', 'completed', 'failed') DEFAULT 'pending'");
+        }
     }
 };

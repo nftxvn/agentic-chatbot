@@ -1,495 +1,84 @@
-import { useState, useEffect, useRef, useLayoutEffect } from 'react'
+import { useIntegrations } from "../hooks/integrations/useIntegrations";
 import ReactDOM from 'react-dom'
-import { useSearchParams } from 'react-router-dom'
-import gsap from 'gsap'
-import { apiKeysApi } from '../api/apiKeys'
-import { 
-  getWhatsappSettings, 
-  updateWhatsappSettings, 
-  testWhatsappConnection,
-  getTelegramSettings,
-  updateTelegramSettings,
-  testTelegramConnection,
-  setTelegramWebhook
-} from '../api/settings'
 import ConfirmModal from '../components/ConfirmModal'
-import { addAppNotification } from '../utils/notifications'
 import { SlidingTabs } from '../components/UI/SlidingTabs'
 import { FloatingSaveBar } from '../components/UI/FloatingSaveBar'
 import { InfoTooltip } from '../components/UI/InfoTooltip'
 
 export default function IntegrationsPage() {
-  const [searchParams, setSearchParams] = useSearchParams()
-  const tabParam = searchParams.get('tab')
-  const validTabs = ['apikeys', 'whatsapp', 'telegram', 'docs']
-  const activeTab = validTabs.includes(tabParam) ? tabParam : 'apikeys'
-
-  const setActiveTab = (newTab) => {
-    setSearchParams({ tab: newTab }, { replace: true })
-  }
-
-  const [loading, setLoading] = useState(true)
-  const [statusMsg, setStatusMsg] = useState(null)
-
-  // ── STATE: API KEYS ──────────────────────────────────────────
-  const [keys, setKeys] = useState([])
-  const [showCreateKeyModal, setShowCreateKeyModal] = useState(false)
-  const [keyName, setKeyName] = useState('')
-  const [creatingKey, setCreatingKey] = useState(false)
-  const [newlyCreatedKey, setNewlyCreatedKey] = useState(null)
-  const [copiedKey, setCopiedKey] = useState(false)
-  const [deleteKeyTarget, setDeleteKeyTarget] = useState(null)
-  const [deletingKey, setDeletingKey] = useState(false)
-  const [webhookTarget, setWebhookTarget] = useState(null)
-  const [webhookForm, setWebhookForm] = useState({ webhook_url: '', webhook_enabled: false })
-  const [savingWebhook, setSavingWebhook] = useState(false)
-  const [rotatingWebhookSecret, setRotatingWebhookSecret] = useState(false)
-  const [webhookSecretOnce, setWebhookSecretOnce] = useState('')
-  const [webhookDeliveries, setWebhookDeliveries] = useState([])
-
-  // ── STATE: WHATSAPP SETTINGS ─────────────────────────────────
-  const [initialWaForm, setInitialWaForm] = useState(null)
-  const [waForm, setWaForm] = useState({
-    wa_status: false,
-    wa_api_url: '',
-    wa_token: '',
-    wa_phone_number: '',
-    wa_webhook_verify_token: 'diskominfo_wa_rag_token',
-    webhook_url: '',
-  })
-  const isWaDirty = Boolean(
-    initialWaForm && JSON.stringify(waForm) !== JSON.stringify(initialWaForm)
-  )
-  const [savingWa, setSavingWa] = useState(false)
-  const [showWaToken, setShowWaToken] = useState(false)
-  const [testPhone, setTestPhone] = useState('')
-  const [testMsgText, setTestMsgText] = useState('Halo! Ini adalah pesan uji coba koneksi gateway WhatsApp resmi Layanan Informasi Diskominfotik Kota Banda Aceh.')
-  const [testingSend, setTestingSend] = useState(false)
-  const [testResult, setTestResult] = useState(null)
-  const [copiedWebhook, setCopiedWebhook] = useState(false)
-  const [copiedVerifyToken, setCopiedVerifyToken] = useState(false)
-
-  // ── STATE: TELEGRAM SETTINGS ─────────────────────────────────
-  const [initialTgForm, setInitialTgForm] = useState(null)
-  const [tgForm, setTgForm] = useState({
-    telegram_status: false,
-    telegram_bot_token: '',
-    telegram_bot_username: '',
-    webhook_url: '',
-  })
-  const isTgDirty = Boolean(
-    initialTgForm && JSON.stringify(tgForm) !== JSON.stringify(initialTgForm)
-  )
-  const [savingTg, setSavingTg] = useState(false)
-  const [showTgToken, setShowTgToken] = useState(false)
-  const [tgTestChatId, setTgTestChatId] = useState('')
-  const [tgTestMsg, setTgTestMsg] = useState('Halo! Ini adalah pesan uji coba koneksi Telegram Bot resmi Layanan Informasi Diskominfotik Kota Banda Aceh.')
-  const [testingTgSend, setTestingTgSend] = useState(false)
-  const [tgTestResult, setTgTestResult] = useState(null)
-  const [copiedTgWebhook, setCopiedTgWebhook] = useState(false)
-  const [registeringWebhook, setRegisteringWebhook] = useState(false)
-  const [webhookResult, setWebhookResult] = useState(null)
-
-  // ── STATE: CODE SNIPPET DOCS ─────────────────────────────────
-  const [docLang, setDocLang] = useState('curl')
-  const [copiedCode, setCopiedCode] = useState(false)
-
-  const headerRef = useRef(null)
-
-  useEffect(() => {
-    fetchAllData()
-  }, [])
-
-  useLayoutEffect(() => {
-    if (headerRef.current?.children?.length) {
-      gsap.fromTo(
-        headerRef.current.children,
-        { opacity: 0, x: -16 },
-        { opacity: 1, x: 0, duration: 0.5, stagger: 0.08, ease: 'power2.out', clearProps: 'all' }
-      )
-    }
-  }, [loading])
-
-  async function fetchAllData() {
-    const startTime = Date.now()
-    try {
-      setLoading(true)
-      const [keysRes, waRes, tgRes] = await Promise.all([
-        apiKeysApi.list().catch(() => ({ data: [] })),
-        getWhatsappSettings().catch(() => ({})),
-        getTelegramSettings().catch(() => ({})),
-      ])
-      const keysList = Array.isArray(keysRes?.data) ? keysRes.data : Array.isArray(keysRes) ? keysRes : []
-      setKeys(keysList)
-      const loadedWa = {
-        wa_status: waRes?.wa_status || false,
-        wa_api_url: waRes?.wa_api_url || '',
-        wa_token: waRes?.wa_token || '',
-        wa_phone_number: waRes?.wa_phone_number || '',
-        wa_webhook_verify_token: waRes?.wa_webhook_verify_token || 'diskominfo_wa_rag_token',
-        webhook_url: waRes?.webhook_url || `${window.location.origin}/api/v1/webhook/whatsapp`,
-      }
-      setWaForm(loadedWa)
-      setInitialWaForm(loadedWa)
-
-      const loadedTg = {
-        telegram_status: tgRes?.telegram_status || false,
-        telegram_bot_token: tgRes?.telegram_bot_token || '',
-        telegram_bot_username: tgRes?.telegram_bot_username || '',
-        webhook_url: tgRes?.webhook_url || `${window.location.origin}/api/v1/webhook/telegram`,
-      }
-      setTgForm(loadedTg)
-      setInitialTgForm(loadedTg)
-    } catch (err) {
-      console.error(err)
-      setStatusMsg({ type: 'error', text: 'Gagal memuat data integrasi dari server.' })
-    } finally {
-      const elapsed = Date.now() - startTime
-      setTimeout(() => setLoading(false), Math.max(0, 200 - elapsed))
-    }
-  }
-
-  // ── API KEY HANDLERS ─────────────────────────────────────────
-  const handleCreateKey = async (e) => {
-    e.preventDefault()
-    if (!keyName || !keyName.trim()) {
-      setStatusMsg({ type: 'error', text: 'Nama aplikasi / klien pemanggil wajib diisi.' })
-      return
-    }
-    setCreatingKey(true)
-    setStatusMsg(null)
-    try {
-      const res = await apiKeysApi.create(keyName.trim())
-      setShowCreateKeyModal(false)
-      setKeyName('')
-      setNewlyCreatedKey(res.data)
-      const listRes = await apiKeysApi.list()
-      const listData = Array.isArray(listRes?.data) ? listRes.data : Array.isArray(listRes) ? listRes : []
-      setKeys(listData)
-      addAppNotification({
-        title: 'Manajemen Kunci API',
-        message: `Kunci API "${res.data.name}" berhasil dibuat.`,
-        type: 'system',
-      })
-    } catch (err) {
-      console.error(err)
-      setStatusMsg({ type: 'error', text: err.response?.data?.message || 'Gagal membuat API Key baru.' })
-    } finally {
-      setCreatingKey(false)
-    }
-  }
-
-  const handleToggleKey = async (key) => {
-    try {
-      await apiKeysApi.toggle(key.id)
-      setKeys((prev) =>
-        prev.map((k) => (k.id === key.id ? { ...k, is_active: !k.is_active } : k))
-      )
-      addAppNotification({
-        title: 'Status Kunci API',
-        message: `Kunci API "${key.name}" telah ${!key.is_active ? 'diaktifkan' : 'dinonaktifkan'}.`,
-        type: 'info',
-      })
-    } catch (err) {
-      console.error(err)
-      setStatusMsg({ type: 'error', text: 'Gagal mengubah status API Key.' })
-    }
-  }
-
-  const handleDeleteKey = async () => {
-    if (!deleteKeyTarget) return
-    setDeletingKey(true)
-    try {
-      await apiKeysApi.delete(deleteKeyTarget.id)
-      setKeys((prev) => prev.filter((k) => k.id !== deleteKeyTarget.id))
-      setDeleteKeyTarget(null)
-      addAppNotification({
-        title: 'Kunci API Dicabut',
-        message: `Kunci API "${deleteKeyTarget.name}" telah dihapus permanen.`,
-        type: 'system',
-      })
-    } catch (err) {
-      console.error(err)
-      setStatusMsg({ type: 'error', text: 'Gagal menghapus API Key.' })
-    } finally {
-      setDeletingKey(false)
-    }
-  }
-
-  const openWebhookSettings = async (key) => {
-    setWebhookTarget(key)
-    setWebhookForm({
-      webhook_url: key.webhook_url || '',
-      webhook_enabled: Boolean(key.webhook_enabled),
-    })
-    setWebhookSecretOnce('')
-    setWebhookDeliveries([])
-    try {
-      const result = await apiKeysApi.webhookDeliveries(key.id)
-      setWebhookDeliveries(Array.isArray(result?.data) ? result.data : [])
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  const handleSaveWebhook = async (e) => {
-    e.preventDefault()
-    if (!webhookTarget) return
-    setSavingWebhook(true)
-    try {
-      const result = await apiKeysApi.updateWebhook(webhookTarget.id, webhookForm)
-      setKeys((prev) => prev.map((key) => key.id === webhookTarget.id ? { ...key, ...result.data } : key))
-      setWebhookTarget((prev) => prev ? { ...prev, ...result.data } : prev)
-      setStatusMsg({ type: 'success', text: result.message || 'Konfigurasi webhook tersimpan.' })
-      setWebhookTarget(null)
-    } catch (err) {
-      setStatusMsg({ type: 'error', text: err.response?.data?.message || 'Gagal menyimpan webhook.' })
-    } finally {
-      setSavingWebhook(false)
-    }
-  }
-
-  const handleRotateWebhookSecret = async () => {
-    if (!webhookTarget) return
-    setRotatingWebhookSecret(true)
-    try {
-      const result = await apiKeysApi.rotateWebhookSecret(webhookTarget.id)
-      setWebhookSecretOnce(result.data.plain_secret)
-      setKeys((prev) => prev.map((key) => key.id === webhookTarget.id ? { ...key, webhook_secret_configured: true } : key))
-      setWebhookTarget((prev) => prev ? { ...prev, webhook_secret_configured: true } : prev)
-    } catch (err) {
-      setStatusMsg({ type: 'error', text: err.response?.data?.message || 'Gagal membuat secret webhook.' })
-    } finally {
-      setRotatingWebhookSecret(false)
-    }
-  }
-
-  // ── WHATSAPP HANDLERS ────────────────────────────────────────
-  function handleWaChange(e) {
-    const { name, value, type, checked } = e.target
-    setWaForm((prev) => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value,
-    }))
-  }
-
-  const handleDiscardWa = () => {
-    if (initialWaForm) {
-      setWaForm(initialWaForm)
-    }
-  }
-
-  async function handleWaSubmit(e) {
-    if (e && e.preventDefault) e.preventDefault()
-    setSavingWa(true)
-    setStatusMsg(null)
-    try {
-      const res = await updateWhatsappSettings(waForm)
-      setInitialWaForm(waForm)
-      setStatusMsg({ type: 'success', text: res.message || 'Pengaturan WhatsApp berhasil disimpan.' })
-      addAppNotification({
-        title: 'Integrasi WhatsApp',
-        message: 'Konfigurasi kredensial gateway WhatsApp telah diperbarui.',
-        type: 'system',
-      })
-    } catch (err) {
-      console.error(err)
-      setStatusMsg({ type: 'error', text: err.response?.data?.message || 'Gagal menyimpan pengaturan WhatsApp.' })
-    } finally {
-      setSavingWa(false)
-    }
-  }
-
-  async function handleTestSendWa(e) {
-    e.preventDefault()
-    if (!testPhone || !testPhone.trim()) {
-      setTestResult({
-        type: 'error',
-        text: 'Nomor WhatsApp tujuan wajib diisi.',
-      })
-      return
-    }
-    setTestingSend(true)
-    setTestResult(null)
-    try {
-      const res = await testWhatsappConnection({
-        target_phone: testPhone.trim(),
-        test_message: testMsgText.trim(),
-      })
-      setTestResult({
-        type: res.success ? 'success' : 'error',
-        text: res.message,
-      })
-    } catch (err) {
-      console.error(err)
-      setTestResult({
-        type: 'error',
-        text: err.response?.data?.message || 'Gagal mengirim pesan uji coba ke gateway.',
-      })
-    } finally {
-      setTestingSend(false)
-    }
-  }
-
-  // ── TELEGRAM HANDLERS ────────────────────────────────────────
-  function handleTgChange(e) {
-    const { name, value, type, checked } = e.target
-    setTgForm((prev) => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value,
-    }))
-  }
-
-  const handleDiscardTg = () => {
-    if (initialTgForm) {
-      setTgForm(initialTgForm)
-    }
-  }
-
-  async function handleTgSubmit(e) {
-    if (e && e.preventDefault) e.preventDefault()
-    setSavingTg(true)
-    setStatusMsg(null)
-    try {
-      const res = await updateTelegramSettings(tgForm)
-      const updatedTg = {
-        ...tgForm,
-        telegram_bot_username: res.telegram_bot_username || tgForm.telegram_bot_username,
-      }
-      setTgForm(updatedTg)
-      setInitialTgForm(updatedTg)
-      setStatusMsg({ type: 'success', text: res.message || 'Pengaturan Telegram berhasil disimpan.' })
-      addAppNotification({
-        title: 'Integrasi Telegram',
-        message: 'Konfigurasi kredensial bot Telegram telah diperbarui.',
-        type: 'system',
-      })
-    } catch (err) {
-      console.error(err)
-      setStatusMsg({ type: 'error', text: err.response?.data?.message || 'Gagal menyimpan pengaturan Telegram.' })
-    } finally {
-      setSavingTg(false)
-    }
-  }
-
-  async function handleTestSendTg(e) {
-    e.preventDefault()
-    setTestingTgSend(true)
-    setTgTestResult(null)
-    try {
-      const res = await testTelegramConnection({
-        chat_id: tgTestChatId.trim(),
-        test_message: tgTestMsg.trim(),
-      })
-      setTgTestResult({
-        type: res.success ? 'success' : 'error',
-        text: res.message,
-      })
-    } catch (err) {
-      console.error(err)
-      setTgTestResult({
-        type: 'error',
-        text: err.response?.data?.message || 'Gagal menguji koneksi Telegram.',
-      })
-    } finally {
-      setTestingTgSend(false)
-    }
-  }
-
-  async function handleAutoRegisterWebhook(action = 'set') {
-    setRegisteringWebhook(true)
-    setWebhookResult(null)
-    try {
-      const res = await setTelegramWebhook({
-        webhook_url: tgForm.webhook_url,
-        action: action,
-      })
-      setWebhookResult({
-        type: res.success ? 'success' : 'error',
-        text: res.message,
-      })
-      addAppNotification({
-        title: 'Webhook Telegram',
-        message: res.message,
-        type: res.success ? 'system' : 'error',
-      })
-    } catch (err) {
-      console.error(err)
-      setWebhookResult({
-        type: 'error',
-        text: err.response?.data?.message || 'Gagal mendaftarkan webhook ke Telegram.',
-      })
-    } finally {
-      setRegisteringWebhook(false)
-    }
-  }
-
-  const handleCopy = (text, type) => {
-    navigator.clipboard.writeText(text)
-    if (type === 'webhook') {
-      setCopiedWebhook(true)
-      setTimeout(() => setCopiedWebhook(false), 2000)
-    } else if (type === 'tg_webhook') {
-      setCopiedTgWebhook(true)
-      setTimeout(() => setCopiedTgWebhook(false), 2000)
-    } else if (type === 'verify') {
-      setCopiedVerifyToken(true)
-      setTimeout(() => setCopiedVerifyToken(false), 2000)
-    } else if (type === 'secret') {
-      setCopiedKey(true)
-      setTimeout(() => setCopiedKey(false), 2000)
-    } else if (type === 'code') {
-      setCopiedCode(true)
-      setTimeout(() => setCopiedCode(false), 2000)
-    }
-  }
-
-  const generateSnippet = () => {
-    if (docLang === 'curl') {
-      return `curl -X POST "${window.location.origin}/api/v1/chat" \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer sk_live_YOUR_API_KEY" \\
-  -d '{
-    "session_id": "client-session-123",
-    "query": "Bagaimana prosedur permohonan subdomain acehkota.go.id?"
-  }'`
-    }
-    if (docLang === 'python') {
-      return `import requests
-
-url = "${window.location.origin}/api/v1/chat"
-headers = {
-    "Content-Type": "application/json",
-    "Authorization": "Bearer sk_live_YOUR_API_KEY"
-}
-payload = {
-    "session_id": "client-session-123",
-    "query": "Bagaimana prosedur permohonan subdomain acehkota.go.id?"
-}
-
-response = requests.post(url, headers=headers, json=payload, timeout=30)
-data = response.json()
-
-print("Jawaban AI:", data.get("answer"))
-print("Rujukan SOP:", data.get("sources"))`
-    }
-    return `// JavaScript (Fetch API)
-const response = await fetch("${window.location.origin}/api/v1/chat", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "Authorization": "Bearer sk_live_YOUR_API_KEY",
-  },
-  body: JSON.stringify({
-    session_id: "client-session-123",
-    query: "Bagaimana prosedur permohonan subdomain acehkota.go.id?",
-  }),
-});
-
-const data = await response.json();
-console.log("Jawaban:", data.answer);
-console.log("Rujukan:", data.sources);`
-  }
+  const {
+    activeTab,
+    setActiveTab,
+    loading,
+    statusMsg,
+    setStatusMsg,
+    keys,
+    showCreateKeyModal,
+    setShowCreateKeyModal,
+    keyName,
+    setKeyName,
+    creatingKey,
+    newlyCreatedKey,
+    setNewlyCreatedKey,
+    copiedKey,
+    deleteKeyTarget,
+    setDeleteKeyTarget,
+    webhookTarget,
+    setWebhookTarget,
+    webhookForm,
+    setWebhookForm,
+    savingWebhook,
+    rotatingWebhookSecret,
+    webhookSecretOnce,
+    webhookDeliveries,
+    handleCreateKey,
+    handleToggleKey,
+    handleDeleteKey,
+    openWebhookSettings,
+    handleSaveWebhook,
+    handleRotateWebhookSecret,
+    waForm,
+    isWaDirty,
+    savingWa,
+    showWaToken,
+    setShowWaToken,
+    testPhone,
+    setTestPhone,
+    testMsgText,
+    setTestMsgText,
+    testingSend,
+    testResult,
+    copiedWebhook,
+    copiedVerifyToken,
+    handleWaChange,
+    handleDiscardWa,
+    handleWaSubmit,
+    handleTestSendWa,
+    tgForm,
+    isTgDirty,
+    savingTg,
+    showTgToken,
+    setShowTgToken,
+    tgTestChatId,
+    setTgTestChatId,
+    tgTestMsg,
+    setTgTestMsg,
+    testingTgSend,
+    tgTestResult,
+    registeringWebhook,
+    webhookResult,
+    handleTgChange,
+    handleDiscardTg,
+    handleTgSubmit,
+    handleTestSendTg,
+    handleAutoRegisterWebhook,
+    docLang,
+    setDocLang,
+    copiedCode,
+    headerRef,
+    handleCopy,
+    generateSnippet,
+  } = useIntegrations();
 
   if (loading) {
     return (

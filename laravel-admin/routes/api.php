@@ -7,7 +7,10 @@ use App\Http\Controllers\Api\EkstraksiController;
 use App\Http\Controllers\Api\ForgotPasswordController;
 use App\Http\Controllers\Api\InternalTicketController;
 use App\Http\Controllers\Api\ResetPasswordController;
-use App\Http\Controllers\Api\SettingController;
+use App\Http\Controllers\Api\Settings\AiDiagnosticsController;
+use App\Http\Controllers\Api\Settings\ChatbotSettingsController;
+use App\Http\Controllers\Api\Settings\TelegramSettingsController;
+use App\Http\Controllers\Api\Settings\WhatsAppSettingsController;
 use App\Http\Controllers\Api\TicketController;
 use Illuminate\Support\Facades\Route;
 
@@ -109,19 +112,19 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Settings
     Route::prefix('settings')->group(function () {
-        Route::get('whatsapp',            [SettingController::class, 'getWhatsappSettings'])->name('api.settings.whatsapp.get');
-        Route::post('whatsapp',           [SettingController::class, 'updateWhatsappSettings'])->name('api.settings.whatsapp.update');
-        Route::post('whatsapp/test',      [SettingController::class, 'testWhatsappConnection'])->name('api.settings.whatsapp.test');
-        Route::get('telegram',            [SettingController::class, 'getTelegramSettings'])->name('api.settings.telegram.get');
-        Route::post('telegram',           [SettingController::class, 'updateTelegramSettings'])->name('api.settings.telegram.update');
-        Route::post('telegram/test',      [SettingController::class, 'testTelegramConnection'])->name('api.settings.telegram.test');
-        Route::post('telegram/webhook',   [SettingController::class, 'setTelegramWebhook'])->name('api.settings.telegram.webhook');
-        Route::get('chatbot',             [SettingController::class, 'getChatbotSettings'])->name('api.settings.chatbot.get');
-        Route::post('chatbot',            [SettingController::class, 'updateChatbotSettings'])->name('api.settings.chatbot.update');
-        Route::post('chatbot/reset',      [SettingController::class, 'resetChatbotSettings'])->name('api.settings.chatbot.reset');
-        Route::get('hardware',            [SettingController::class, 'getHardwareStatus'])->name('api.settings.hardware.get');
-        Route::get('models',              [SettingController::class, 'getAvailableModels'])->name('api.settings.models.get');
-        Route::post('models/benchmark',   [SettingController::class, 'benchmarkModel'])->name('api.settings.models.benchmark');
+        Route::get('whatsapp',            [WhatsAppSettingsController::class, 'getWhatsappSettings'])->name('api.settings.whatsapp.get');
+        Route::post('whatsapp',           [WhatsAppSettingsController::class, 'updateWhatsappSettings'])->name('api.settings.whatsapp.update');
+        Route::post('whatsapp/test',      [WhatsAppSettingsController::class, 'testWhatsappConnection'])->name('api.settings.whatsapp.test');
+        Route::get('telegram',            [TelegramSettingsController::class, 'getTelegramSettings'])->name('api.settings.telegram.get');
+        Route::post('telegram',           [TelegramSettingsController::class, 'updateTelegramSettings'])->name('api.settings.telegram.update');
+        Route::post('telegram/test',      [TelegramSettingsController::class, 'testTelegramConnection'])->name('api.settings.telegram.test');
+        Route::post('telegram/webhook',   [TelegramSettingsController::class, 'setTelegramWebhook'])->name('api.settings.telegram.webhook');
+        Route::get('chatbot',             [ChatbotSettingsController::class, 'getChatbotSettings'])->name('api.settings.chatbot.get');
+        Route::post('chatbot',            [ChatbotSettingsController::class, 'updateChatbotSettings'])->name('api.settings.chatbot.update');
+        Route::post('chatbot/reset',      [ChatbotSettingsController::class, 'resetChatbotSettings'])->name('api.settings.chatbot.reset');
+        Route::get('hardware',            [AiDiagnosticsController::class, 'getHardwareStatus'])->name('api.settings.hardware.get');
+        Route::get('models',              [AiDiagnosticsController::class, 'getAvailableModels'])->name('api.settings.models.get');
+        Route::post('models/benchmark',   [AiDiagnosticsController::class, 'benchmarkModel'])->name('api.settings.models.benchmark');
     });
 
     // Live Chat & Helpdesk Tickets (Admin)

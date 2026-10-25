@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import gsap from "gsap";
 import { documentsApi } from "../api/documents";
+import { useDocumentDetail } from "../hooks/documents/useDocumentDetail";
 import ConfirmModal from "../components/ConfirmModal";
 import ManualCorrectionEditor from "../components/ManualCorrectionEditor";
 import { InfoTooltip } from "../components/UI/InfoTooltip";
@@ -10,17 +11,11 @@ export default function DocumentDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const [document, setDocument] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
   const [replaceFile, setReplaceFile] = useState(null);
   const [replacing, setReplacing] = useState(false);
   const [pdfTimestamp, setPdfTimestamp] = useState(Date.now());
 
-  const [chunks, setChunks] = useState([]);
   const [showChunks, setShowChunks] = useState(false);
-  const [loadingChunks, setLoadingChunks] = useState(false);
   const [chunkSearch, setChunkSearch] = useState("");
   const [chromaActiveTab, setChromaActiveTab] = useState("all"); // 'all' | 'child' | 'parent'
   const [selectedChromaParentId, setSelectedChromaParentId] = useState(null);
@@ -62,71 +57,26 @@ export default function DocumentDetailPage() {
   const [isResizing, setIsResizing] = useState(false);
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(true);
   const isDragging = useRef(false);
-  const isMounted = useRef(true);
   const containerRef = useRef(null);
   const timelineRef = useRef(null);
   const infoContentRef = useRef(null);
   const logsContentRef = useRef(null);
   const managementContentRef = useRef(null);
   const isInitialMount = useRef(true);
-  const fetchTimeout = useRef(null);
-  const docLoadedRef = useRef(false);
 
-  const fetchDocument = async () => {
-    try {
-      const res = await documentsApi.get(id);
-      if (!isMounted.current) return;
-      const doc = res.data.document;
-      setDocument(doc);
-      docLoadedRef.current = true;
-      setError(null);
+  const {
+    document,
+    loading,
+    error,
+    chunks,
+    loadingChunks,
+    fetchDocument,
+    fetchChunks,
+  } = useDocumentDetail(id);
 
-      // Keep polling if processing or waiting for pause to complete on active page
-      if (
-        doc.status === "processing" ||
-        doc.status === "pending" ||
-        doc.ekstraksi_status === "berjalan" ||
-        doc.ekstraksi_status === "antre" ||
-        doc.jeda_diminta
-      ) {
-        if (fetchTimeout.current) clearTimeout(fetchTimeout.current);
-        fetchTimeout.current = setTimeout(fetchDocument, 4000);
-      }
-    } catch (err) {
-      if (!isMounted.current) return;
-      if (!docLoadedRef.current) {
-        setError(err.response?.data?.message || "Gagal memuat detail dokumen.");
-      } else {
-        // Resilient retry: don't blank out active editor on a single background poll glitch
-        if (fetchTimeout.current) clearTimeout(fetchTimeout.current);
-        fetchTimeout.current = setTimeout(fetchDocument, 4000);
-      }
-    } finally {
-      if (isMounted.current) setLoading(false);
-    }
-  };
-
-  const fetchChunks = async () => {
-    setLoadingChunks(true);
-    try {
-      const res = await documentsApi.getChunks(id);
-      if (!isMounted.current) return;
-      setChunks(res.chunks || res.data?.chunks || []);
-    } catch (err) {
-      if (!isMounted.current) return;
-      console.error("Gagal memuat chunks", err);
-      setChunks([]);
-    } finally {
-      if (isMounted.current) setLoadingChunks(false);
-    }
-  };
-
+  // Pertahankan pembersihan toast saat ID berganti dan halaman ditutup.
   useEffect(() => {
-    isMounted.current = true;
-    fetchDocument();
     return () => {
-      isMounted.current = false;
-      if (fetchTimeout.current) clearTimeout(fetchTimeout.current);
       if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     };
   }, [id]);

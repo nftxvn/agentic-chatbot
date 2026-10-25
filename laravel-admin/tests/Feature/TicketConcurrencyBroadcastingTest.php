@@ -8,14 +8,14 @@ use App\Events\TicketUpdated;
 use App\Models\ChatTicket;
 use App\Models\ChatTicketMessage;
 use App\Models\User;
-use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 class TicketConcurrencyBroadcastingTest extends TestCase
 {
-    use DatabaseTransactions;
+    use RefreshDatabase;
 
     protected string $internalToken = 'dev-internal-token-secret-1234567890';
 
@@ -51,7 +51,11 @@ class TicketConcurrencyBroadcastingTest extends TestCase
         $ticketNumber = $resInitial->json('data.ticket_number');
 
         Event::assertDispatched(TicketCreated::class, 1);
-        Event::assertDispatched(TicketMessageSent::class, 1);
+        Event::assertDispatched(TicketMessageSent::class, 2);
+        Event::assertDispatched(TicketMessageSent::class, function ($event) {
+            return $event->message->sender_type === 'system'
+                && str_starts_with($event->message->message, 'Ticket Opened: ');
+        });
 
         // 2. Rapid burst of 15 follow-up messages on the same session
         $burstCount = 15;
@@ -67,12 +71,14 @@ class TicketConcurrencyBroadcastingTest extends TestCase
             $this->assertEquals($ticketNumber, $resFollowup->json('data.ticket_number'));
         }
 
-        // Verify total message count for this ticket is 1 initial + 15 followups = 16
+        // Keep the lifecycle marker and all citizen messages in the thread.
         $ticket = ChatTicket::with('messages')->find($ticketId);
-        $this->assertCount(16, $ticket->messages);
+        $this->assertCount(17, $ticket->messages);
+        $this->assertCount(16, $ticket->messages->where('sender_type', 'citizen'));
+        $this->assertCount(1, $ticket->messages->where('sender_type', 'system'));
 
-        // Total TicketMessageSent events: 1 initial + 15 followups = 16
-        Event::assertDispatched(TicketMessageSent::class, 16);
+        // Every persisted message, including the marker, is broadcast once.
+        Event::assertDispatched(TicketMessageSent::class, 17);
         // TicketUpdated dispatched for each followup = 15
         Event::assertDispatched(TicketUpdated::class, 15);
     }
@@ -113,8 +119,11 @@ class TicketConcurrencyBroadcastingTest extends TestCase
         }
 
         $ticket = ChatTicket::with(['messages.sender'])->find($ticketId);
-        // Total messages: 1 initial + 5 agent + 5 citizen = 11 messages
-        $this->assertCount(11, $ticket->messages);
+        // One lifecycle marker, six citizen messages, and five agent replies.
+        $this->assertCount(12, $ticket->messages);
+        $this->assertCount(1, $ticket->messages->where('sender_type', 'system'));
+        $this->assertCount(6, $ticket->messages->where('sender_type', 'citizen'));
+        $this->assertCount(5, $ticket->messages->where('sender_type', 'agent'));
         $this->assertEquals('in_progress', $ticket->status);
         $this->assertEquals($admin->id, $ticket->assigned_admin_id);
     }
@@ -146,7 +155,7 @@ class TicketConcurrencyBroadcastingTest extends TestCase
         $ticketId = $res->json('data.ticket_id');
 
         $ticket = ChatTicket::with('messages')->find($ticketId);
-        $this->assertEquals($emojiMessage, $ticket->messages->first()->message);
+        $this->assertEquals($emojiMessage, $ticket->messages->firstWhere('sender_type', 'citizen')->message);
         $this->assertEquals('Dr. Siti Nurhaliza, S.Kom 👩‍💼', $ticket->citizen_name);
         $this->assertEquals('Dinas Komunikasi & Informatika 🏛️', $ticket->citizen_agency);
         $this->assertEquals('Troubleshoot OTP SSO SPBE 🛡️', $ticket->issue_summary);
@@ -160,7 +169,7 @@ class TicketConcurrencyBroadcastingTest extends TestCase
         $headers = ['Authorization' => 'Bearer ' . $this->internalToken];
 
         // 10 KB log transcript message
-        $largeMessage = str_repeat("STACKTRACE: Error at SPBE Service Module in line 42; ", 200);
+        $largeMessage = str_repeat("STACKTRACE: Error at SPBE Service Module in line 42; ", 200) . 'END';
         $this->assertGreaterThan(10000, strlen($largeMessage));
 
         $res = $this->withHeaders($headers)->postJson('/api/v1/internal/chat-tickets', [
@@ -173,7 +182,7 @@ class TicketConcurrencyBroadcastingTest extends TestCase
         $ticketId = $res->json('data.ticket_id');
 
         $ticket = ChatTicket::with('messages')->find($ticketId);
-        $this->assertEquals($largeMessage, $ticket->messages->first()->message);
+        $this->assertEquals($largeMessage, $ticket->messages->firstWhere('sender_type', 'citizen')->message);
     }
 
     public function test_injection_strings_stored_faithfully_without_sql_or_xss_execution(): void
@@ -198,7 +207,7 @@ class TicketConcurrencyBroadcastingTest extends TestCase
         $ticketId = $res->json('data.ticket_id');
 
         $ticket = ChatTicket::with('messages')->find($ticketId);
-        $this->assertStringContainsString($xssString, $ticket->messages->first()->message);
+        $this->assertStringContainsString($xssString, $ticket->messages->firstWhere('sender_type', 'citizen')->message);
         $this->assertEquals("Robert'); DROP TABLE chat_tickets;--", $ticket->citizen_name);
         $this->assertEquals($sqliString, $ticket->issue_summary);
     }
@@ -438,4 +447,3 @@ class TicketConcurrencyBroadcastingTest extends TestCase
         $this->assertIsInt($unreadCount);
     }
 }
-

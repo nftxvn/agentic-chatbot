@@ -7,13 +7,11 @@ berdasarkan dokumen yang sudah diproses.
 import json
 import logging
 import re
-import secrets
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sse_starlette.sse import EventSourceResponse
 
-from app.config import settings
 from app.database import get_document_names
 from app.schemas import (
     ChatMessageRequest,
@@ -22,6 +20,7 @@ from app.schemas import (
     SourceReference,
 )
 from app.services import rag_service
+from app.security import verify_chat_stream_token, verify_webhook_token
 
 logger = logging.getLogger(__name__)
 
@@ -37,60 +36,6 @@ _ERROR_MESSAGE = (
     "Terjadi kesalahan saat memproses permintaan Anda. "
     "Silakan coba lagi; bila berulang, hubungi administrator."
 )
-
-
-# ── Dependency untuk autentikasi ─────────────────────────────────
-
-
-def _assert_valid_bearer(authorization: str | None) -> str:
-    """
-    Memvalidasi header Authorization berformat 'Bearer <token>'.
-
-    Raises:
-        HTTPException: 401 bila header tidak ada, formatnya salah, atau
-            tokennya tidak cocok.
-    """
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Format Authorization header tidak valid. Gunakan 'Bearer <token>'.",
-        )
-
-    token = authorization.removeprefix("Bearer ").strip()
-
-    # compare_digest, bukan '==': lama pembandingannya tidak bergantung pada
-    # berapa karakter awal yang cocok, sehingga token tidak bisa ditebak
-    # karakter demi karakter lewat pengukuran waktu respons.
-    if not secrets.compare_digest(token, settings.INTERNAL_API_TOKEN):
-        logger.warning("Token tidak valid — akses ditolak")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token tidak valid. Akses ditolak.",
-        )
-
-    return token
-
-
-async def verify_webhook_token(authorization: str | None = Header(default=None)) -> str:
-    """Dependency autentikasi untuk endpoint WhatsApp webhook."""
-    return _assert_valid_bearer(authorization)
-
-
-async def verify_chat_stream_token(
-    authorization: str | None = Header(default=None),
-) -> str | None:
-    """
-    Dependency autentikasi untuk /api/chat/stream.
-
-    Bisa dimatikan lewat CHAT_STREAM_REQUIRE_AUTH=false untuk pengembangan
-    lokal, karena React widget memanggil endpoint ini langsung dari browser.
-    Di jaringan instansi penjagaan ini WAJIB aktif: tanpanya, siapa pun yang
-    menjangkau port ini dapat menanyai seluruh isi dokumen yang sudah di-ingest.
-    """
-    if not settings.CHAT_STREAM_REQUIRE_AUTH:
-        return None
-
-    return _assert_valid_bearer(authorization)
 
 
 # ── POST /api/chat/stream — Chat streaming via SSE ──────────────
@@ -205,22 +150,36 @@ async def chat_stream(
 
 def _build_source_references(
     parsed_sources: list[tuple[int | str, int | None]],
+    document_ids: list[int] | None = None,
 ) -> list[SourceReference]:
     """
-    Melengkapi rujukan sumber dengan nama berkas aslinya atau representasi judul dokumen.
+    Complete numeric references and resolve unique names within an explicit scope.
+
+    Named citations without document_ids, unmatched titles, and duplicate titles
+    keep document_id=None: display text alone does not establish provenance.
+    This only shapes JSON citations; generated text and SSE remain untouched.
     """
     if not parsed_sources:
         return []
 
     int_doc_ids = [s[0] for s in parsed_sources if isinstance(s[0], int)]
+    has_named_sources = any(isinstance(source[0], str) for source in parsed_sources)
+    scope = set(document_ids or []) if has_named_sources else set()
+    lookup_ids = sorted(set(int_doc_ids) | scope)
     names: dict[int, str] = {}
-    if int_doc_ids:
+    if lookup_ids:
         try:
-            names = get_document_names(int_doc_ids)
+            names = get_document_names(lookup_ids)
         except Exception:
             logger.warning(
                 "Gagal mengambil nama dokumen — doc_name dibiarkan fallback", exc_info=True
             )
+
+    scoped_names: dict[str, list[int]] = {}
+    for document_id in scope:
+        name = names.get(document_id)
+        if name:
+            scoped_names.setdefault(name, []).append(document_id)
 
     results: list[SourceReference] = []
     for doc_item, page_num in parsed_sources:
@@ -233,10 +192,11 @@ def _build_source_references(
                 )
             )
         else:
+            matching_ids = scoped_names.get(str(doc_item), [])
             results.append(
                 SourceReference(
                     doc_name=str(doc_item),
-                    document_id=None,
+                    document_id=matching_ids[0] if len(matching_ids) == 1 else None,
                     page=page_num,
                 )
             )
@@ -304,7 +264,17 @@ async def chat_message(
                         continue
                     content = line.removeprefix("- ").strip()
                     first_page = None
-                    if " — Halaman " in content:
+                    # Retrieval emits a hyphen; older producers used an em dash.
+                    # Anchor the numeric suffix so hyphens/years in titles survive.
+                    page_suffix = re.fullmatch(
+                        r"(.+) [—-] Halaman (\d+(?:\s*(?:[-–]|,)\s*\d+)*|\?)",
+                        content,
+                    )
+                    if page_suffix:
+                        doc_part, page_part = page_suffix.groups()
+                        pages = re.findall(r"\d+", page_part)
+                        first_page = int(pages[0]) if pages else None
+                    elif " — Halaman " in content:
                         doc_part, page_part = content.split(" — Halaman ", 1)
                         pages = re.findall(r"\d+", page_part)
                         first_page = int(pages[0]) if pages else None
@@ -321,7 +291,7 @@ async def chat_message(
             else:
                 reply_parts.append(chunk)
 
-        sources = _build_source_references(parsed_sources)
+        sources = _build_source_references(parsed_sources, request.document_ids)
         reply_text = "".join(reply_parts).strip()
 
         if not reply_text:

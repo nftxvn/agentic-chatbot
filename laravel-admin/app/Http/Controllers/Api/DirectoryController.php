@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\DirectoryStoreRequest;
+use App\Http\Requests\DirectoryUpdateRequest;
 use App\Models\ChatbotDirectory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -45,19 +47,9 @@ class DirectoryController extends Controller
     /**
      * Menyimpan Direktori Bidang baru.
      */
-    public function store(Request $request): JsonResponse
+    public function store(DirectoryStoreRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'nama_bidang'     => 'required|string|max:150',
-            'keywords'        => 'required|string',
-            'lokasi'          => 'required|string|max:255',
-            'email'           => 'required|string|email|max:100',
-            'layanan_utama'   => 'required|string|max:150',
-            'daftar_tugas'    => 'nullable',
-            'jam_operasional' => 'nullable|string|max:100',
-            'is_active'       => 'boolean',
-            'sort_order'      => 'integer',
-        ]);
+        $validated = $request->validated();
 
         if (isset($validated['daftar_tugas']) && is_string($validated['daftar_tugas'])) {
             // Konversi teks baris-per-baris menjadi array
@@ -90,21 +82,10 @@ class DirectoryController extends Controller
     /**
      * Memperbarui Direktori Bidang.
      */
-    public function update(Request $request, int $id): JsonResponse
+    public function update(DirectoryUpdateRequest $request, int $id): JsonResponse
     {
         $item = ChatbotDirectory::findOrFail($id);
-
-        $validated = $request->validate([
-            'nama_bidang'     => 'sometimes|required|string|max:150',
-            'keywords'        => 'sometimes|required|string',
-            'lokasi'          => 'sometimes|required|string|max:255',
-            'email'           => 'sometimes|required|string|email|max:100',
-            'layanan_utama'   => 'sometimes|required|string|max:150',
-            'daftar_tugas'    => 'nullable',
-            'jam_operasional' => 'nullable|string|max:100',
-            'is_active'       => 'boolean',
-            'sort_order'      => 'integer',
-        ]);
+        $validated = $request->validated();
 
         if (isset($validated['daftar_tugas']) && is_string($validated['daftar_tugas'])) {
             $lines = array_filter(array_map('trim', explode("\n", $validated['daftar_tugas'])));

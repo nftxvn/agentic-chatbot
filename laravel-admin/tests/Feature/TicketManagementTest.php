@@ -8,13 +8,13 @@ use App\Events\TicketUpdated;
 use App\Models\ChatTicket;
 use App\Models\ChatTicketMessage;
 use App\Models\User;
-use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 class TicketManagementTest extends TestCase
 {
-    use DatabaseTransactions;
+    use RefreshDatabase;
 
     protected string $internalToken = 'dev-internal-token-secret-1234567890';
 

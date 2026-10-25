@@ -12,7 +12,13 @@ return new class extends Migration
      */
     public function up(): void
     {
-        DB::statement("ALTER TABLE documents MODIFY COLUMN status VARCHAR(50) NOT NULL DEFAULT 'pending'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE documents MODIFY COLUMN status VARCHAR(50) NOT NULL DEFAULT 'pending'");
+        } elseif (DB::getDriverName() === 'sqlite') {
+            Schema::table('documents', function (Blueprint $table) {
+                $table->string('status', 50)->default('pending')->change();
+            });
+        }
     }
 
     /**
@@ -20,6 +26,12 @@ return new class extends Migration
      */
     public function down(): void
     {
-        DB::statement("ALTER TABLE documents MODIFY COLUMN status ENUM('pending', 'processing', 'completed', 'failed') NOT NULL DEFAULT 'pending'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE documents MODIFY COLUMN status ENUM('pending', 'processing', 'completed', 'failed') NOT NULL DEFAULT 'pending'");
+        } elseif (DB::getDriverName() === 'sqlite') {
+            Schema::table('documents', function (Blueprint $table) {
+                $table->enum('status', ['pending', 'processing', 'completed', 'failed'])->default('pending')->change();
+            });
+        }
     }
 };

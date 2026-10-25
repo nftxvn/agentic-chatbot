@@ -4,23 +4,20 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Document;
-use App\Models\DocumentLog;
-use App\Models\EkstraksiHalaman;
-use App\Models\EkstraksiJob;
 use App\Services\AiMicroserviceClient;
+use App\Services\Documents\DocumentExtractionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class EkstraksiController extends Controller
 {
-    protected AiMicroserviceClient $client;
-
-    public function __construct(AiMicroserviceClient $client)
-    {
-        $this->client = $client;
+    public function __construct(
+        protected AiMicroserviceClient $client,
+        private DocumentExtractionService $extraction,
+    ) {
     }
 
     /**
@@ -32,34 +29,7 @@ class EkstraksiController extends Controller
 
         $maksHalaman = $request->input('maks_halaman') ? (int) $request->input('maks_halaman') : null;
 
-        // Nama kolomnya harus persis seperti di tabel document_categories.
-        // Sebelumnya baris pertama membaca `system_prompt` dan `job_titles` —
-        // dua kolom yang TIDAK PERNAH ADA. Eloquent mengembalikan null, lalu
-        // AiMicroserviceClient membuangnya karena kosong, sehingga prompt OCR
-        // dan daftar jabatan tidak pernah sampai ke layanan Python. Tidak ada
-        // galat yang muncul; ekstraksi hanya berjalan seolah kategorinya kosong.
-        //
-        // job_titles disimpan di dalam JSON `prompt_variables`
-        // ({"job_titles": ["Kepala Dinas", ...]}), sedangkan sisi Python
-        // mengharapkan teks biasa — jadi digabung di sini, bukan sekadar
-        // diganti namanya. data_get() dipakai supaya kategori kosong, JSON
-        // tanpa kunci itu, atau dokumen tanpa kategori sama-sama aman.
-        // Kunci `kata_kunci` adalah nama barunya; `job_titles` dibaca sebagai
-        // cadangan supaya kategori yang sudah terlanjur diisi tidak kehilangan
-        // datanya. Isinya bukan cuma jabatan — singkatan seperti Renstra, RKA,
-        // SPPD juga sering salah dibaca model vision dan pantas masuk daftar.
-        $kataKunci = data_get($document->category, 'prompt_variables.kata_kunci')
-            ?? data_get($document->category, 'prompt_variables.job_titles', []);
-        $customPrompts = data_get($document->category, 'prompt_variables.custom_prompts', []);
-
-        $categoryOptions = [
-            'category_prompt' => $document->category?->vision_prompt,
-            'job_titles'      => is_array($kataKunci) ? implode(', ', $kataKunci) : $kataKunci,
-            'vision_model'    => $document->category?->vision_model,
-            'custom_prompts'  => !empty($customPrompts) ? $customPrompts : null,
-        ];
-
-        $result = $this->client->mulaiEkstraksi($document->id, $maksHalaman, $categoryOptions);
+        $result = $this->extraction->start($document, $maksHalaman, Auth::user());
 
         if (!$result['success']) {
             return response()->json([
@@ -67,13 +37,6 @@ class EkstraksiController extends Controller
                 'message' => $result['message'] ?? 'Gagal memulai ekstraksi',
             ], $result['status'] ?? 500);
         }
-
-        $document->update([
-            'status'        => 'processing',
-            'error_message' => null,
-        ]);
-
-        $document->recordLog('processing', 'Ekstraksi bertahap dimulai oleh ' . (Auth::user()?->name ?? 'Admin'), 15);
 
         return response()->json([
             'success' => true,
@@ -88,29 +51,15 @@ class EkstraksiController extends Controller
     public function jeda(int $id): JsonResponse
     {
         $document = Document::findOrFail($id);
-
-        // Also update MySQL flag directly to guarantee fast response
-        $job = EkstraksiJob::where('document_id', $document->id)->first();
-        if ($job && ($job->status === 'jeda' || $job->jeda_diminta)) {
-            // Already paused or requested pause
-            return response()->json([
-                'success' => true,
-                'message' => 'Permintaan jeda sudah diajukan sebelumnya.',
-                'data'    => ['document_id' => $document->id, 'jeda_diminta' => true],
-            ], 200);
-        }
-
-        EkstraksiJob::where('document_id', $document->id)->update(['jeda_diminta' => true]);
-
-        $result = $this->client->jedaEkstraksi($document->id);
-
-        $document->recordLog('paused', 'Ekstraksi dokumen dijeda oleh ' . (Auth::user()?->name ?? 'Admin'), 15);
+        $result = $this->extraction->pause($document, Auth::user());
 
         return response()->json([
             'success' => true,
-            'message' => 'Permintaan jeda diterima. Ekstraksi akan berhenti di batas halaman.',
-            'data'    => $result['data'] ?? ['document_id' => $document->id, 'jeda_diminta' => true],
-        ], 202);
+            'message' => $result['already_requested']
+                ? 'Permintaan jeda sudah diajukan sebelumnya.'
+                : 'Permintaan jeda diterima. Ekstraksi akan berhenti di batas halaman.',
+            'data' => $result['data'],
+        ], $result['already_requested'] ? 200 : 202);
     }
 
     /**
@@ -120,52 +69,9 @@ class EkstraksiController extends Controller
     {
         $document = Document::findOrFail($id);
 
-        // 1. Coba baca status live dari Python AI (termasuk progress embedding Redis & OCR)
-        $result = $this->client->statusEkstraksi($document->id);
-
-        if ($result['success'] && !empty($result['data'])) {
-            return response()->json([
-                'success' => true,
-                'data'    => $result['data'],
-            ]);
-        }
-
-        // 2. Fallback baca dari tabel MySQL ekstraksi_job
-        $job = EkstraksiJob::where('document_id', $document->id)->first();
-
-        if ($job) {
-            $total = (int) ($document->total_pages ?: ($job->halaman_total != 100 ? $job->halaman_total : 0));
-            $done  = (int) ($job->halaman_total != 100 ? $job->halaman_selesai : ($document->processed_pages ?? 0));
-            if ($total > 0 && $done > $total) {
-                $done = $total;
-            }
-            $persen = $total > 0 ? min(100, (int) round(($done / $total) * 100)) : 0;
-
-            return response()->json([
-                'success' => true,
-                'data'    => [
-                    'document_id'     => $document->id,
-                    'status'          => $job->status,
-                    'jeda_diminta'    => (bool) $job->jeda_diminta,
-                    'halaman_total'   => $total,
-                    'halaman_selesai' => $done,
-                    'persen'          => $persen,
-                    'pesan'           => $job->pesan,
-                ],
-            ]);
-        }
-
         return response()->json([
             'success' => true,
-            'data'    => [
-                'document_id'     => $document->id,
-                'status'          => 'antre',
-                'jeda_diminta'    => false,
-                'halaman_total'   => $document->total_pages ?? 0,
-                'halaman_selesai' => 0,
-                'persen'          => 0,
-                'pesan'           => null,
-            ],
+            'data' => $this->extraction->status($document),
         ]);
     }
 
@@ -175,32 +81,10 @@ class EkstraksiController extends Controller
     public function halaman(int $id, Request $request): JsonResponse
     {
         $document = Document::findOrFail($id);
-        $perluDiperiksa = $request->boolean('perlu_diperiksa');
-
-        $result = $this->client->daftarHalaman($document->id, $perluDiperiksa);
-
-        if ($result['success']) {
-            return response()->json([
-                'success' => true,
-                'data'    => $result['data'],
-            ]);
-        }
-
-        // Fallback to reading from local database
-        $query = EkstraksiHalaman::where('document_id', $document->id)->orderBy('page_number');
-        if ($perluDiperiksa) {
-            $query->where('diperiksa', false);
-        }
-
-        $pages = $query->get(['page_number', 'text', 'diperiksa']);
 
         return response()->json([
             'success' => true,
-            'data'    => [
-                'document_id' => $document->id,
-                'jumlah'      => $pages->count(),
-                'halaman'     => $pages,
-            ],
+            'data' => $this->extraction->pages($document, $request->boolean('perlu_diperiksa')),
         ]);
     }
 
@@ -212,13 +96,21 @@ class EkstraksiController extends Controller
         $document = Document::findOrFail($id);
 
         $request->validate([
-            'text' => ['required', 'string'],
+            'text' => [
+                'required',
+                'string',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    if (is_string($value) && Str::trim($value) === '') {
+                        $fail('Teks halaman tidak boleh kosong.');
+                    }
+                },
+            ],
         ], [
             'text.required' => 'Teks halaman tidak boleh kosong.',
         ]);
 
         $text = $request->input('text');
-        $result = $this->client->simpanKoreksiHalaman($document->id, $pageNumber, $text);
+        $result = $this->extraction->saveCorrection($document, $pageNumber, $text);
 
         if (!$result['success']) {
             return response()->json([
@@ -226,20 +118,6 @@ class EkstraksiController extends Controller
                 'message' => $result['message'] ?? 'Gagal menyimpan koreksi.',
             ], $result['status'] ?? 400);
         }
-
-        // Mark as checked in local table (atomic upsert on composite key)
-        DB::table('ekstraksi_halaman')->upsert(
-            [
-                [
-                    'document_id' => $document->id,
-                    'page_number' => $pageNumber,
-                    'text'        => $text,
-                    'diperiksa'   => 1,
-                ]
-            ],
-            ['document_id', 'page_number'],
-            ['text', 'diperiksa']
-        );
 
         return response()->json([
             'success' => true,
@@ -324,7 +202,7 @@ class EkstraksiController extends Controller
     public function simpanKorpus(int $id, Request $request): JsonResponse
     {
         $document = Document::findOrFail($id);
-        $result = $this->client->simpanKeKorpus($document->id, $request->all());
+        $result = $this->extraction->embed($document, $request->all(), Auth::user());
 
         if (!$result['success']) {
             return response()->json([
@@ -332,8 +210,6 @@ class EkstraksiController extends Controller
                 'message' => $result['message'] ?? 'Gagal menyimpan ke korpus.',
             ], $result['status'] ?? 409);
         }
-
-        $document->recordLog('completed', 'Dokumen difinalisasi dan disimpan ke korpus vektor oleh ' . (Auth::user()?->name ?? 'Admin'), 15);
 
         return response()->json([
             'success' => true,
