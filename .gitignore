@@ -155,3 +155,22 @@ laravel-admin/*.log
 # =========================
 node_modules/
 *.log
+
+# =========================
+# ARTEFAK LOKAL DAN LAPORAN
+# =========================
+
+# Catatan kerja agen dan sesi browser; bukan sumber aplikasi.
+/.agents/teamwork/
+/.playwright-cli/
+
+# Sumber/lampiran akademik dipilih dan diserahkan terpisah dari kode aplikasi.
+/laporan-kkp/
+
+# Bukti pengujian, cookie browser dan hasil build PDF tetap lokal.
+/output/
+
+# Tangkapan layar lepas dari utilitas pengembangan lama.
+/login*macbook14.png
+/screenshot_*_macbook14.png
+/Screenshot *.png

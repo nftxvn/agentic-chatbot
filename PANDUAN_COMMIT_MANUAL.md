@@ -1,176 +1,103 @@
-# Pilihan commit manual SAPA
+# Commit dan sinkronisasi branch secara manual
 
-Panduan ini berdasarkan workspace yang diperiksa pada 26 Oktober 2026,
-branch `feat/integration`. Belum ada perubahan yang di-stage saat pemeriksaan.
-Tidak ada commit atau push yang dijalankan oleh asisten.
+Pemeriksaan 26 Oktober 2026 dilakukan pada branch `main`. Refactoring dan
+pembaruan dokumentasi telah masuk ke `main`; panduan ini memilih perubahan
+pembersihan repository berikutnya. Commit dan push dijalankan oleh pengguna.
 
-## Pilihan berkas
+## Status branch sebelum pembersihan
 
-| Kelompok | Pilihan |
+- `main`: `540da01`, merge hasil refactoring SAPA.
+- `feat/integration`: `9455ac1`, sudah menjadi ancestor `main`.
+- Isi berkas kedua branch identik sebelum pembersihan. Lima commit tambahan
+  pada riwayat `main` mencakup merge/revert/reapply; bukan lima perubahan kode
+  yang belum masuk ke feature branch.
+- Pembersihan dibuat pada working tree `main`; branch lain mendapatkannya
+  setelah commit dan sinkronisasi yang dipilih pengguna.
+
+## Isi perubahan pembersihan
+
+| Bagian | Perlakuan |
 | --- | --- |
-| Kode refactoring | Commit perubahan dan modul baru React, Laravel, Python; sertakan tes, migrasi, package/lock file, `.env.example`, verifier UI, dan runner integrasi |
-| Dokumentasi teknis | Commit dokumentasi utama yang tersisa setelah konsolidasi, penghapusan dokumen duplikat yang sudah tracked, README aplikasi, dan panduan verifier |
-| Materi penyerahan | README root, `SERAH_TERIMA.md` dan sumber LaTeX ikut commit dokumentasi; PPT/PDF dapat menjadi commit lampiran terpisah setelah identitas/versi diperiksa |
-| Laporan akademik | Tunda seluruh `laporan-kkp/`; pilih sumber/laporan sendiri secara terpisah setelah review |
-| Artefak lokal | Jangan ikutkan `.agents/`, `.playwright-cli/`, screenshot root, log, browser storage state, cache, dependency terpasang, atau output pengujian |
-| Utilitas screenshot | Tunda `take_screenshot.cjs`, `take_screenshot.mjs`, dan `admin-frontend/scripts/capture-hd.js`; terpisah dari refactoring. Versi `.cjs` masih memakai path Windows pribadi |
+| Dokumen root lama tentang rencana helpdesk dan suite E2E yang tidak tersedia | Dihapus; referensi aktif ada pada docs bernomor, README aplikasi dan runner integrasi |
+| Ikon duplikat dan screenshot lepas di root | Dihapus; ikon/aset yang dipakai aplikasi dipertahankan |
+| Skrip capture lama, snapshot browser lama dan file perantara LaTeX | Dihapus setelah disalin ke backup lokal sementara |
+| Folder output, catatan kerja agen dan materi akademik lokal | Diabaikan Git; PDF laporan, sumber akademik dan bukti pengujian tetap disimpan lokal |
+| README, serah terima dan aturan ignore | Diperbarui agar sesuai struktur repository dan lampiran yang tersedia |
 
-Perintah di bawah memilih path tertentu. Hindari `git add .` dan `git add -A`
-untuk kondisi workspace ini. Tidak perlu menghapus berkas lokal yang dikecualikan.
-Seleksi kode saat pemeriksaan mencakup 225 berkas berubah/baru, ditambah aturan
-ignore output Playwright. Berkas hasil ekstraksi kode wajib ikut: memilih hanya
-berkas lama berstatus modified akan meninggalkan import/dependency yang hilang.
+## Meninjau dan membuat commit
 
-## Tinjau dump database sebelum push
-
-`docker/mysql/init.sql` **sudah tracked dan ada pada HEAD**, meskipun tidak
-muncul sebagai perubahan baru. Isinya berupa dump dengan INSERT ke `users`,
-`app_settings`, dokumen, hasil ekstraksi, direktori, log, dan tabel lain.
-Pemeriksaan menemukan alamat email dan hash password; nilai pengaturan perlu
-ditinjau untuk memastikan tidak ada kredensial atau data yang tidak boleh dibagikan.
-
-Periksa lokal tanpa menyalin nilai sensitif ke issue/chat. Dump ini perlu
-diklasifikasikan sebelum menentukan kelayakan push ke tujuan repository.
-Untuk instalasi baru, utamakan migrasi dan seeder dengan data sintetis setelah
-memeriksa kebutuhan Docker yang sekarang memakai dump tersebut.
-
-Menambahkan `.gitignore`, menghapus file pada commit baru, atau tidak memilihnya
-dalam staging **tidak menghapus isi commit terdahulu**. Jika ditemukan rahasia,
-ganti kredensial terkait dan rencanakan pembersihan riwayat bersama pemilik repo.
-Jangan melakukan force-push atau rewrite history tanpa koordinasi.
-Pemeriksaan ini bukan audit lengkap seluruh riwayat Git.
-
-## Commit 1: kode, tes, migrasi dan alat verifikasi
-
-Jalankan dari root repository. Gabungkan backend Python/Laravel karena perubahan
-pipeline, pembatalan dan cleanup saling berhubungan. UI frontend tetap memakai
-hasil refactoring yang telah diverifikasi sebelumnya.
+Dari root repository, pastikan branch masih `main` dan periksa perubahan:
 
 ```bash
-git add -- \
-  admin-frontend/src \
-  admin-frontend/package.json \
-  admin-frontend/package-lock.json \
-  admin-frontend/scripts/verify-refactor-ui.cjs \
-  laravel-admin/app \
-  laravel-admin/bootstrap/app.php \
-  laravel-admin/routes/api.php \
-  laravel-admin/database/migrations \
-  laravel-admin/tests \
-  laravel-admin/scripts/integration \
-  python-ai/app \
-  python-ai/tests \
-  python-ai/.env.example \
-  scripts/integration \
-  output/playwright/.gitignore
-
-git diff --cached --stat
-git diff --cached --name-only
-git -c core.whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol diff --cached --check
-git diff --cached
+git branch --show-current
+git status --short
+git diff --stat
 ```
 
-Setelah isi staging selesai diperiksa:
+Stage hanya berkas tracked yang berubah/dihapus pada pembersihan ini:
 
 ```bash
-git commit -m "refactor: rapikan modul aplikasi dan perkuat verifikasi pipeline"
-```
-
-Pastikan dua migrasi baru `2026_10_25_000001_add_document_operation_fences.php`
-dan `2026_10_25_000002_create_document_vector_cleanups_table.php` ikut.
-Commit ini tidak menjalankan migrasi pada server.
-
-## Commit 2: dokumentasi teknis
-
-```bash
-git add -- \
-  docs \
+git add -u -- \
+  .gitignore \
   README.md \
   SERAH_TERIMA.md \
-  admin-frontend/README.md \
-  admin-frontend/scripts/README.md \
-  laravel-admin/README.md \
-  python-ai/README.md \
-  scripts/integration/browser/README.md \
-  PANDUAN_COMMIT_MANUAL.md
+  PANDUAN_COMMIT_MANUAL.md \
+  PROJECT.md \
+  TEST_INFRA.md \
+  TEST_READY.md \
+  "Screenshot 2026-10-02 094139.png" \
+  sapa-icon-512.svg \
+  output/playwright/.gitignore
 
+git diff --cached --name-status
 git diff --cached --stat
 git -c core.whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol diff --cached --check
 git diff --cached
-git commit -m "docs: selaraskan arsitektur panduan dan hasil audit refactoring"
 ```
 
-Pemilihan `docs` juga mencatat penghapusan dokumen duplikat yang sudah tracked;
-glob berkas yang masih ada saja dapat melewatkan penghapusan tersebut. Folder
-ini sekarang hanya memuat dokumen Markdown dan sumber LaTeX ringkasan.
-README root dan `SERAH_TERIMA.md` ikut karena tautannya diperbarui saat
-konsolidasi. Tautan PPT/PDF pada serah terima memerlukan lampiran pada commit
-opsional berikut atau penyesuaian lokasi sebelum materi dibagikan melalui Git.
-
-## Commit 3 opsional: lampiran penyerahan
-
-Lengkapi nama pembimbing, tanggal, identitas dan versi kode terlebih dahulu.
-PPT berukuran 49.541.148 byte, sekitar 47,2 MiB. Pilih apakah repository juga
-menjadi tempat menyimpan materi presentasi. Jika hanya menyerahkan source code,
-tunda kelompok ini dan bagikan materi sebagai lampiran terpisah; sesuaikan
-tautan README/serah terima apabila lokasi materi dipindahkan.
-
-Jika PPT dan ringkasan memang dipilih untuk masuk repository:
+`-u` mencatat perubahan dan penghapusan berkas tracked. Berkas lokal yang belum
+pernah dilacak Git tidak memerlukan commit penghapusan. Setelah hasil staging
+diperiksa, buat commit dan push manual:
 
 ```bash
-git add -- \
-  "PPT DISKOMINFOTIK.pptx" \
-  output/serah-terima/.gitignore
-
-git add -f -- output/serah-terima/SAPA-Ringkasan-Pembimbing.pdf
-git diff --cached --stat
-git diff --cached --name-only
-git commit -m "docs: tambahkan lampiran presentasi dan ringkasan SAPA"
+git commit -m "chore: bersihkan artefak lokal dan dokumentasi lama"
+git push origin main
 ```
 
-`-f` sengaja hanya untuk satu PDF yang sudah diperiksa; folder output tetap
-diabaikan. Jangan memakai `git add -f output/` karena dapat memasukkan cookie,
-log, screenshot atau artefak lokal lain. PDF adalah hasil build; jika sumber
-LaTeX diubah, bangun ulang sebelum memilih PDF tersebut.
+Jika push ditolak karena remote berubah, periksa riwayat terbaru terlebih
+dahulu; jangan memakai force-push untuk melewati penolakan tersebut.
 
-## Berkas yang tetap dibiarkan lokal
+## Menyelaraskan feat/integration bila masih dipakai
 
-- `.agents/` dan `.playwright-cli/`: catatan kerja agen dan snapshot browser.
-- `output/`: hasil pengujian/build, kecuali dua `.gitignore` dan satu PDF yang
-  secara eksplisit dipilih di atas.
-- `login-macbook14.png`, `login_hd_macbook14.png`, `login_lightmode_macbook14.png`,
-  `screenshot_dark_macbook14.png`, `screenshot_light_macbook14.png`.
-- Tiga utilitas screenshot yang disebut pada tabel awal.
-- Seluruh `laporan-kkp/` untuk commit kode: terdapat build LaTeX, identitas,
-  logbook/draf, panduan, serta PDF laporan milik pihak lain. Pilih laporan
-  mahasiswa sendiri secara terpisah; jangan ikutkan seluruh direktori.
-- `.env`, token, database operasional, `node_modules/`, `vendor/`, virtualenv,
-  dan cache. `.env.example` yang berisi placeholder tetap diperlukan.
-
-Status untracked yang tersisa setelah commit merupakan hasil seleksi yang
-disengaja; working tree tidak harus bersih agar commit pilihan dapat di-push.
-
-## Pemeriksaan akhir dan push manual
+Setelah commit pembersihan dibuat pada `main`, feature branch dapat mengikuti
+`main` dengan fast-forward. Ini opsional bila pengembangan selanjutnya memakai
+branch baru.
 
 ```bash
-git status --short
-git log -3 --oneline
-git show --stat --oneline HEAD
-git remote -v
-git branch -vv
+git switch feat/integration
+git merge --ff-only main
+git push origin feat/integration
+git switch main
 ```
 
-Pastikan remote benar, hasil seleksi sesuai, dan temuan dump database di atas
-sudah ditangani sesuai tujuan/akses repository. Push mengirim commit yang belum
-ada di remote beserta riwayat yang diperlukan, bukan hanya staging terakhir.
-Jika nama remote memang `origin` dan branch tetap `feat/integration`:
+Jika fast-forward ditolak, ada riwayat baru yang perlu diperiksa. Jangan reset
+branch untuk memaksakan sinkronisasi.
 
-```bash
-git push -u origin feat/integration
-```
+## Materi penyerahan dan data aplikasi
 
-Pemeriksaan pemilihan berkas tidak menjalankan ulang suite aplikasi. Bukti
-pengujian sebelumnya ada pada dokumentasi status, audit, dan penutupan.
-Pada pemeriksaan ini, `git diff --check` biasa menandai CRLF sebagai whitespace;
-pemeriksaan dengan `cr-at-eol` lulus. Tidak dilakukan normalisasi line ending
-massal atau perubahan UI.
+Pilih laporan milik mahasiswa sendiri dari `laporan-kkp/`; folder ini juga
+memuat referensi pihak lain. PPT acuan saat pemeriksaan tidak tersedia pada
+checkout. PDF ringkasan dapat dibangun dari sumber pada `docs/` menggunakan
+[panduan serah terima](SERAH_TERIMA.md), lalu dibagikan sebagai lampiran.
+Jangan memakai `git add -f output/` untuk memasukkan seluruh folder artefak.
+
+`docker/mysql/init.sql` tetap dipertahankan karena Docker Compose masih
+memakainya. Dump tersebut sudah tracked, berisi data pengguna/dokumen dan
+pengaturan, sehingga perlu review data sebelum repository dibagikan lebih
+luas. Mengabaikan atau menghapusnya pada commit baru tidak menghapus isi
+riwayat. Penggantian dengan bootstrap sintetis perlu perubahan Docker yang
+terkoordinasi, terpisah dari pembersihan ini.
+
+Konfigurasi `.env`, token, storage operasional, database/vektor, lock file,
+migrasi, dependency dan seluruh source aplikasi dipertahankan. Bukti pengujian
+serta cara menjalankannya tersedia pada dokumentasi status dan README aplikasi.

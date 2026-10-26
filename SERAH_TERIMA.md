@@ -1,8 +1,9 @@
 # Serah Terima Proyek Magang — SAPA
 
 **Status dokumen: draf pendamping untuk review pembimbing lapangan.**
-Ringkasan ini mengikuti presentasi
-[PPT DISKOMINFOTIK.pptx](<PPT DISKOMINFOTIK.pptx>) yang sudah disampaikan.
+Ringkasan ini mengikuti presentasi `PPT DISKOMINFOTIK.pptx` yang sudah
+disampaikan dan diserahkan sebagai lampiran terpisah. Berkas PPT tersebut
+tidak tersedia pada checkout ini.
 PPT tetap menjadi pengantar masalah dan solusi; dokumen ini menghubungkannya
 dengan hasil implementasi, bukti pengujian, dan materi yang diserahkan.
 
@@ -26,16 +27,18 @@ pekerjaan dan logbook yang benar-benar dilakukan.
 
 | Kebutuhan pembimbing | Materi yang disiapkan |
 | --- | --- |
-| Membaca gambaran hasil dengan cepat | [Ringkasan PDF pembimbing](output/serah-terima/SAPA-Ringkasan-Pembimbing.pdf), tiga halaman |
-| Mengikuti penjelasan yang telah dipresentasikan | [PPT DISKOMINFOTIK.pptx](<PPT DISKOMINFOTIK.pptx>), 18 slide |
+| Membaca gambaran hasil dengan cepat | Bangun PDF tiga halaman dari [sumber ringkasan pembimbing](docs/10-serah-terima-pembimbing.tex) dengan perintah di bagian akhir |
+| Mengikuti penjelasan yang telah dipresentasikan | `PPT DISKOMINFOTIK.pptx`, 18 slide, sebagai lampiran terpisah |
 | Meninjau kode dan cara menjalankan | [README proyek](README.md), README setiap aplikasi, dan [panduan lokal](docs/04-panduan_kerja_mandiri_dev.md) |
 | Memeriksa hasil pengujian dan refactoring | [Status verifikasi, audit dan penutupan](docs/09-status-refactor-dan-verifikasi.md) |
 | Membaca laporan akademik | Pilih PDF laporan final milik mahasiswa dari `laporan-kkp/`, setelah memastikan versinya benar |
 
 PDF ringkasan adalah hasil build dari
 [`docs/10-serah-terima-pembimbing.tex`](docs/10-serah-terima-pembimbing.tex).
-Jika menyerahkan melalui Git, sertakan PDF tersebut sebagai lampiran terpisah
-atau bangun ulang dengan perintah di bagian akhir. Folder output diabaikan Git.
+Hasil build lokal berada di `output/serah-terima/SAPA-Ringkasan-Pembimbing.pdf`.
+Jika menyerahkan melalui Git, bagikan PDF sebagai lampiran terpisah atau bangun
+ulang dari sumbernya. Folder output diabaikan Git agar log, cookie browser dan
+hasil build tidak ikut dalam paket kode.
 
 ## Ringkasan untuk pembimbing
 
