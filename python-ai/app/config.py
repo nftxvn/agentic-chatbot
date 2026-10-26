@@ -130,11 +130,10 @@ class Settings:
     # Default-nya AKTIF: tanpa penjaga, siapa pun yang bisa menjangkau port ini
     # dapat menanyai seluruh isi dokumen yang sudah di-ingest.
     #
-    # Boleh dimatikan HANYA saat pengembangan lokal — React widget memanggil
-    # endpoint ini langsung dari browser, sehingga menaruh INTERNAL_API_TOKEN di
-    # sana berarti membocorkannya ke siapa pun yang membuka devtools (token yang
-    # sama juga membuka /api/docs/*). Untuk produksi, biarkan aktif dan
-    # teruskan permintaan lewat Laravel yang memegang token di sisi server.
+    # Boleh dimatikan hanya saat pengembangan lokal. Pemanggil browser memakai
+    # proxy Laravel agar INTERNAL_API_TOKEN tetap berada di sisi server.
+    # Token yang sama juga membuka /api/docs/*; autentikasi stream tetap aktif
+    # secara default.
     CHAT_STREAM_REQUIRE_AUTH: bool = _env_bool("CHAT_STREAM_REQUIRE_AUTH", "true")
 
     # Origin yang boleh memanggil API dari browser (dipisah koma).
@@ -143,7 +142,7 @@ class Settings:
     # API ini memakai kredensial pengunjungnya.
     CORS_ALLOW_ORIGINS: list[str] = _env_list(
         "CORS_ALLOW_ORIGINS",
-        "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173",
+        "http://localhost:5173,http://127.0.0.1:5173",
     )
 
     # Ukuran jendela konteks LLM (token) — DIPATOK ke satu nilai, tidak dihitung

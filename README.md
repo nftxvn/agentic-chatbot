@@ -2,10 +2,6 @@
 
 Platform kecerdasan buatan berbasis *Retrieval-Augmented Generation (RAG)* mandiri untuk pengelolaan basis pengetahuan SOP dan layanan publik Diskominfotik Kota Banda Aceh.
 
-Untuk pembimbing lapangan, mulai dari [paket serah terima proyek magang](SERAH_TERIMA.md).
-Dokumen tersebut menghubungkan PPT yang telah dipresentasikan, ringkasan PDF,
-kode, hasil pengujian dan pekerjaan operasional berikutnya.
-
 ---
 
 ## 1. Struktur Proyek
@@ -112,9 +108,8 @@ Skrip ini secara otomatis akan:
 | [`docs/07-observabilitas-dan-telemetri-rag.md`](docs/07-observabilitas-dan-telemetri-rag.md) | Panduan teknis observabilitas, pipeline tracing & telemetri |
 | [`docs/08-panduan-struktur-kode-dan-pemeliharaan.md`](docs/08-panduan-struktur-kode-dan-pemeliharaan.md) | Batas modul, kontrak integrasi, dan panduan pemeliharaan kode |
 | [`docs/09-status-refactor-dan-verifikasi.md`](docs/09-status-refactor-dan-verifikasi.md) | Status refactoring, audit A1/A2, penutupan, bukti uji, dan batas verifikasi UI |
-| [`docs/10-serah-terima-pembimbing.tex`](docs/10-serah-terima-pembimbing.tex) | Sumber LaTeX ringkasan proyek untuk pembimbing |
 
-## 7. Berkas lokal dan commit
+## 7. Berkas lokal
 
 Panduan pengujian yang tersedia berada di
 [panduan lokal](docs/04-panduan_kerja_mandiri_dev.md), README setiap aplikasi,
@@ -125,7 +120,3 @@ pengujian dicatat pada dokumentasi status refactoring.
 materi akademik lokal yang dipilih untuk penyerahan terpisah. Keduanya diabaikan
 Git, bersama catatan kerja agen dan snapshot browser. Dependensi, konfigurasi
 `.env`, serta penyimpanan aplikasi tetap mengikuti aturan ignore masing-masing.
-
-Untuk memilih perubahan pembersihan dan memperbarui branch secara manual,
-ikuti [panduan commit](PANDUAN_COMMIT_MANUAL.md).
-

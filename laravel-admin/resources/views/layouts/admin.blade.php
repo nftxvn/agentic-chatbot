@@ -244,40 +244,6 @@
         </main>
     </div>
 
-    {{-- Floating Chat Widget (Testing Mode) --}}
-    <div id="chat-widget-container" class="fixed bottom-6 right-6 z-50 flex flex-col items-end hidden">
-        <div class="bg-surface-900 border border-gray-800 rounded-2xl shadow-2xl overflow-hidden mb-4 transition-all duration-300 transform origin-bottom-right" style="width: 400px; height: 600px; max-height: 80vh;">
-            <div class="bg-brand-600 px-4 py-3 flex justify-between items-center text-white">
-                <div class="flex items-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
-                    <span class="font-semibold text-sm">Testing AI Copilot</span>
-                </div>
-                <button onclick="toggleChat()" class="text-white hover:text-gray-200">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
-            </div>
-            <iframe src="http://localhost:3000" class="w-full border-0 bg-surface-950" style="height: calc(100% - 48px);"></iframe>
-        </div>
-    </div>
-    
-    <button id="chat-fab" onclick="toggleChat()" class="fixed bottom-6 right-6 z-50 w-14 h-14 bg-brand-600 rounded-full shadow-lg shadow-brand-500/30 flex items-center justify-center text-white hover:bg-brand-500 hover:scale-105 transition-all duration-200">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
-    </button>
-
-    <script>
-        function toggleChat() {
-            const container = document.getElementById('chat-widget-container');
-            const fab = document.getElementById('chat-fab');
-            if (container.classList.contains('hidden')) {
-                container.classList.remove('hidden');
-                fab.classList.add('hidden');
-            } else {
-                container.classList.add('hidden');
-                fab.classList.remove('hidden');
-            }
-        }
-    </script>
-
     @stack('scripts')
 </body>
 </html>
